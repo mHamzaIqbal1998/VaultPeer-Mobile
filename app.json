@@ -19,7 +19,7 @@
       "icon": "./assets/apple-touch-icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSFaceIDUsageDescription": "VaultPeer uses Face ID to secure your financial data."
+        "NSFaceIDUsageDescription": "VaultPeer uses Face ID to unlock your password vault."
       }
     },
     "android": {
@@ -44,9 +44,9 @@
           "image": "./assets/android-chrome-512x512.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000",
+          "backgroundColor": "#0B0F0E",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#0B0F0E"
           }
         }
       ],
@@ -54,8 +54,20 @@
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": ["arm64-v8a"]
+            "buildArchs": ["arm64-v8a"],
+            "enableProguardInReleaseBuilds": true
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
           }
+        }
+      ],
+      "expo-secure-store",
+      "expo-document-picker",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "VaultPeer uses Face ID to unlock your vault securely."
         }
       ]
     ],
