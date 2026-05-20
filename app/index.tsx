@@ -1,24 +1,37 @@
 /**
- * VaultPeer — Home Screen (Phase 1 Placeholder)
+ * VaultPeer — File Setup Screen (Phase 2)
  *
- * Displays the crypto engine initialization status and a diagnostic
- * panel showing the Argon2 bridge availability. This screen will be
- * replaced by the File Setup screen in Phase 2.
+ * Implements the core database setup flows:
+ * 1. Opening an existing KeePass (.kdbx) file via SAF/Security-Scoped Bookmarks.
+ * 2. Creating a new KeePass database and exporting it.
+ * 3. Unlocking a previously persisted vault.
+ * 4. Displaying parsed vault statistics.
  */
 
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withRepeat,
-  withTiming,
   withSequence,
+  withTiming,
   Easing,
   FadeInDown,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import * as kdbxweb from "kdbxweb";
 import {
   Colors,
   Fonts,
@@ -29,34 +42,73 @@ import {
   Shadows,
   TouchTarget,
 } from "@/src/constants/theme";
-import { isCryptoEngineReady, createNewDatabase } from "@/src/services/crypto";
+import { useFilePicker } from "@/src/context/FilePickerContext";
+import { parseMeta } from "@/src/services/crypto";
+import type { VaultMeta } from "@/src/types/kdbx";
 
 // ────────────────────────────────────────────
-// Types
+// Helper: Parse File Name from URI
 // ────────────────────────────────────────────
 
-interface DiagnosticItem {
-  label: string;
-  status: "pass" | "fail" | "pending";
-  detail: string;
+function getFilenameFromUri(uri: string): string {
+  try {
+    const decoded = decodeURIComponent(uri);
+    // SAF URI might have segments split by '%3A' or '/'
+    const parts = decoded.split(/[/\\]/);
+    const lastPart = parts[parts.length - 1];
+    if (lastPart.includes(":")) {
+      const subParts = lastPart.split(":");
+      return subParts[subParts.length - 1];
+    }
+    return lastPart || "vault.kdbx";
+  } catch {
+    return "vault.kdbx";
+  }
 }
 
 // ────────────────────────────────────────────
-// Component
+// Main Screen Component
 // ────────────────────────────────────────────
 
-export default function HomeScreen() {
-  const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+type ScreenMode = "select" | "unlock" | "create";
 
-  // Glow pulse animation for the shield icon
+export default function FileSetupScreen() {
+  const {
+    fileUri,
+    isLoading: isFsLoading,
+    error: fsError,
+    hasSavedVault,
+    pickAndOpenVault,
+    createNewVault,
+    loadVault,
+    clearVault,
+  } = useFilePicker();
+
+  const [mode, setMode] = useState<ScreenMode>("select");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // New Vault Forms
+  const [newVaultName, setNewVaultName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Unlocked State
+  const [activeDb, setActiveDb] = useState<kdbxweb.Kdbx | null>(null);
+  const [dbStats, setDbStats] = useState<VaultMeta | null>(null);
+
+  // Active status/local loading
+  const [localLoading, setLocalLoading] = useState(false);
+
+  // Shield glow animation
   const glowOpacity = useSharedValue(0.4);
-
   useEffect(() => {
     glowOpacity.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.4, { duration: 1200, easing: Easing.inOut(Easing.ease) })
+        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.ease) })
       ),
       -1,
       false
@@ -67,186 +119,524 @@ export default function HomeScreen() {
     opacity: glowOpacity.value,
   }));
 
-  // Button press animation
-  const buttonScale = useSharedValue(1);
-  const buttonAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: buttonScale.value }],
-  }));
-
-  async function runDiagnostics() {
-    setIsRunning(true);
-    const results: DiagnosticItem[] = [];
-
-    // Check 1: Crypto engine ready
-    results.push({
-      label: "Crypto Engine",
-      status: isCryptoEngineReady() ? "pass" : "fail",
-      detail: isCryptoEngineReady()
-        ? "Initialized with native Argon2"
-        : "Not initialized",
-    });
-    setDiagnostics([...results]);
-
-    // Check 2: Platform info
-    results.push({
-      label: "Platform",
-      status: "pass",
-      detail: `${Platform.OS} (${Platform.Version})`,
-    });
-    setDiagnostics([...results]);
-
-    // Check 3: Database creation
-    try {
-      const db = createNewDatabase("DiagnosticTest", "test-password-123");
-      const saved = await db.save();
-      results.push({
-        label: "KDBX Create + Save",
-        status: saved.byteLength > 0 ? "pass" : "fail",
-        detail: `${saved.byteLength} bytes written`,
-      });
-    } catch (error) {
-      results.push({
-        label: "KDBX Create + Save",
-        status: "fail",
-        detail: error instanceof Error ? error.message : "Unknown error",
-      });
+  // Auto-transition to unlock if a vault is saved
+  useEffect(() => {
+    if (hasSavedVault && !activeDb) {
+      setMode("unlock");
+    } else if (!hasSavedVault) {
+      setMode("select");
     }
-    setDiagnostics([...results]);
+  }, [hasSavedVault, activeDb]);
 
-    // Check 4: Argon2 native module
-    results.push({
-      label: "Argon2 JSI Bridge",
-      status: Platform.OS !== "web" ? "pass" : "fail",
-      detail:
-        Platform.OS !== "web"
-          ? "TurboModule available (requires dev build)"
-          : "Not available on web",
-    });
-    setDiagnostics([...results]);
+  // Combined Loading state
+  const isLoading = isFsLoading || localLoading;
+  const currentError = formError || fsError;
 
-    setIsRunning(false);
-  }
+  // ────────────────────────────────────────────
+  // Operations
+  // ────────────────────────────────────────────
+
+  const handlePickAndOpen = async () => {
+    if (!password) {
+      setFormError("Please enter the master password.");
+      return;
+    }
+    setFormError(null);
+    setLocalLoading(true);
+    try {
+      const db = await pickAndOpenVault(password);
+      setActiveDb(db);
+      setDbStats(parseMeta(db));
+      setPassword("");
+    } catch {
+      // Error handled by FilePickerContext / caught locally
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleUnlockSaved = async () => {
+    if (!password) {
+      setFormError("Please enter the master password.");
+      return;
+    }
+    setFormError(null);
+    setLocalLoading(true);
+    try {
+      const db = await loadVault(password);
+      setActiveDb(db);
+      setDbStats(parseMeta(db));
+      setPassword("");
+    } catch {
+      // Error handled by FilePickerContext
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleCreateVault = async () => {
+    if (!newVaultName.trim()) {
+      setFormError("Please enter a database name.");
+      return;
+    }
+    if (!newPassword) {
+      setFormError("Please enter a master password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setFormError("Passwords do not match.");
+      return;
+    }
+    setFormError(null);
+    setLocalLoading(true);
+    try {
+      const db = await createNewVault(newVaultName.trim(), newPassword);
+      setActiveDb(db);
+      setDbStats(parseMeta(db));
+      setNewVaultName("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch {
+      // Error handled by FilePickerContext
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleLockVault = () => {
+    setActiveDb(null);
+    setDbStats(null);
+    setPassword("");
+    if (hasSavedVault) {
+      setMode("unlock");
+    } else {
+      setMode("select");
+    }
+  };
+
+  const handleForgetVault = async () => {
+    await clearVault();
+    setActiveDb(null);
+    setDbStats(null);
+    setPassword("");
+    setMode("select");
+    setFormError(null);
+  };
+
+  // ────────────────────────────────────────────
+  // Render Helpers
+  // ────────────────────────────────────────────
+
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <View style={styles.shieldContainer}>
+        <Animated.View style={[styles.shieldGlow, glowStyle]} />
+        <Ionicons name="shield-checkmark" size={38} color={Colors.accentMint} />
+      </View>
+      <Text style={styles.title}>VaultPeer</Text>
+      <Text style={styles.subtitle}>Secure, In-place KeePass Vaults</Text>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Header with animated glow */}
-        <Animated.View
-          entering={FadeInDown.duration(600).delay(100)}
-          style={styles.headerContainer}
-        >
-          <View style={styles.shieldContainer}>
-            <Animated.View style={[styles.shieldGlow, glowStyle]} />
-            <Text style={styles.shieldIcon}>🛡️</Text>
-          </View>
-          <Text style={styles.title}>VaultPeer</Text>
-          <Text style={styles.subtitle}>Phase 1 — Crypto Engine</Text>
-        </Animated.View>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {renderHeader()}
 
-        {/* Status card */}
-        <Animated.View
-          entering={FadeInDown.duration(600).delay(250)}
-          style={styles.statusCard}
-        >
-          <View style={styles.statusHeader}>
-            <Text style={styles.statusTitle}>Engine Status</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                isCryptoEngineReady()
-                  ? styles.statusBadgePass
-                  : styles.statusBadgeFail,
-              ]}
+          {/* Error Message Box */}
+          {currentError && (
+            <Animated.View entering={FadeInDown} style={styles.errorCard}>
+              <Ionicons
+                name="alert-circle"
+                size={20}
+                color={Colors.statusError}
+              />
+              <Text style={styles.errorText}>{currentError}</Text>
+            </Animated.View>
+          )}
+
+          {/* Active Database / Unlocked Stats View */}
+          {activeDb && dbStats ? (
+            <Animated.View
+              entering={FadeInDown.duration(400)}
+              style={styles.card}
             >
-              <Text style={styles.statusBadgeText}>
-                {isCryptoEngineReady() ? "READY" : "PENDING"}
-              </Text>
-            </View>
-          </View>
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name="lock-open"
+                  size={22}
+                  color={Colors.accentMint}
+                />
+                <Text style={styles.cardTitle}>Vault Decrypted</Text>
+              </View>
 
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>kdbxweb</Text>
-            <Text style={styles.statusValue}>Loaded</Text>
-          </View>
-          <View style={styles.statusDivider} />
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>Argon2 KDF</Text>
-            <Text style={styles.statusValue}>
-              {Platform.OS !== "web" ? "Native JSI" : "Unavailable"}
-            </Text>
-          </View>
-          <View style={styles.statusDivider} />
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>AES-256-CBC</Text>
-            <Text style={styles.statusValue}>WebCrypto</Text>
-          </View>
-          <View style={styles.statusDivider} />
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>ChaCha20</Text>
-            <Text style={styles.statusValue}>WebCrypto</Text>
-          </View>
-        </Animated.View>
+              <View style={styles.statsRow}>
+                <Text style={styles.statsLabel}>Vault Name</Text>
+                <Text style={styles.statsValue}>{dbStats.name}</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statsRow}>
+                <Text style={styles.statsLabel}>Groups</Text>
+                <Text style={styles.statsValue}>{dbStats.groupCount}</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statsRow}>
+                <Text style={styles.statsLabel}>Entries</Text>
+                <Text style={styles.statsValue}>{dbStats.entryCount}</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statsRow}>
+                <Text style={styles.statsLabel}>Encryption / KDF</Text>
+                <Text style={styles.statsValue}>{dbStats.kdfName}</Text>
+              </View>
 
-        {/* Diagnostics results */}
-        {diagnostics.length > 0 && (
-          <Animated.View
-            entering={FadeInDown.duration(400)}
-            style={styles.diagnosticsCard}
-          >
-            <Text style={styles.diagnosticsTitle}>Diagnostics</Text>
-            {diagnostics.map((item, index) => (
-              <View key={index} style={styles.diagnosticRow}>
-                <View style={styles.diagnosticLeft}>
-                  <Text
-                    style={[
-                      styles.diagnosticDot,
-                      item.status === "pass"
-                        ? styles.dotPass
-                        : item.status === "fail"
-                          ? styles.dotFail
-                          : styles.dotPending,
+              <Pressable
+                onPress={handleLockVault}
+                style={({ pressed }) => [
+                  styles.button,
+                  pressed && styles.buttonPressed,
+                  styles.lockButton,
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed"
+                  size={16}
+                  color={Colors.backgroundPrimary}
+                  style={styles.buttonIcon}
+                />
+                <Text style={styles.buttonText}>Lock Vault</Text>
+              </Pressable>
+            </Animated.View>
+          ) : (
+            /* Locked / Entry Flows */
+            <>
+              {mode === "unlock" && fileUri && (
+                <Animated.View
+                  entering={FadeInDown.duration(300)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons
+                      name="file-tray-full"
+                      size={22}
+                      color={Colors.accentMint}
+                    />
+                    <Text style={styles.cardTitle}>Unlock Vault</Text>
+                  </View>
+                  <Text style={styles.filenameLabel}>
+                    File:{" "}
+                    <Text style={styles.filename}>
+                      {getFilenameFromUri(fileUri)}
+                    </Text>
+                  </Text>
+
+                  <View style={styles.inputContainer}>
+                    <Ionicons
+                      name="key"
+                      size={18}
+                      color={Colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Master Password"
+                      placeholderTextColor={Colors.textDisabled}
+                      editable={!isLoading}
+                    />
+                    <Pressable
+                      onPress={() => setShowPassword(!showPassword)}
+                      style={styles.eyeButton}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name={showPassword ? "eye-off" : "eye"}
+                        size={20}
+                        color={Colors.textMuted}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    onPress={handleUnlockSaved}
+                    disabled={isLoading}
+                    style={({ pressed }) => [
+                      styles.button,
+                      pressed && styles.buttonPressed,
+                      isLoading && styles.buttonDisabled,
                     ]}
                   >
-                    ●
-                  </Text>
-                  <Text style={styles.diagnosticLabel}>{item.label}</Text>
-                </View>
-                <Text style={styles.diagnosticDetail} numberOfLines={1}>
-                  {item.detail}
-                </Text>
-              </View>
-            ))}
-          </Animated.View>
-        )}
+                    {isLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={Colors.backgroundPrimary}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="lock-open"
+                          size={16}
+                          color={Colors.backgroundPrimary}
+                          style={styles.buttonIcon}
+                        />
+                        <Text style={styles.buttonText}>Unlock Vault</Text>
+                      </>
+                    )}
+                  </Pressable>
 
-        {/* Run diagnostics button */}
-        <Animated.View
-          entering={FadeInDown.duration(600).delay(400)}
-          style={[styles.buttonWrapper, buttonAnimatedStyle]}
-        >
-          <Pressable
-            onPress={runDiagnostics}
-            onPressIn={() => {
-              buttonScale.value = withSpring(0.95);
-            }}
-            onPressOut={() => {
-              buttonScale.value = withSpring(1);
-            }}
-            disabled={isRunning}
-            style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-              isRunning && styles.buttonDisabled,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Run crypto engine diagnostics"
-          >
-            <Text style={styles.buttonText}>
-              {isRunning ? "Running..." : "Run Diagnostics"}
+                  <View style={styles.rowButtons}>
+                    <Pressable
+                      onPress={handleForgetVault}
+                      style={styles.textButton}
+                    >
+                      <Text style={styles.textButtonText}>Forget Vault</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setMode("select")}
+                      style={styles.textButton}
+                    >
+                      <Text style={styles.textButtonText}>Choose Another</Text>
+                    </Pressable>
+                  </View>
+                </Animated.View>
+              )}
+
+              {mode === "select" && (
+                <Animated.View
+                  entering={FadeInDown.duration(300)}
+                  style={styles.card}
+                >
+                  <Text style={styles.infoLabel}>
+                    Open an existing KeePass database (.kdbx) or create a new
+                    one securely in-place.
+                  </Text>
+
+                  {/* Password entry for opening existing */}
+                  <View
+                    style={[styles.inputContainer, { marginTop: Spacing.sm }]}
+                  >
+                    <Ionicons
+                      name="key"
+                      size={18}
+                      color={Colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Master Password"
+                      placeholderTextColor={Colors.textDisabled}
+                      editable={!isLoading}
+                    />
+                    <Pressable
+                      onPress={() => setShowPassword(!showPassword)}
+                      style={styles.eyeButton}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name={showPassword ? "eye-off" : "eye"}
+                        size={20}
+                        color={Colors.textMuted}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    onPress={handlePickAndOpen}
+                    disabled={isLoading}
+                    style={({ pressed }) => [
+                      styles.button,
+                      pressed && styles.buttonPressed,
+                      isLoading && styles.buttonDisabled,
+                    ]}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={Colors.backgroundPrimary}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="folder-open"
+                          size={16}
+                          color={Colors.backgroundPrimary}
+                          style={styles.buttonIcon}
+                        />
+                        <Text style={styles.buttonText}>
+                          Open Existing Vault
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => {
+                      setMode("create");
+                      setFormError(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.buttonSecondary,
+                      pressed && styles.buttonSecondaryPressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name="add-circle"
+                      size={16}
+                      color={Colors.accentMint}
+                      style={styles.buttonIcon}
+                    />
+                    <Text style={styles.buttonSecondaryText}>
+                      Create New Vault
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              )}
+
+              {mode === "create" && (
+                <Animated.View
+                  entering={FadeInDown.duration(300)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons
+                      name="add-circle"
+                      size={22}
+                      color={Colors.accentMint}
+                    />
+                    <Text style={styles.cardTitle}>Create KeePass Vault</Text>
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Ionicons
+                      name="document-text"
+                      size={18}
+                      color={Colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      value={newVaultName}
+                      onChangeText={setNewVaultName}
+                      placeholder="Database Name"
+                      placeholderTextColor={Colors.textDisabled}
+                      editable={!isLoading}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Ionicons
+                      name="key"
+                      size={18}
+                      color={Colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry={!showNewPassword}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      placeholder="Master Password"
+                      placeholderTextColor={Colors.textDisabled}
+                      editable={!isLoading}
+                    />
+                    <Pressable
+                      onPress={() => setShowNewPassword(!showNewPassword)}
+                      style={styles.eyeButton}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name={showNewPassword ? "eye-off" : "eye"}
+                        size={20}
+                        color={Colors.textMuted}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color={Colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry={!showNewPassword}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="Confirm Master Password"
+                      placeholderTextColor={Colors.textDisabled}
+                      editable={!isLoading}
+                    />
+                  </View>
+
+                  <Pressable
+                    onPress={handleCreateVault}
+                    disabled={isLoading}
+                    style={({ pressed }) => [
+                      styles.button,
+                      pressed && styles.buttonPressed,
+                      isLoading && styles.buttonDisabled,
+                    ]}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={Colors.backgroundPrimary}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="save"
+                          size={16}
+                          color={Colors.backgroundPrimary}
+                          style={styles.buttonIcon}
+                        />
+                        <Text style={styles.buttonText}>
+                          Generate & Export Vault
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => {
+                      setMode("select");
+                      setFormError(null);
+                    }}
+                    style={styles.textButton}
+                  >
+                    <Text style={styles.textButtonText}>Cancel</Text>
+                  </Pressable>
+                </Animated.View>
+              )}
+            </>
+          )}
+
+          {/* Secure Sync Notice Info */}
+          <View style={styles.infoBox}>
+            <Ionicons
+              name="lock-closed"
+              size={14}
+              color={Colors.textDisabled}
+            />
+            <Text style={styles.infoBoxText}>
+              In-place file editing uses Android SAF / iOS Security Bookmarks.
+              Changes are automatically updated in cloud folders (Nextcloud,
+              Drive, Syncthing).
             </Text>
-          </Pressable>
-        </Animated.View>
-      </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -260,10 +650,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.backgroundPrimary,
   },
-  content: {
+  keyboardView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.xxxl,
+    paddingBottom: Spacing.huge,
   },
 
   // Header
@@ -272,22 +666,21 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xxxl,
   },
   shieldContainer: {
-    width: 80,
-    height: 80,
+    width: 76,
+    height: 76,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: Spacing.lg,
   },
   shieldGlow: {
     position: "absolute",
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.accentMint,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: Colors.accentMintDim,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
     ...Shadows.glow,
-  },
-  shieldIcon: {
-    fontSize: 40,
   },
   title: {
     fontFamily: Fonts.heading.semiBold,
@@ -304,129 +697,105 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
 
-  // Status Card
-  statusCard: {
+  // Cards
+  card: {
     backgroundColor: Colors.surfaceCard,
     borderRadius: Radii.lg,
     borderWidth: 1,
     borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
+    padding: Spacing.xl,
+    marginBottom: Spacing.xl,
     ...Shadows.card,
   },
-  statusHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: Spacing.md,
-  },
-  statusTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  statusBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xxs,
-    borderRadius: Radii.sm,
-  },
-  statusBadgePass: {
-    backgroundColor: Colors.statusSuccessDim,
-  },
-  statusBadgeFail: {
-    backgroundColor: Colors.statusErrorDim,
-  },
-  statusBadgeText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.micro,
-    color: Colors.accentMint,
-    letterSpacing: 1,
-  },
-  statusRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-  },
-  statusLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  statusValue: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.accentMint,
-  },
-  statusDivider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-  },
-
-  // Diagnostics Card
-  diagnosticsCard: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-    ...Shadows.card,
-  },
-  diagnosticsTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-  },
-  diagnosticRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-  },
-  diagnosticLeft: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
-  diagnosticDot: {
-    fontSize: FontSizes.caption,
+  cardTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.subheading,
+    color: Colors.textPrimary,
   },
-  dotPass: {
-    color: Colors.statusSuccess,
+  infoLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    lineHeight: LineHeights.bodySmall,
+    color: Colors.textMuted,
+    marginBottom: Spacing.lg,
+    textAlign: "center",
   },
-  dotFail: {
-    color: Colors.statusError,
+  filenameLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+    marginBottom: Spacing.lg,
   },
-  dotPending: {
-    color: Colors.statusWarning,
+  filename: {
+    fontFamily: Fonts.mono.regular,
+    color: Colors.accentMint,
   },
-  diagnosticLabel: {
+
+  // Error Card
+  errorCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.statusErrorDim,
+    borderWidth: 1,
+    borderColor: Colors.statusError,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  errorText: {
     fontFamily: Fonts.body.regular,
     fontSize: FontSizes.bodySmall,
     color: Colors.textPrimary,
-  },
-  diagnosticDetail: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    maxWidth: "50%",
-    textAlign: "right",
+    flex: 1,
   },
 
-  // Button
-  buttonWrapper: {
-    marginTop: "auto",
-    paddingBottom: Spacing.xxl,
+  // Form Fields
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.lg,
+    minHeight: TouchTarget.min,
   },
+  inputIcon: {
+    marginRight: Spacing.sm,
+  },
+  input: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.body,
+    paddingVertical: Spacing.sm,
+  },
+  eyeButton: {
+    padding: Spacing.xs,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: TouchTarget.min,
+    minHeight: TouchTarget.min,
+  },
+
+  // Buttons
   button: {
     backgroundColor: Colors.accentMint,
     borderRadius: Radii.md,
-    paddingVertical: Spacing.md,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     minHeight: TouchTarget.min,
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.xs,
     ...Shadows.glow,
   },
   buttonPressed: {
@@ -435,10 +804,93 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.5,
   },
+  buttonIcon: {
+    marginRight: Spacing.xs,
+  },
   buttonText: {
     fontFamily: Fonts.heading.semiBold,
     fontSize: FontSizes.body,
     color: Colors.backgroundPrimary,
     letterSpacing: 0.5,
+  },
+  buttonSecondary: {
+    backgroundColor: Colors.transparent,
+    borderWidth: 1,
+    borderColor: Colors.accentMint,
+    borderRadius: Radii.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: TouchTarget.min,
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  buttonSecondaryPressed: {
+    backgroundColor: Colors.accentMintDim,
+  },
+  buttonSecondaryText: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.accentMint,
+    letterSpacing: 0.5,
+  },
+  lockButton: {
+    backgroundColor: Colors.accentMint,
+  },
+  textButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+    minHeight: TouchTarget.min,
+  },
+  textButtonText: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+  },
+  rowButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: Spacing.sm,
+  },
+
+  // Divider
+  divider: {
+    height: 1,
+    backgroundColor: Colors.borderSage,
+    marginVertical: Spacing.md,
+  },
+
+  // Statistics
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  statsLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+  },
+  statsValue: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+
+  // Info Box
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  infoBoxText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    lineHeight: LineHeights.caption,
+    color: Colors.textDisabled,
+    flex: 1,
   },
 });

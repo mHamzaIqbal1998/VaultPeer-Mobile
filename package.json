@@ -9,6 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "prebuild": "npx expo prebuild",
+    "android:dev": "npx expo prebuild && npx expo run:android",
     "build:android": "eas build --platform android --profile production",
     "build:android:preview": "eas build --platform android --profile preview",
     "build:android:local": "eas build --platform android --profile preview --local",
@@ -24,6 +26,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "crypto-js": "^4.2.0",
     "expo": "~54.0.33",
     "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.13",
@@ -51,9 +54,11 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.5.1"
+    "react-native-worklets": "0.5.1",
+    "vaultpeer-file-system": "file:./modules/vaultpeer-file-system"
   },
   "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
     "eslint": "^9.25.0",

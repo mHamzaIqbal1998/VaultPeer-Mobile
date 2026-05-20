@@ -6,6 +6,7 @@ import * as Font from "expo-font";
 import { View, StyleSheet } from "react-native";
 import { Colors } from "@/src/constants/theme";
 import { initCryptoEngine } from "@/src/services/crypto";
+import { FilePickerProvider } from "@/src/context/FilePickerContext";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -52,13 +53,15 @@ export default function RootLayout() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" backgroundColor={Colors.backgroundPrimary} />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: Colors.backgroundPrimary },
-          animation: "fade",
-        }}
-      />
+      <FilePickerProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: Colors.backgroundPrimary },
+            animation: "fade",
+          }}
+        />
+      </FilePickerProvider>
     </View>
   );
 }
