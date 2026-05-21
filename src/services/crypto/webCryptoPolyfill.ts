@@ -50,7 +50,7 @@ const getRandomValues = <T extends ArrayBufferView | null>(array: T): T => {
 
 const digest = async (
   algorithm: string | { name: string },
-  data: ArrayBuffer
+  data: ArrayBuffer | ArrayBufferView
 ): Promise<ArrayBuffer> => {
   const algoName = typeof algorithm === "string" ? algorithm : algorithm.name;
   let expoAlgo: Crypto.CryptoDigestAlgorithm;
@@ -65,7 +65,11 @@ const digest = async (
     );
   }
 
-  return Crypto.digest(expoAlgo, data);
+  const typedArray = ArrayBuffer.isView(data)
+    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    : new Uint8Array(data);
+
+  return Crypto.digest(expoAlgo, typedArray);
 };
 
 const importKey = async (
