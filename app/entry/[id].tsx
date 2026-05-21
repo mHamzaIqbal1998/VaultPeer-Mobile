@@ -124,8 +124,13 @@ export default function EntryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
-  const { getEntry, deleteEntry, logAccess, isGroupInRecycleBin } =
-    useVaultStore();
+  const {
+    getEntry,
+    deleteEntry,
+    restoreEntry,
+    logAccess,
+    isGroupInRecycleBin,
+  } = useVaultStore();
   const { copyToClipboard } = useClipboard();
 
   const entry = getEntry(id ?? "");
@@ -151,9 +156,12 @@ export default function EntryDetailScreen() {
     [entry, logAccess, copyToClipboard]
   );
 
+  const inRecycleBin = entry
+    ? isGroupInRecycleBin(entry.parentGroupUuid)
+    : false;
+
   const handleDelete = useCallback(() => {
     if (!entry) return;
-    const inRecycleBin = isGroupInRecycleBin(entry.parentGroupUuid);
     const title = inRecycleBin ? "Permanently Delete Entry" : "Delete Entry";
     const message = inRecycleBin
       ? `Are you sure you want to permanently delete "${entry.title}"? This action cannot be undone.`
@@ -172,7 +180,30 @@ export default function EntryDetailScreen() {
         },
       },
     ]);
-  }, [entry, deleteEntry, logAccess, router, isGroupInRecycleBin]);
+  }, [entry, deleteEntry, logAccess, router, inRecycleBin]);
+
+  const handleRestore = useCallback(() => {
+    if (!entry) return;
+    Alert.alert(
+      "Restore Entry",
+      `Are you sure you want to restore "${entry.title}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: () => {
+            const success = restoreEntry(entry.uuid);
+            if (success) {
+              logAccess(entry.uuid, entry.title, "updated");
+              router.back();
+            } else {
+              Alert.alert("Error", "Failed to restore entry.");
+            }
+          },
+        },
+      ]
+    );
+  }, [entry, restoreEntry, logAccess, router]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;
@@ -220,18 +251,33 @@ export default function EntryDetailScreen() {
           Entry Detail
         </Text>
         <View style={styles.headerActions}>
-          <Pressable
-            onPress={handleEdit}
-            style={styles.headerActionBtn}
-            hitSlop={8}
-            accessibilityLabel="Edit entry"
-          >
-            <Ionicons
-              name="create-outline"
-              size={22}
-              color={Colors.accentMint}
-            />
-          </Pressable>
+          {inRecycleBin ? (
+            <Pressable
+              onPress={handleRestore}
+              style={styles.headerActionBtn}
+              hitSlop={8}
+              accessibilityLabel="Restore entry"
+            >
+              <Ionicons
+                name="arrow-undo-outline"
+                size={22}
+                color={Colors.accentMint}
+              />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={handleEdit}
+              style={styles.headerActionBtn}
+              hitSlop={8}
+              accessibilityLabel="Edit entry"
+            >
+              <Ionicons
+                name="create-outline"
+                size={22}
+                color={Colors.accentMint}
+              />
+            </Pressable>
+          )}
           <Pressable
             onPress={handleDelete}
             style={styles.headerActionBtn}

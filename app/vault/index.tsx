@@ -45,9 +45,11 @@ import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
 function GroupRow({
   group,
   onPress,
+  onLongPress,
 }: {
   group: VaultGroup;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const entryCount = group.entries.length;
   const subgroupCount = group.groups.length;
@@ -55,6 +57,7 @@ function GroupRow({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [styles.groupRow, pressed && styles.rowPressed]}
       accessibilityRole="button"
       accessibilityLabel={`Open group ${group.name}`}
@@ -137,6 +140,11 @@ export default function VaultBrowserScreen() {
   const navigateBack = useVaultStore((state) => state.navigateBack);
   const navigateToRoot = useVaultStore((state) => state.navigateToRoot);
   const createGroup = useVaultStore((state) => state.createGroup);
+  const deleteGroup = useVaultStore((state) => state.deleteGroup);
+  const renameGroup = useVaultStore((state) => state.renameGroup);
+  const isGroupInRecycleBin = useVaultStore(
+    (state) => state.isGroupInRecycleBin
+  );
 
   const activeGroup = useVaultStore((state) => {
     if (!state.activeGroupUuid || !state.groupIndex) return null;
@@ -147,6 +155,11 @@ export default function VaultBrowserScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [showNewGroupInput, setShowNewGroupInput] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+
+  const [showRenameInput, setShowRenameInput] = useState(false);
+  const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
+  const [renameGroupName, setRenameGroupName] = useState("");
+
   const isAtRoot = breadcrumbs.length === 0;
 
   // Search results
@@ -204,6 +217,111 @@ export default function VaultBrowserScreen() {
     } as any);
   }, [activeGroupUuid, router]);
 
+  const canModifyCurrentGroup = useMemo(() => {
+    return (
+      activeGroupUuid &&
+      activeGroupUuid !== rootGroup?.uuid &&
+      activeGroupUuid !== db?.meta.recycleBinUuid?.id
+    );
+  }, [activeGroupUuid, rootGroup?.uuid, db?.meta.recycleBinUuid?.id]);
+
+  const handleRenameGroup = useCallback(() => {
+    if (!renameGroupName.trim() || !renameGroupId) return;
+    renameGroup(renameGroupId, renameGroupName.trim());
+    setRenameGroupName("");
+    setRenameGroupId(null);
+    setShowRenameInput(false);
+  }, [renameGroupName, renameGroupId, renameGroup]);
+
+  const handleGroupOptions = useCallback(
+    (group: VaultGroup) => {
+      if (
+        group.uuid === rootGroup?.uuid ||
+        group.uuid === db?.meta.recycleBinUuid?.id
+      ) {
+        return;
+      }
+
+      const inBin = isGroupInRecycleBin(group.uuid);
+      const deleteText = inBin ? "Delete Permanently" : "Delete Group";
+
+      Alert.alert(`Group: ${group.name}`, "Choose an action", [
+        {
+          text: "Rename",
+          onPress: () => {
+            setRenameGroupId(group.uuid);
+            setRenameGroupName(group.name);
+            setShowRenameInput(true);
+          },
+        },
+        {
+          text: deleteText,
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              inBin ? "Permanently Delete" : "Delete Group",
+              inBin
+                ? `Are you sure you want to permanently delete "${group.name}"? This action cannot be undone.`
+                : `Are you sure you want to delete "${group.name}"? This will move it to the recycle bin.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: inBin ? "Delete Permanently" : "Delete",
+                  style: "destructive",
+                  onPress: () => {
+                    deleteGroup(group.uuid);
+                  },
+                },
+              ]
+            );
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [rootGroup, db, deleteGroup, isGroupInRecycleBin]
+  );
+
+  const handleCurrentGroupOptions = useCallback(() => {
+    if (!activeGroup) return;
+    const inBin = isGroupInRecycleBin(activeGroup.uuid);
+    const deleteText = inBin ? "Delete Permanently" : "Delete Group";
+
+    Alert.alert(`Group: ${activeGroup.name}`, "Choose an action", [
+      {
+        text: "Rename",
+        onPress: () => {
+          setRenameGroupId(activeGroup.uuid);
+          setRenameGroupName(activeGroup.name);
+          setShowRenameInput(true);
+        },
+      },
+      {
+        text: deleteText,
+        style: "destructive",
+        onPress: () => {
+          Alert.alert(
+            inBin ? "Permanently Delete" : "Delete Group",
+            inBin
+              ? `Are you sure you want to permanently delete "${activeGroup.name}"? This action cannot be undone.`
+              : `Are you sure you want to delete "${activeGroup.name}"? This will move it to the recycle bin.`,
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: inBin ? "Delete Permanently" : "Delete",
+                style: "destructive",
+                onPress: () => {
+                  deleteGroup(activeGroup.uuid);
+                },
+              },
+            ]
+          );
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [activeGroup, deleteGroup, isGroupInRecycleBin]);
+
   const handleSave = useCallback(async () => {
     if (!db) return;
     try {
@@ -254,6 +372,7 @@ export default function VaultBrowserScreen() {
             <GroupRow
               group={item.data as VaultGroup}
               onPress={() => handleGroupPress(item.data as VaultGroup)}
+              onLongPress={() => handleGroupOptions(item.data as VaultGroup)}
             />
           </Animated.View>
         );
@@ -268,7 +387,7 @@ export default function VaultBrowserScreen() {
         </Animated.View>
       );
     },
-    [handleGroupPress, handleEntryPress]
+    [handleGroupPress, handleEntryPress, handleGroupOptions]
   );
 
   const keyExtractor = useCallback((item: ListItem) => {
@@ -357,6 +476,20 @@ export default function VaultBrowserScreen() {
               color={Colors.textPrimary}
             />
           </Pressable>
+          {canModifyCurrentGroup && (
+            <Pressable
+              onPress={handleCurrentGroupOptions}
+              style={styles.iconButton}
+              hitSlop={8}
+              accessibilityLabel="Group options"
+            >
+              <Ionicons
+                name="ellipsis-vertical"
+                size={22}
+                color={Colors.textPrimary}
+              />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -490,6 +623,44 @@ export default function VaultBrowserScreen() {
           </View>
         }
       />
+
+      {/* ── Rename Group Input (inline) ── */}
+      {showRenameInput && (
+        <Animated.View
+          entering={FadeInDown.duration(200)}
+          exiting={FadeOut.duration(150)}
+          style={styles.newGroupBar}
+        >
+          <TextInput
+            style={styles.newGroupInput}
+            value={renameGroupName}
+            onChangeText={setRenameGroupName}
+            placeholder="Rename group..."
+            placeholderTextColor={Colors.textDisabled}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleRenameGroup}
+          />
+          <Pressable
+            onPress={handleRenameGroup}
+            style={styles.newGroupConfirm}
+            hitSlop={4}
+          >
+            <Ionicons name="checkmark" size={22} color={Colors.accentMint} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setShowRenameInput(false);
+              setRenameGroupId(null);
+              setRenameGroupName("");
+            }}
+            style={styles.newGroupCancel}
+            hitSlop={4}
+          >
+            <Ionicons name="close" size={22} color={Colors.textMuted} />
+          </Pressable>
+        </Animated.View>
+      )}
 
       {/* ── New Group Input (inline) ── */}
       {showNewGroupInput && (

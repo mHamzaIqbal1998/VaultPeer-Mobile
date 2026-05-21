@@ -86,7 +86,7 @@ export default function FileSetupScreen() {
     isLoading: isFsLoading,
     error: fsError,
     hasSavedVault,
-    pickAndOpenVault,
+    selectVaultFile,
     createNewVault,
     loadVault,
     clearVault,
@@ -159,7 +159,7 @@ export default function FileSetupScreen() {
       setDbStats(parseMeta(db));
       setPassword("");
       openDatabase(db, currentUri);
-      router.push("/vault");
+      router.replace("/vault");
     } catch (e: any) {
       setFormError(e?.message || "Biometric authentication failed.");
     } finally {
@@ -172,7 +172,12 @@ export default function FileSetupScreen() {
       if (hasSavedVault) {
         const enabled = await isBiometricEnabled();
         setBioEnabled(enabled);
-        if (enabled && mode === "unlock" && !hasAutoTriggeredBioRef.current) {
+        if (
+          enabled &&
+          mode === "unlock" &&
+          !activeDb &&
+          !hasAutoTriggeredBioRef.current
+        ) {
           hasAutoTriggeredBioRef.current = true;
           setTimeout(() => {
             handleBiometricUnlock();
@@ -184,7 +189,7 @@ export default function FileSetupScreen() {
       }
     }
     checkBio();
-  }, [hasSavedVault, mode, handleBiometricUnlock]);
+  }, [hasSavedVault, mode, activeDb, handleBiometricUnlock]);
 
   // Combined Loading state
   const isLoading = isFsLoading || localLoading;
@@ -195,19 +200,14 @@ export default function FileSetupScreen() {
   // ────────────────────────────────────────────
 
   const handlePickAndOpen = async () => {
-    if (!password) {
-      setFormError("Please enter the master password.");
-      return;
-    }
     setFormError(null);
     setLocalLoading(true);
     try {
-      const { db, fileUri: newUri } = await pickAndOpenVault(password);
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setPassword("");
-      openDatabase(db, newUri);
-      router.push("/vault");
+      const newUri = await selectVaultFile();
+      if (newUri) {
+        setMode("unlock");
+        setPassword("");
+      }
     } catch {
       // Error handled by FilePickerContext / caught locally
     } finally {
@@ -228,7 +228,7 @@ export default function FileSetupScreen() {
       setDbStats(parseMeta(db));
       setPassword("");
       openDatabase(db, currentUri);
-      router.push("/vault");
+      router.replace("/vault");
     } catch {
       // Error handled by FilePickerContext
     } finally {
@@ -262,7 +262,7 @@ export default function FileSetupScreen() {
       setNewPassword("");
       setConfirmPassword("");
       openDatabase(db, newUri);
-      router.push("/vault");
+      router.replace("/vault");
     } catch {
       // Error handled by FilePickerContext
     } finally {
@@ -510,38 +510,6 @@ export default function FileSetupScreen() {
                       Open an existing KeePass database (.kdbx) or create a new
                       one securely in-place.
                     </Text>
-
-                    {/* Password entry for opening existing */}
-                    <View
-                      style={[styles.inputContainer, { marginTop: Spacing.sm }]}
-                    >
-                      <Ionicons
-                        name="key"
-                        size={18}
-                        color={Colors.textMuted}
-                        style={styles.inputIcon}
-                      />
-                      <TextInput
-                        style={styles.input}
-                        secureTextEntry={!showPassword}
-                        value={password}
-                        onChangeText={setPassword}
-                        placeholder="Master Password"
-                        placeholderTextColor={Colors.textDisabled}
-                        editable={!isLoading}
-                      />
-                      <Pressable
-                        onPress={() => setShowPassword(!showPassword)}
-                        style={styles.eyeButton}
-                        hitSlop={8}
-                      >
-                        <Ionicons
-                          name={showPassword ? "eye-off" : "eye"}
-                          size={20}
-                          color={Colors.textMuted}
-                        />
-                      </Pressable>
-                    </View>
 
                     <Pressable
                       onPress={handlePickAndOpen}

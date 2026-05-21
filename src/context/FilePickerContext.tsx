@@ -28,6 +28,7 @@ interface FilePickerContextType {
   pickAndOpenVault: (
     password: string
   ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
+  selectVaultFile: () => Promise<string | null>;
   createNewVault: (
     name: string,
     password: string
@@ -124,6 +125,39 @@ export function FilePickerProvider({
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to open database file.";
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  /**
+   * Let the user pick a database file and store its path, without unlocking it yet.
+   */
+  async function selectVaultFile(): Promise<string | null> {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const pickResult = await pickFile();
+      if (!pickResult || !pickResult.uri) {
+        return null;
+      }
+
+      await disableBiometric();
+
+      await SecureStore.setItemAsync(KEY_VAULT_URI, pickResult.uri);
+      await SecureStore.setItemAsync(
+        KEY_VAULT_BOOKMARK,
+        pickResult.bookmark || ""
+      );
+
+      setFileUri(pickResult.uri);
+      setBookmark(pickResult.bookmark);
+      setHasSavedVault(true);
+      return pickResult.uri;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to select file.";
       setError(msg);
       throw new Error(msg);
     } finally {
@@ -277,6 +311,7 @@ export function FilePickerProvider({
         error,
         hasSavedVault,
         pickAndOpenVault,
+        selectVaultFile,
         createNewVault,
         saveVault,
         loadVault,

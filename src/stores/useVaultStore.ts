@@ -81,6 +81,7 @@ interface VaultStoreState {
   ) => VaultEntry | null;
   updateEntry: (uuid: string, data: Partial<VaultEntry>) => VaultEntry | null;
   deleteEntry: (uuid: string) => boolean;
+  restoreEntry: (uuid: string) => boolean;
 
   // Group CRUD
   createGroup: (parentGroupUuid: string, name: string) => VaultGroup | null;
@@ -447,8 +448,67 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     if (isAlreadyInBin) {
       db.move(found.entry, null);
     } else {
+      // Store the original parent group UUID in a custom field before removing
+      found.entry.fields.set("PreviousParentGroupUuid", found.parent.uuid.id);
       db.remove(found.entry);
     }
+
+    // Re-parse
+    const { meta, rootGroup } = parseDatabase(db);
+    set({
+      meta,
+      rootGroup,
+      entryIndex: buildEntryIndex(rootGroup),
+      groupIndex: buildGroupIndex(rootGroup),
+      isDirty: true,
+    });
+
+    return true;
+  },
+
+  restoreEntry: (uuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, uuid);
+    if (!found) return false;
+
+    const recycleBinUuid = db.meta.recycleBinUuid;
+
+    // Find the previous parent group UUID from the entry's custom fields
+    const rawVal = found.entry.fields.get("PreviousParentGroupUuid");
+    let prevParentUuid: string | undefined;
+    if (rawVal) {
+      if (typeof rawVal === "string") {
+        prevParentUuid = rawVal;
+      } else if (typeof rawVal === "object" && "getText" in rawVal) {
+        prevParentUuid = (rawVal as { getText(): string }).getText();
+      } else {
+        prevParentUuid = String(rawVal);
+      }
+    }
+
+    let targetGroup: kdbxweb.KdbxGroup | null = null;
+    if (prevParentUuid) {
+      const g = findKdbxGroup(root, prevParentUuid);
+      // Ensure the group exists and is NOT currently in the recycle bin
+      if (g && !isInRecycleBin(g, recycleBinUuid)) {
+        targetGroup = g;
+      }
+    }
+
+    // If no safe target group was resolved, restore to the root group
+    if (!targetGroup) {
+      targetGroup = root;
+    }
+
+    // Move the entry back
+    db.move(found.entry, targetGroup);
+
+    // Remove the custom field helper
+    found.entry.fields.delete("PreviousParentGroupUuid");
 
     // Re-parse
     const { meta, rootGroup } = parseDatabase(db);
