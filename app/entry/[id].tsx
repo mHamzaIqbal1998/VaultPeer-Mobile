@@ -124,7 +124,8 @@ export default function EntryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
-  const { getEntry, deleteEntry, logAccess } = useVaultStore();
+  const { getEntry, deleteEntry, logAccess, isGroupInRecycleBin } =
+    useVaultStore();
   const { copyToClipboard } = useClipboard();
 
   const entry = getEntry(id ?? "");
@@ -152,23 +153,26 @@ export default function EntryDetailScreen() {
 
   const handleDelete = useCallback(() => {
     if (!entry) return;
-    Alert.alert(
-      "Delete Entry",
-      `Are you sure you want to delete "${entry.title}"? This will move it to the recycle bin.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            deleteEntry(entry.uuid);
-            logAccess(entry.uuid, entry.title, "deleted");
-            router.back();
-          },
+    const inRecycleBin = isGroupInRecycleBin(entry.parentGroupUuid);
+    const title = inRecycleBin ? "Permanently Delete Entry" : "Delete Entry";
+    const message = inRecycleBin
+      ? `Are you sure you want to permanently delete "${entry.title}"? This action cannot be undone.`
+      : `Are you sure you want to delete "${entry.title}"? This will move it to the recycle bin.`;
+    const deleteBtnText = inRecycleBin ? "Delete Permanently" : "Delete";
+
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: deleteBtnText,
+        style: "destructive",
+        onPress: () => {
+          deleteEntry(entry.uuid);
+          logAccess(entry.uuid, entry.title, "deleted");
+          router.back();
         },
-      ]
-    );
-  }, [entry, deleteEntry, logAccess, router]);
+      },
+    ]);
+  }, [entry, deleteEntry, logAccess, router, isGroupInRecycleBin]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;

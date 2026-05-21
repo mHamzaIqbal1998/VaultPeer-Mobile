@@ -33,6 +33,7 @@ import {
   TouchTarget,
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useFilePicker } from "@/src/context/FilePickerContext";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
@@ -121,27 +122,31 @@ function EntryRow({
 
 export default function VaultBrowserScreen() {
   const router = useRouter();
+  const { saveVault } = useFilePicker();
 
-  const {
-    rootGroup,
-    activeGroupUuid,
-    breadcrumbs,
-    entryIndex,
-    groupIndex,
-    navigateToGroup,
-    navigateBack,
-    navigateToRoot,
-    getActiveGroup,
-    createGroup,
-    isDirty,
-  } = useVaultStore();
+  const rootGroup = useVaultStore((state) => state.rootGroup);
+  const activeGroupUuid = useVaultStore((state) => state.activeGroupUuid);
+  const breadcrumbs = useVaultStore((state) => state.breadcrumbs);
+  const entryIndex = useVaultStore((state) => state.entryIndex);
+  const groupIndex = useVaultStore((state) => state.groupIndex);
+  const isDirty = useVaultStore((state) => state.isDirty);
+  const db = useVaultStore((state) => state._db);
+  const markClean = useVaultStore((state) => state.markClean);
+
+  const navigateToGroup = useVaultStore((state) => state.navigateToGroup);
+  const navigateBack = useVaultStore((state) => state.navigateBack);
+  const navigateToRoot = useVaultStore((state) => state.navigateToRoot);
+  const createGroup = useVaultStore((state) => state.createGroup);
+
+  const activeGroup = useVaultStore((state) => {
+    if (!state.activeGroupUuid || !state.groupIndex) return null;
+    return state.groupIndex.get(state.activeGroupUuid) ?? null;
+  });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [showNewGroupInput, setShowNewGroupInput] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
-
-  const activeGroup = getActiveGroup();
   const isAtRoot = breadcrumbs.length === 0;
 
   // Search results
@@ -198,6 +203,20 @@ export default function VaultBrowserScreen() {
       params: { groupId: activeGroupUuid },
     } as any);
   }, [activeGroupUuid, router]);
+
+  const handleSave = useCallback(async () => {
+    if (!db) return;
+    try {
+      await saveVault(db);
+      markClean();
+      Alert.alert("Success", "Vault saved successfully.");
+    } catch (e: any) {
+      Alert.alert(
+        "Error Saving",
+        e?.message || "Failed to write database file."
+      );
+    }
+  }, [db, saveVault, markClean]);
 
   // ────── Render Helpers ──────
 
@@ -304,6 +323,25 @@ export default function VaultBrowserScreen() {
         </View>
 
         <View style={styles.headerRight}>
+          {isDirty && (
+            <Animated.View
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(200)}
+            >
+              <Pressable
+                onPress={handleSave}
+                style={styles.iconButton}
+                hitSlop={8}
+                accessibilityLabel="Save changes"
+              >
+                <Ionicons
+                  name="save-outline"
+                  size={22}
+                  color={Colors.accentMint}
+                />
+              </Pressable>
+            </Animated.View>
+          )}
           <Pressable
             onPress={() => {
               setShowSearch(!showSearch);
@@ -336,7 +374,7 @@ export default function VaultBrowserScreen() {
             <Ionicons name="home-outline" size={14} color={Colors.textMuted} />
           </Pressable>
           {breadcrumbLabels.slice(0, -1).map((crumb, i) => (
-            <React.Fragment key={crumb.uuid}>
+            <React.Fragment key={`${crumb.uuid}-${i}`}>
               <Ionicons
                 name="chevron-forward"
                 size={12}

@@ -58,8 +58,18 @@ export async function enableBiometric(password: string): Promise<boolean> {
     });
 
     return true;
-  } catch (e) {
-    console.error("[BiometricService] Error enabling biometrics:", e);
+  } catch (e: any) {
+    const message = e?.message || "";
+    const isCancel =
+      message.includes("canceled") ||
+      message.includes("cancelled") ||
+      message.includes("Cancel") ||
+      message.includes("user canceled");
+    if (isCancel) {
+      console.log("[BiometricService] User cancelled biometric prompt.");
+    } else {
+      console.error("[BiometricService] Error enabling biometrics:", e);
+    }
     return false;
   }
 }
@@ -89,8 +99,18 @@ export async function getStoredPassword(): Promise<string | null> {
       requireAuthentication: true,
       authenticationPrompt: "Scan to decrypt your vault",
     });
-  } catch (e) {
-    console.error("[BiometricService] Error retrieving stored password:", e);
+  } catch (e: any) {
+    const message = e?.message || "";
+    const isCancel =
+      message.includes("canceled") ||
+      message.includes("cancelled") ||
+      message.includes("Cancel") ||
+      message.includes("user canceled");
+    if (isCancel) {
+      console.log("[BiometricService] User cancelled biometric unlock.");
+    } else {
+      console.error("[BiometricService] Error retrieving stored password:", e);
+    }
     return null;
   }
 }

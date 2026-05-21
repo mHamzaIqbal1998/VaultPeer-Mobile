@@ -86,6 +86,7 @@ interface VaultStoreState {
   createGroup: (parentGroupUuid: string, name: string) => VaultGroup | null;
   renameGroup: (uuid: string, name: string) => boolean;
   deleteGroup: (uuid: string) => boolean;
+  isGroupInRecycleBin: (groupUuid: string) => boolean;
 
   // History
   logAccess: (
@@ -160,6 +161,21 @@ function findKdbxEntry(
     if (found) return found;
   }
   return null;
+}
+
+function isInRecycleBin(
+  group: kdbxweb.KdbxGroup | undefined,
+  recycleBinUuid: kdbxweb.KdbxUuid | undefined
+): boolean {
+  if (!group || !recycleBinUuid) return false;
+  let current: kdbxweb.KdbxGroup | undefined = group;
+  while (current) {
+    if (current.uuid?.id === recycleBinUuid.id) {
+      return true;
+    }
+    current = current.parentGroup;
+  }
+  return false;
 }
 
 // ────────────────────────────────────────────
@@ -426,8 +442,13 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const found = findKdbxEntry(root, uuid);
     if (!found) return false;
 
-    // Move to recycle bin (or delete permanently if no bin)
-    db.remove(found.entry);
+    const isAlreadyInBin = isInRecycleBin(found.parent, db.meta.recycleBinUuid);
+
+    if (isAlreadyInBin) {
+      db.move(found.entry, null);
+    } else {
+      db.remove(found.entry);
+    }
 
     // Re-parse
     const { meta, rootGroup } = parseDatabase(db);
@@ -508,7 +529,16 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const group = findKdbxGroup(root, uuid);
     if (!group) return false;
 
-    db.remove(group);
+    const isAlreadyInBin = isInRecycleBin(
+      group.parentGroup,
+      db.meta.recycleBinUuid
+    );
+
+    if (isAlreadyInBin) {
+      db.move(group, null);
+    } else {
+      db.remove(group);
+    }
 
     // Re-parse
     const { meta, rootGroup } = parseDatabase(db);
@@ -530,6 +560,23 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     });
 
     return true;
+  },
+
+  isGroupInRecycleBin: (groupUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db || !db.meta.recycleBinUuid) return false;
+    const recycleBinId = db.meta.recycleBinUuid.id;
+
+    let currentUuid: string | null = groupUuid;
+    while (currentUuid) {
+      if (currentUuid === recycleBinId) {
+        return true;
+      }
+      const group = state.groupIndex.get(currentUuid);
+      currentUuid = group?.parentGroupUuid ?? null;
+    }
+    return false;
   },
 
   // ────── History ──────
