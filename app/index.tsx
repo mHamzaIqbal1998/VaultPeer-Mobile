@@ -47,6 +47,7 @@ import { useFilePicker } from "@/src/context/FilePickerContext";
 import { parseMeta } from "@/src/services/crypto";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import type { VaultMeta } from "@/src/types/kdbx";
+import { CyberCard } from "@/src/components/CyberCard";
 
 // ────────────────────────────────────────────
 // Helper: Parse File Name from URI
@@ -272,362 +273,368 @@ export default function FileSetupScreen() {
 
           {/* Active Database / Unlocked Stats View */}
           {activeDb && dbStats ? (
-            <Animated.View
-              entering={FadeInDown.duration(400)}
-              style={styles.card}
-            >
-              <View style={styles.cardHeader}>
-                <Ionicons
-                  name="lock-open"
-                  size={22}
-                  color={Colors.accentMint}
-                />
-                <Text style={styles.cardTitle}>Vault Decrypted</Text>
-              </View>
-
-              <View style={styles.statsRow}>
-                <Text style={styles.statsLabel}>Vault Name</Text>
-                <Text style={styles.statsValue}>{dbStats.name}</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.statsRow}>
-                <Text style={styles.statsLabel}>Groups</Text>
-                <Text style={styles.statsValue}>{dbStats.groupCount}</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.statsRow}>
-                <Text style={styles.statsLabel}>Entries</Text>
-                <Text style={styles.statsValue}>{dbStats.entryCount}</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.statsRow}>
-                <Text style={styles.statsLabel}>Encryption / KDF</Text>
-                <Text style={styles.statsValue}>{dbStats.kdfName}</Text>
-              </View>
-
-              <Pressable
-                onPress={handleLockVault}
-                style={({ pressed }) => [
-                  styles.button,
-                  pressed && styles.buttonPressed,
-                  styles.lockButton,
-                ]}
+            <Animated.View entering={FadeInDown.duration(400)}>
+              <CyberCard
+                style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
               >
-                <Ionicons
-                  name="lock-closed"
-                  size={16}
-                  color={Colors.backgroundPrimary}
-                  style={styles.buttonIcon}
-                />
-                <Text style={styles.buttonText}>Lock Vault</Text>
-              </Pressable>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="lock-open"
+                    size={22}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Vault Decrypted</Text>
+                </View>
+
+                <View style={styles.statsRow}>
+                  <Text style={styles.statsLabel}>Vault Name</Text>
+                  <Text style={styles.statsValue}>{dbStats.name}</Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.statsRow}>
+                  <Text style={styles.statsLabel}>Groups</Text>
+                  <Text style={styles.statsValue}>{dbStats.groupCount}</Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.statsRow}>
+                  <Text style={styles.statsLabel}>Entries</Text>
+                  <Text style={styles.statsValue}>{dbStats.entryCount}</Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.statsRow}>
+                  <Text style={styles.statsLabel}>Encryption / KDF</Text>
+                  <Text style={styles.statsValue}>{dbStats.kdfName}</Text>
+                </View>
+
+                <Pressable
+                  onPress={handleLockVault}
+                  style={({ pressed }) => [
+                    styles.button,
+                    pressed && styles.buttonPressed,
+                    styles.lockButton,
+                  ]}
+                >
+                  <Ionicons
+                    name="lock-closed"
+                    size={16}
+                    color={Colors.backgroundPrimary}
+                    style={styles.buttonIcon}
+                  />
+                  <Text style={styles.buttonText}>Lock Vault</Text>
+                </Pressable>
+              </CyberCard>
             </Animated.View>
           ) : (
             /* Locked / Entry Flows */
             <>
               {mode === "unlock" && fileUri && (
-                <Animated.View
-                  entering={FadeInDown.duration(300)}
-                  style={styles.card}
-                >
-                  <View style={styles.cardHeader}>
-                    <Ionicons
-                      name="file-tray-full"
-                      size={22}
-                      color={Colors.accentMint}
-                    />
-                    <Text style={styles.cardTitle}>Unlock Vault</Text>
-                  </View>
-                  <Text style={styles.filenameLabel}>
-                    File:{" "}
-                    <Text style={styles.filename}>
-                      {getFilenameFromUri(fileUri)}
-                    </Text>
-                  </Text>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons
-                      name="key"
-                      size={18}
-                      color={Colors.textMuted}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      secureTextEntry={!showPassword}
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder="Master Password"
-                      placeholderTextColor={Colors.textDisabled}
-                      editable={!isLoading}
-                    />
-                    <Pressable
-                      onPress={() => setShowPassword(!showPassword)}
-                      style={styles.eyeButton}
-                      hitSlop={8}
-                    >
-                      <Ionicons
-                        name={showPassword ? "eye-off" : "eye"}
-                        size={20}
-                        color={Colors.textMuted}
-                      />
-                    </Pressable>
-                  </View>
-
-                  <Pressable
-                    onPress={handleUnlockSaved}
-                    disabled={isLoading}
-                    style={({ pressed }) => [
-                      styles.button,
-                      pressed && styles.buttonPressed,
-                      isLoading && styles.buttonDisabled,
-                    ]}
+                <Animated.View entering={FadeInDown.duration(300)}>
+                  <CyberCard
+                    style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
                   >
-                    {isLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={Colors.backgroundPrimary}
+                    <View style={styles.cardHeader}>
+                      <Ionicons
+                        name="file-tray-full"
+                        size={22}
+                        color={Colors.accentMint}
                       />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="lock-open"
-                          size={16}
-                          color={Colors.backgroundPrimary}
-                          style={styles.buttonIcon}
-                        />
-                        <Text style={styles.buttonText}>Unlock Vault</Text>
-                      </>
-                    )}
-                  </Pressable>
+                      <Text style={styles.cardTitle}>Unlock Vault</Text>
+                    </View>
+                    <Text style={styles.filenameLabel}>
+                      File:{" "}
+                      <Text style={styles.filename}>
+                        {getFilenameFromUri(fileUri)}
+                      </Text>
+                    </Text>
 
-                  <View style={styles.rowButtons}>
+                    <View style={styles.inputContainer}>
+                      <Ionicons
+                        name="key"
+                        size={18}
+                        color={Colors.textMuted}
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        secureTextEntry={!showPassword}
+                        value={password}
+                        onChangeText={setPassword}
+                        placeholder="Master Password"
+                        placeholderTextColor={Colors.textDisabled}
+                        editable={!isLoading}
+                      />
+                      <Pressable
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={styles.eyeButton}
+                        hitSlop={8}
+                      >
+                        <Ionicons
+                          name={showPassword ? "eye-off" : "eye"}
+                          size={20}
+                          color={Colors.textMuted}
+                        />
+                      </Pressable>
+                    </View>
+
                     <Pressable
-                      onPress={handleForgetVault}
-                      style={styles.textButton}
+                      onPress={handleUnlockSaved}
+                      disabled={isLoading}
+                      style={({ pressed }) => [
+                        styles.button,
+                        pressed && styles.buttonPressed,
+                        isLoading && styles.buttonDisabled,
+                      ]}
                     >
-                      <Text style={styles.textButtonText}>Forget Vault</Text>
+                      {isLoading ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={Colors.backgroundPrimary}
+                        />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="lock-open"
+                            size={16}
+                            color={Colors.backgroundPrimary}
+                            style={styles.buttonIcon}
+                          />
+                          <Text style={styles.buttonText}>Unlock Vault</Text>
+                        </>
+                      )}
                     </Pressable>
-                    <Pressable
-                      onPress={() => setMode("select")}
-                      style={styles.textButton}
-                    >
-                      <Text style={styles.textButtonText}>Choose Another</Text>
-                    </Pressable>
-                  </View>
+
+                    <View style={styles.rowButtons}>
+                      <Pressable
+                        onPress={handleForgetVault}
+                        style={styles.textButton}
+                      >
+                        <Text style={styles.textButtonText}>Forget Vault</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setMode("select")}
+                        style={styles.textButton}
+                      >
+                        <Text style={styles.textButtonText}>
+                          Choose Another
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </CyberCard>
                 </Animated.View>
               )}
 
               {mode === "select" && (
-                <Animated.View
-                  entering={FadeInDown.duration(300)}
-                  style={styles.card}
-                >
-                  <Text style={styles.infoLabel}>
-                    Open an existing KeePass database (.kdbx) or create a new
-                    one securely in-place.
-                  </Text>
-
-                  {/* Password entry for opening existing */}
-                  <View
-                    style={[styles.inputContainer, { marginTop: Spacing.sm }]}
+                <Animated.View entering={FadeInDown.duration(300)}>
+                  <CyberCard
+                    style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
                   >
-                    <Ionicons
-                      name="key"
-                      size={18}
-                      color={Colors.textMuted}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      secureTextEntry={!showPassword}
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder="Master Password"
-                      placeholderTextColor={Colors.textDisabled}
-                      editable={!isLoading}
-                    />
-                    <Pressable
-                      onPress={() => setShowPassword(!showPassword)}
-                      style={styles.eyeButton}
-                      hitSlop={8}
+                    <Text style={styles.infoLabel}>
+                      Open an existing KeePass database (.kdbx) or create a new
+                      one securely in-place.
+                    </Text>
+
+                    {/* Password entry for opening existing */}
+                    <View
+                      style={[styles.inputContainer, { marginTop: Spacing.sm }]}
                     >
                       <Ionicons
-                        name={showPassword ? "eye-off" : "eye"}
-                        size={20}
+                        name="key"
+                        size={18}
                         color={Colors.textMuted}
+                        style={styles.inputIcon}
                       />
-                    </Pressable>
-                  </View>
-
-                  <Pressable
-                    onPress={handlePickAndOpen}
-                    disabled={isLoading}
-                    style={({ pressed }) => [
-                      styles.button,
-                      pressed && styles.buttonPressed,
-                      isLoading && styles.buttonDisabled,
-                    ]}
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={Colors.backgroundPrimary}
+                      <TextInput
+                        style={styles.input}
+                        secureTextEntry={!showPassword}
+                        value={password}
+                        onChangeText={setPassword}
+                        placeholder="Master Password"
+                        placeholderTextColor={Colors.textDisabled}
+                        editable={!isLoading}
                       />
-                    ) : (
-                      <>
+                      <Pressable
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={styles.eyeButton}
+                        hitSlop={8}
+                      >
                         <Ionicons
-                          name="folder-open"
-                          size={16}
-                          color={Colors.backgroundPrimary}
-                          style={styles.buttonIcon}
+                          name={showPassword ? "eye-off" : "eye"}
+                          size={20}
+                          color={Colors.textMuted}
                         />
-                        <Text style={styles.buttonText}>
-                          Open Existing Vault
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
+                      </Pressable>
+                    </View>
 
-                  <Pressable
-                    onPress={() => {
-                      setMode("create");
-                      setFormError(null);
-                    }}
-                    style={({ pressed }) => [
-                      styles.buttonSecondary,
-                      pressed && styles.buttonSecondaryPressed,
-                    ]}
-                  >
-                    <Ionicons
-                      name="add-circle"
-                      size={16}
-                      color={Colors.accentMint}
-                      style={styles.buttonIcon}
-                    />
-                    <Text style={styles.buttonSecondaryText}>
-                      Create New Vault
-                    </Text>
-                  </Pressable>
+                    <Pressable
+                      onPress={handlePickAndOpen}
+                      disabled={isLoading}
+                      style={({ pressed }) => [
+                        styles.button,
+                        pressed && styles.buttonPressed,
+                        isLoading && styles.buttonDisabled,
+                      ]}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={Colors.backgroundPrimary}
+                        />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="folder-open"
+                            size={16}
+                            color={Colors.backgroundPrimary}
+                            style={styles.buttonIcon}
+                          />
+                          <Text style={styles.buttonText}>
+                            Open Existing Vault
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        setMode("create");
+                        setFormError(null);
+                      }}
+                      style={({ pressed }) => [
+                        styles.buttonSecondary,
+                        pressed && styles.buttonSecondaryPressed,
+                      ]}
+                    >
+                      <Ionicons
+                        name="add-circle"
+                        size={16}
+                        color={Colors.accentMint}
+                        style={styles.buttonIcon}
+                      />
+                      <Text style={styles.buttonSecondaryText}>
+                        Create New Vault
+                      </Text>
+                    </Pressable>
+                  </CyberCard>
                 </Animated.View>
               )}
 
               {mode === "create" && (
-                <Animated.View
-                  entering={FadeInDown.duration(300)}
-                  style={styles.card}
-                >
-                  <View style={styles.cardHeader}>
-                    <Ionicons
-                      name="add-circle"
-                      size={22}
-                      color={Colors.accentMint}
-                    />
-                    <Text style={styles.cardTitle}>Create KeePass Vault</Text>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons
-                      name="document-text"
-                      size={18}
-                      color={Colors.textMuted}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      value={newVaultName}
-                      onChangeText={setNewVaultName}
-                      placeholder="Database Name"
-                      placeholderTextColor={Colors.textDisabled}
-                      editable={!isLoading}
-                    />
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons
-                      name="key"
-                      size={18}
-                      color={Colors.textMuted}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      secureTextEntry={!showNewPassword}
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      placeholder="Master Password"
-                      placeholderTextColor={Colors.textDisabled}
-                      editable={!isLoading}
-                    />
-                    <Pressable
-                      onPress={() => setShowNewPassword(!showNewPassword)}
-                      style={styles.eyeButton}
-                      hitSlop={8}
-                    >
+                <Animated.View entering={FadeInDown.duration(300)}>
+                  <CyberCard
+                    style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
+                  >
+                    <View style={styles.cardHeader}>
                       <Ionicons
-                        name={showNewPassword ? "eye-off" : "eye"}
-                        size={20}
+                        name="add-circle"
+                        size={22}
+                        color={Colors.accentMint}
+                      />
+                      <Text style={styles.cardTitle}>Create KeePass Vault</Text>
+                    </View>
+
+                    <View style={styles.inputContainer}>
+                      <Ionicons
+                        name="document-text"
+                        size={18}
                         color={Colors.textMuted}
+                        style={styles.inputIcon}
                       />
-                    </Pressable>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color={Colors.textMuted}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      secureTextEntry={!showNewPassword}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      placeholder="Confirm Master Password"
-                      placeholderTextColor={Colors.textDisabled}
-                      editable={!isLoading}
-                    />
-                  </View>
-
-                  <Pressable
-                    onPress={handleCreateVault}
-                    disabled={isLoading}
-                    style={({ pressed }) => [
-                      styles.button,
-                      pressed && styles.buttonPressed,
-                      isLoading && styles.buttonDisabled,
-                    ]}
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={Colors.backgroundPrimary}
+                      <TextInput
+                        style={styles.input}
+                        value={newVaultName}
+                        onChangeText={setNewVaultName}
+                        placeholder="Database Name"
+                        placeholderTextColor={Colors.textDisabled}
+                        editable={!isLoading}
                       />
-                    ) : (
-                      <>
+                    </View>
+
+                    <View style={styles.inputContainer}>
+                      <Ionicons
+                        name="key"
+                        size={18}
+                        color={Colors.textMuted}
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        secureTextEntry={!showNewPassword}
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        placeholder="Master Password"
+                        placeholderTextColor={Colors.textDisabled}
+                        editable={!isLoading}
+                      />
+                      <Pressable
+                        onPress={() => setShowNewPassword(!showNewPassword)}
+                        style={styles.eyeButton}
+                        hitSlop={8}
+                      >
                         <Ionicons
-                          name="save"
-                          size={16}
-                          color={Colors.backgroundPrimary}
-                          style={styles.buttonIcon}
+                          name={showNewPassword ? "eye-off" : "eye"}
+                          size={20}
+                          color={Colors.textMuted}
                         />
-                        <Text style={styles.buttonText}>
-                          Generate & Export Vault
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
+                      </Pressable>
+                    </View>
 
-                  <Pressable
-                    onPress={() => {
-                      setMode("select");
-                      setFormError(null);
-                    }}
-                    style={styles.textButton}
-                  >
-                    <Text style={styles.textButtonText}>Cancel</Text>
-                  </Pressable>
+                    <View style={styles.inputContainer}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color={Colors.textMuted}
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        secureTextEntry={!showNewPassword}
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        placeholder="Confirm Master Password"
+                        placeholderTextColor={Colors.textDisabled}
+                        editable={!isLoading}
+                      />
+                    </View>
+
+                    <Pressable
+                      onPress={handleCreateVault}
+                      disabled={isLoading}
+                      style={({ pressed }) => [
+                        styles.button,
+                        pressed && styles.buttonPressed,
+                        isLoading && styles.buttonDisabled,
+                      ]}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={Colors.backgroundPrimary}
+                        />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="save"
+                            size={16}
+                            color={Colors.backgroundPrimary}
+                            style={styles.buttonIcon}
+                          />
+                          <Text style={styles.buttonText}>
+                            Generate & Export Vault
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        setMode("select");
+                        setFormError(null);
+                      }}
+                      style={styles.textButton}
+                    >
+                      <Text style={styles.textButtonText}>Cancel</Text>
+                    </Pressable>
+                  </CyberCard>
                 </Animated.View>
               )}
             </>

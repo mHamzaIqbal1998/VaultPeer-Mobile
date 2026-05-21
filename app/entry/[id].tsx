@@ -36,6 +36,7 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
+import { CyberCard } from "@/src/components/CyberCard";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -247,27 +248,32 @@ export default function EntryDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Title Card ── */}
-        <Animated.View
-          entering={FadeInDown.duration(300)}
-          style={styles.titleCard}
-        >
-          <View style={styles.titleIconContainer}>
-            <Ionicons name={iconName} size={28} color={Colors.accentMint} />
-          </View>
-          <Text style={styles.entryTitle}>{entry.title || "Untitled"}</Text>
-          {entry.tags.length > 0 && (
-            <View style={styles.tagsRow}>
-              {entry.tags.map((tag) => (
-                <View key={tag} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                </View>
-              ))}
+        <Animated.View entering={FadeInDown.duration(300)}>
+          <CyberCard
+            style={{
+              alignItems: "center",
+              padding: Spacing.xxl,
+              marginBottom: Spacing.lg,
+            }}
+          >
+            <View style={styles.titleIconContainer}>
+              <Ionicons name={iconName} size={28} color={Colors.accentMint} />
             </View>
-          )}
+            <Text style={styles.entryTitle}>{entry.title || "Untitled"}</Text>
+            {entry.tags.length > 0 && (
+              <View style={styles.tagsRow}>
+                {entry.tags.map((tag) => (
+                  <View key={tag} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </CyberCard>
         </Animated.View>
 
         {/* ── Core Fields ── */}
-        <View style={styles.fieldsCard}>
+        <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
           <FieldRow
             label="Username"
             value={entry.username}
@@ -294,11 +300,11 @@ export default function EntryDetailScreen() {
             iconName="document-text-outline"
             onCopy={() => handleCopy(entry.notes, "Notes")}
           />
-        </View>
+        </CyberCard>
 
         {/* ── Custom Fields ── */}
         {Object.keys(entry.fields).length > 0 && (
-          <View style={styles.fieldsCard}>
+          <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
             <Text style={styles.sectionTitle}>Custom Fields</Text>
             {Object.entries(entry.fields).map(([key, value]) => (
               <FieldRow
@@ -309,11 +315,11 @@ export default function EntryDetailScreen() {
                 onCopy={() => handleCopy(value, key)}
               />
             ))}
-          </View>
+          </CyberCard>
         )}
 
         {/* ── Metadata ── */}
-        <View style={styles.metaCard}>
+        <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
           <Text style={styles.sectionTitle}>Metadata</Text>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Created</Text>
@@ -337,7 +343,7 @@ export default function EntryDetailScreen() {
               {entry.uuid}
             </Text>
           </View>
-        </View>
+        </CyberCard>
       </ScrollView>
     </SafeAreaView>
   );

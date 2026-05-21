@@ -19,7 +19,7 @@ import {
   FlatList,
   Alert,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -381,6 +381,7 @@ export default function VaultBrowserScreen() {
       {showSearch && (
         <Animated.View
           entering={FadeInDown.duration(200)}
+          exiting={FadeOut.duration(150)}
           style={styles.searchContainer}
         >
           <Ionicons
@@ -456,6 +457,7 @@ export default function VaultBrowserScreen() {
       {showNewGroupInput && (
         <Animated.View
           entering={FadeInDown.duration(200)}
+          exiting={FadeOut.duration(150)}
           style={styles.newGroupBar}
         >
           <TextInput

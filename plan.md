@@ -67,11 +67,11 @@ Focuses on scaffolding dependencies and establishing fast native cryptography.
 
 Focuses on accessing files in-place and tracking sync directories.
 
-- [ ] Create Android Native Module to request persistent tree URI permissions (`takePersistableUriPermission`) and write to `ContentResolver`.
-- [ ] Create iOS File System helper to save/resolve Security-Scoped Bookmarks.
-- [ ] Build file state manager (`FilePickerContext`) handles file creation vs file loading.
-- [ ] Implement atomic write mechanism (saving to `.tmp` file first, then replacing original).
-- [ ] Design the File Setup Screen (initial routing to create/open `.kdbx` file).
+- [x] Create Android Native Module to request persistent tree URI permissions (`takePersistableUriPermission`) and write to `ContentResolver`.
+- [x] Create iOS File System helper to save/resolve Security-Scoped Bookmarks.
+- [x] Build file state manager (`FilePickerContext`) handles file creation vs file loading.
+- [x] Implement atomic write mechanism (saving to `.tmp` file first, then replacing original).
+- [x] Design the File Setup Screen (initial routing to create/open `.kdbx` file).
 
 ### Phase 3: Zustand Store & KeePass Database Parser
 
@@ -87,12 +87,12 @@ Integrates the memory management database structure.
 
 Applies the minimal and aesthetic visuals with touch targets.
 
-- [ ] Configure custom `Inter` and `SpaceMono` fonts in the layout loader.
-- [ ] Implement `CyberCard` components using thin glass borders (`rgba(35, 46, 42, 0.5)`) and dark background surfaces.
-- [ ] Build the Custom Bottom Tab Navigator.
-- [ ] Build the Password Generator view with strength bars and character option pills.
-- [ ] Ensure all interactive touch targets meet the `44x44px` physical target size standard with `Pressable` ripple feedbacks.
-- [ ] Add smooth micro-animations using `react-native-reanimated` for collapsible groups.
+- [x] Configure custom `Inter` and `SpaceMono` fonts in the layout loader.
+- [x] Implement `CyberCard` components using thin glass borders (`rgba(35, 46, 42, 0.5)`) and dark background surfaces.
+- [x] Build the Custom Bottom Tab Navigator.
+- [x] Build the Password Generator view with strength bars and character option pills.
+- [x] Ensure all interactive touch targets meet the `44x44px` physical target size standard with `Pressable` ripple feedbacks.
+- [x] Add smooth micro-animations using `react-native-reanimated` for collapsible groups.
 
 ### Phase 5: Security Lockout & Hardening
 

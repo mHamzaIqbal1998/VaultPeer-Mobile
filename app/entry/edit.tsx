@@ -28,6 +28,7 @@ import {
   Shadows,
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { CyberCard } from "@/src/components/CyberCard";
 
 function FormField({
   label,
@@ -203,48 +204,47 @@ export default function EntryEditScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={styles.card}
-          >
-            <FormField
-              label="Title"
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Entry title"
-              iconName="text-outline"
-            />
-            <FormField
-              label="Username"
-              value={username}
-              onChangeText={setUsername}
-              placeholder="Username or email"
-              iconName="person-outline"
-            />
-            <FormField
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              iconName="key-outline"
-              secureTextEntry
-              mono
-            />
-            <FormField
-              label="URL"
-              value={url}
-              onChangeText={setUrl}
-              placeholder="https://example.com"
-              iconName="globe-outline"
-            />
-            <FormField
-              label="Notes"
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Additional notes..."
-              iconName="document-text-outline"
-              multiline
-            />
+          <Animated.View entering={FadeInDown.duration(300)}>
+            <CyberCard style={{ padding: Spacing.xl }}>
+              <FormField
+                label="Title"
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Entry title"
+                iconName="text-outline"
+              />
+              <FormField
+                label="Username"
+                value={username}
+                onChangeText={setUsername}
+                placeholder="Username or email"
+                iconName="person-outline"
+              />
+              <FormField
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                iconName="key-outline"
+                secureTextEntry
+                mono
+              />
+              <FormField
+                label="URL"
+                value={url}
+                onChangeText={setUrl}
+                placeholder="https://example.com"
+                iconName="globe-outline"
+              />
+              <FormField
+                label="Notes"
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Additional notes..."
+                iconName="document-text-outline"
+                multiline
+              />
+            </CyberCard>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>

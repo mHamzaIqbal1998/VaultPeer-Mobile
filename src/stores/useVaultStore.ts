@@ -14,11 +14,7 @@
 
 import { create } from "zustand";
 import * as kdbxweb from "kdbxweb";
-import {
-  parseDatabase,
-  parseEntry,
-  parseGroup,
-} from "../services/crypto/databaseParser";
+import { parseDatabase } from "../services/crypto/databaseParser";
 import type { VaultEntry, VaultGroup, VaultMeta } from "../types/kdbx";
 
 // ────────────────────────────────────────────
