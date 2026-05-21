@@ -15,7 +15,12 @@ export {
   createNewDatabase,
 } from "./cryptoEngine";
 
-export { parseMeta, parseDatabase } from "./databaseParser";
+export {
+  parseMeta,
+  parseDatabase,
+  parseEntry,
+  parseGroup,
+} from "./databaseParser";
 
 export { nativeArgon2Hash, createKdbxArgon2Impl } from "./argon2Bridge";
 

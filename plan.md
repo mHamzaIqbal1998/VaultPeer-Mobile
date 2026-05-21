@@ -77,11 +77,11 @@ Focuses on accessing files in-place and tracking sync directories.
 
 Integrates the memory management database structure.
 
-- [ ] Write Zustand store `useVaultStore` managing active groups, entries, history logs, and file path metadata.
-- [ ] Integrate `kdbxweb` parser to convert raw binary decryption streams into React-readable state arrays.
-- [ ] Implement entry CRUD logic (Create, Read, Update, Delete) and Group folder navigation.
-- [ ] Build local search index (fuzzy search across entry title, username, URL, and notes).
-- [ ] Design Entry Detail and Entry Edit screens.
+- [x] Write Zustand store `useVaultStore` managing active groups, entries, history logs, and file path metadata.
+- [x] Integrate `kdbxweb` parser to convert raw binary decryption streams into React-readable state arrays.
+- [x] Implement entry CRUD logic (Create, Read, Update, Delete) and Group folder navigation.
+- [x] Build local search index (fuzzy search across entry title, username, URL, and notes).
+- [x] Design Entry Detail and Entry Edit screens.
 
 ### Phase 4: Modern UI & Cyber-Sage Design System
 

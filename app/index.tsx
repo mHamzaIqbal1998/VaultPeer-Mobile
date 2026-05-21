@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "expo-router";
 import {
   View,
   Text,
@@ -44,6 +45,7 @@ import {
 } from "@/src/constants/theme";
 import { useFilePicker } from "@/src/context/FilePickerContext";
 import { parseMeta } from "@/src/services/crypto";
+import { useVaultStore } from "@/src/stores/useVaultStore";
 import type { VaultMeta } from "@/src/types/kdbx";
 
 // ────────────────────────────────────────────
@@ -73,6 +75,7 @@ function getFilenameFromUri(uri: string): string {
 type ScreenMode = "select" | "unlock" | "create";
 
 export default function FileSetupScreen() {
+  const router = useRouter();
   const {
     fileUri,
     isLoading: isFsLoading,
@@ -83,6 +86,7 @@ export default function FileSetupScreen() {
     loadVault,
     clearVault,
   } = useFilePicker();
+  const { openDatabase, closeDatabase } = useVaultStore();
 
   const [mode, setMode] = useState<ScreenMode>("select");
   const [password, setPassword] = useState("");
@@ -148,6 +152,8 @@ export default function FileSetupScreen() {
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setPassword("");
+      openDatabase(db, fileUri ?? undefined);
+      router.push("/vault");
     } catch {
       // Error handled by FilePickerContext / caught locally
     } finally {
@@ -167,6 +173,8 @@ export default function FileSetupScreen() {
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setPassword("");
+      openDatabase(db, fileUri ?? undefined);
+      router.push("/vault");
     } catch {
       // Error handled by FilePickerContext
     } finally {
@@ -196,6 +204,8 @@ export default function FileSetupScreen() {
       setNewVaultName("");
       setNewPassword("");
       setConfirmPassword("");
+      openDatabase(db, fileUri ?? undefined);
+      router.push("/vault");
     } catch {
       // Error handled by FilePickerContext
     } finally {
@@ -204,6 +214,7 @@ export default function FileSetupScreen() {
   };
 
   const handleLockVault = () => {
+    closeDatabase();
     setActiveDb(null);
     setDbStats(null);
     setPassword("");
