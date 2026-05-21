@@ -154,18 +154,18 @@ export default function FileSetupScreen() {
       if (!storedPassword) {
         return; // User cancelled
       }
-      const db = await loadVault(storedPassword);
+      const { db, fileUri: currentUri } = await loadVault(storedPassword);
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setPassword("");
-      openDatabase(db, fileUri ?? undefined);
+      openDatabase(db, currentUri);
       router.push("/vault");
     } catch (e: any) {
       setFormError(e?.message || "Biometric authentication failed.");
     } finally {
       setLocalLoading(false);
     }
-  }, [loadVault, openDatabase, fileUri, router]);
+  }, [loadVault, openDatabase, router]);
 
   useEffect(() => {
     async function checkBio() {
@@ -202,11 +202,11 @@ export default function FileSetupScreen() {
     setFormError(null);
     setLocalLoading(true);
     try {
-      const db = await pickAndOpenVault(password);
+      const { db, fileUri: newUri } = await pickAndOpenVault(password);
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setPassword("");
-      openDatabase(db, fileUri ?? undefined);
+      openDatabase(db, newUri);
       router.push("/vault");
     } catch {
       // Error handled by FilePickerContext / caught locally
@@ -223,11 +223,11 @@ export default function FileSetupScreen() {
     setFormError(null);
     setLocalLoading(true);
     try {
-      const db = await loadVault(password);
+      const { db, fileUri: currentUri } = await loadVault(password);
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setPassword("");
-      openDatabase(db, fileUri ?? undefined);
+      openDatabase(db, currentUri);
       router.push("/vault");
     } catch {
       // Error handled by FilePickerContext
@@ -252,13 +252,16 @@ export default function FileSetupScreen() {
     setFormError(null);
     setLocalLoading(true);
     try {
-      const db = await createNewVault(newVaultName.trim(), newPassword);
+      const { db, fileUri: newUri } = await createNewVault(
+        newVaultName.trim(),
+        newPassword
+      );
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setNewVaultName("");
       setNewPassword("");
       setConfirmPassword("");
-      openDatabase(db, fileUri ?? undefined);
+      openDatabase(db, newUri);
       router.push("/vault");
     } catch {
       // Error handled by FilePickerContext

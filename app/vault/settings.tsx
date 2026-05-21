@@ -93,7 +93,7 @@ export default function VaultSettingsScreen() {
       return;
     }
     try {
-      const verifiedDb = await loadVault(biometricPassword);
+      const { db: verifiedDb } = await loadVault(biometricPassword);
       if (verifiedDb) {
         const success = await enableBiometric(biometricPassword);
         if (success) {

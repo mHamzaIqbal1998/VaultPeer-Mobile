@@ -13,6 +13,7 @@ import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
 } from "@/src/services/base64";
+import { disableBiometric } from "@/src/services/biometricService";
 
 // ────────────────────────────────────────────
 // Types & Interfaces
@@ -24,10 +25,17 @@ interface FilePickerContextType {
   isLoading: boolean;
   error: string | null;
   hasSavedVault: boolean;
-  pickAndOpenVault: (password: string) => Promise<kdbxweb.Kdbx>;
-  createNewVault: (name: string, password: string) => Promise<kdbxweb.Kdbx>;
+  pickAndOpenVault: (
+    password: string
+  ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
+  createNewVault: (
+    name: string,
+    password: string
+  ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
   saveVault: (db: kdbxweb.Kdbx) => Promise<boolean>;
-  loadVault: (password: string) => Promise<kdbxweb.Kdbx>;
+  loadVault: (
+    password: string
+  ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
   clearVault: () => Promise<void>;
 }
 
@@ -77,7 +85,9 @@ export function FilePickerProvider({
   /**
    * Let the user pick a file and attempt to open it with the provided password.
    */
-  async function pickAndOpenVault(password: string): Promise<kdbxweb.Kdbx> {
+  async function pickAndOpenVault(
+    password: string
+  ): Promise<{ db: kdbxweb.Kdbx; fileUri: string }> {
     setIsLoading(true);
     setError(null);
     try {
@@ -96,6 +106,9 @@ export function FilePickerProvider({
       // 4. Decrypt KDBX database
       const db = await decryptDatabase(arrayBuffer, password);
 
+      // Disable previous biometric settings since we changed files
+      await disableBiometric();
+
       // 5. If successful, persist file reference
       await SecureStore.setItemAsync(KEY_VAULT_URI, pickResult.uri);
       await SecureStore.setItemAsync(
@@ -107,7 +120,7 @@ export function FilePickerProvider({
       setBookmark(pickResult.bookmark);
       setHasSavedVault(true);
 
-      return db;
+      return { db, fileUri: pickResult.uri };
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to open database file.";
@@ -124,7 +137,7 @@ export function FilePickerProvider({
   async function createNewVault(
     name: string,
     password: string
-  ): Promise<kdbxweb.Kdbx> {
+  ): Promise<{ db: kdbxweb.Kdbx; fileUri: string }> {
     setIsLoading(true);
     setError(null);
     try {
@@ -147,7 +160,10 @@ export function FilePickerProvider({
         throw new Error("Failed to save new file.");
       }
 
-      // 5. Persist file reference
+      // Disable previous biometric settings since we changed files
+      await disableBiometric();
+
+      // 5. If successful, persist file reference
       await SecureStore.setItemAsync(KEY_VAULT_URI, saveResult.uri);
       await SecureStore.setItemAsync(
         KEY_VAULT_BOOKMARK,
@@ -158,7 +174,7 @@ export function FilePickerProvider({
       setBookmark(saveResult.bookmark);
       setHasSavedVault(true);
 
-      return db;
+      return { db, fileUri: saveResult.uri };
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to create database file.";
@@ -204,7 +220,9 @@ export function FilePickerProvider({
   /**
    * Load the active vault file using a password (e.g. for unlocking after background/restart).
    */
-  async function loadVault(password: string): Promise<kdbxweb.Kdbx> {
+  async function loadVault(
+    password: string
+  ): Promise<{ db: kdbxweb.Kdbx; fileUri: string }> {
     if (!fileUri) {
       const msg = "No vault file reference stored.";
       setError(msg);
@@ -217,7 +235,7 @@ export function FilePickerProvider({
       const base64Content = await readFile(fileUri, bookmark || "");
       const arrayBuffer = base64ToArrayBuffer(base64Content);
       const db = await decryptDatabase(arrayBuffer, password);
-      return db;
+      return { db, fileUri };
     } catch (err) {
       const msg =
         err instanceof Error
@@ -237,6 +255,7 @@ export function FilePickerProvider({
     setIsLoading(true);
     setError(null);
     try {
+      await disableBiometric();
       await SecureStore.deleteItemAsync(KEY_VAULT_URI);
       await SecureStore.deleteItemAsync(KEY_VAULT_BOOKMARK);
       setFileUri(null);
