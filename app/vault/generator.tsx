@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
+import { useClipboard } from "@/src/hooks/useClipboard";
 import * as Haptics from "expo-haptics";
 import Animated, {
   useSharedValue,
@@ -100,6 +100,7 @@ export default function PasswordGeneratorScreen() {
   const [excludeLookalikes, setExcludeLookalikes] = useState(false);
   const [password, setPassword] = useState("");
   const [copied, setCopied] = useState(false);
+  const { copyToClipboard } = useClipboard();
 
   const handleGenerate = useCallback(() => {
     // Prevent generation if no character sets are selected
@@ -135,13 +136,11 @@ export default function PasswordGeneratorScreen() {
 
   const handleCopy = async () => {
     if (!password) return;
-    try {
-      await Clipboard.setStringAsync(password);
+    const success = await copyToClipboard(password, true);
+    if (success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Ignore
     }
   };
 

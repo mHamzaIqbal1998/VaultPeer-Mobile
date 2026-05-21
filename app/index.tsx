@@ -8,7 +8,7 @@
  * 4. Displaying parsed vault statistics.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "expo-router";
 import {
   View,
@@ -48,6 +48,10 @@ import { parseMeta } from "@/src/services/crypto";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import type { VaultMeta } from "@/src/types/kdbx";
 import { CyberCard } from "@/src/components/CyberCard";
+import {
+  isBiometricEnabled,
+  getStoredPassword,
+} from "@/src/services/biometricService";
 
 // ────────────────────────────────────────────
 // Helper: Parse File Name from URI
@@ -132,6 +136,55 @@ export default function FileSetupScreen() {
       setMode("select");
     }
   }, [hasSavedVault, activeDb]);
+
+  const [bioEnabled, setBioEnabled] = useState(false);
+  const hasAutoTriggeredBioRef = useRef(false);
+
+  useEffect(() => {
+    if (mode !== "unlock") {
+      hasAutoTriggeredBioRef.current = false;
+    }
+  }, [mode]);
+
+  const handleBiometricUnlock = useCallback(async () => {
+    setFormError(null);
+    setLocalLoading(true);
+    try {
+      const storedPassword = await getStoredPassword();
+      if (!storedPassword) {
+        return; // User cancelled
+      }
+      const db = await loadVault(storedPassword);
+      setActiveDb(db);
+      setDbStats(parseMeta(db));
+      setPassword("");
+      openDatabase(db, fileUri ?? undefined);
+      router.push("/vault");
+    } catch (e: any) {
+      setFormError(e?.message || "Biometric authentication failed.");
+    } finally {
+      setLocalLoading(false);
+    }
+  }, [loadVault, openDatabase, fileUri, router]);
+
+  useEffect(() => {
+    async function checkBio() {
+      if (hasSavedVault) {
+        const enabled = await isBiometricEnabled();
+        setBioEnabled(enabled);
+        if (enabled && mode === "unlock" && !hasAutoTriggeredBioRef.current) {
+          hasAutoTriggeredBioRef.current = true;
+          setTimeout(() => {
+            handleBiometricUnlock();
+          }, 400);
+        }
+      } else {
+        setBioEnabled(false);
+        hasAutoTriggeredBioRef.current = false;
+      }
+    }
+    checkBio();
+  }, [hasSavedVault, mode, handleBiometricUnlock]);
 
   // Combined Loading state
   const isLoading = isFsLoading || localLoading;
@@ -376,32 +429,54 @@ export default function FileSetupScreen() {
                       </Pressable>
                     </View>
 
-                    <Pressable
-                      onPress={handleUnlockSaved}
-                      disabled={isLoading}
-                      style={({ pressed }) => [
-                        styles.button,
-                        pressed && styles.buttonPressed,
-                        isLoading && styles.buttonDisabled,
-                      ]}
-                    >
-                      {isLoading ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={Colors.backgroundPrimary}
-                        />
-                      ) : (
-                        <>
-                          <Ionicons
-                            name="lock-open"
-                            size={16}
+                    <View style={styles.buttonRow}>
+                      <Pressable
+                        onPress={handleUnlockSaved}
+                        disabled={isLoading}
+                        style={({ pressed }) => [
+                          styles.button,
+                          { flex: 1 },
+                          pressed && styles.buttonPressed,
+                          isLoading && styles.buttonDisabled,
+                        ]}
+                      >
+                        {isLoading ? (
+                          <ActivityIndicator
+                            size="small"
                             color={Colors.backgroundPrimary}
-                            style={styles.buttonIcon}
                           />
-                          <Text style={styles.buttonText}>Unlock Vault</Text>
-                        </>
+                        ) : (
+                          <>
+                            <Ionicons
+                              name="lock-open"
+                              size={16}
+                              color={Colors.backgroundPrimary}
+                              style={styles.buttonIcon}
+                            />
+                            <Text style={styles.buttonText}>Unlock Vault</Text>
+                          </>
+                        )}
+                      </Pressable>
+
+                      {bioEnabled && (
+                        <Pressable
+                          onPress={handleBiometricUnlock}
+                          disabled={isLoading}
+                          style={({ pressed }) => [
+                            styles.bioButton,
+                            pressed && styles.bioButtonPressed,
+                            isLoading && styles.bioButtonDisabled,
+                          ]}
+                          hitSlop={8}
+                        >
+                          <Ionicons
+                            name="finger-print"
+                            size={24}
+                            color={Colors.accentMint}
+                          />
+                        </Pressable>
                       )}
-                    </Pressable>
+                    </View>
 
                     <View style={styles.rowButtons}>
                       <Pressable
@@ -910,5 +985,27 @@ const styles = StyleSheet.create({
     lineHeight: LineHeights.caption,
     color: Colors.textDisabled,
     flex: 1,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+    alignItems: "center",
+  },
+  bioButton: {
+    width: TouchTarget.min,
+    height: TouchTarget.min,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.accentMint,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.transparent,
+  },
+  bioButtonPressed: {
+    backgroundColor: Colors.accentMintDim,
+  },
+  bioButtonDisabled: {
+    opacity: 0.5,
   },
 });

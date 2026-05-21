@@ -98,8 +98,8 @@ Applies the minimal and aesthetic visuals with touch targets.
 
 Secures database states in runtime and integrates biometrics.
 
-- [ ] Setup secure keystore integration to bind the master key credentials behind OS biometrics (Face ID/Fingerprint).
-- [ ] Implement `AppState` listener which triggers a database purge and loads the `/unlock` screen if the app is backgrounded.
-- [ ] Set up user inactivity timers to auto-lock the app after 60 seconds of no touch interaction.
-- [ ] Build a clipboard safety hook (auto-clear copied passwords after 30 seconds).
-- [ ] Run comprehensive manual security audits and verify build pipelines on EAS.
+- [x] Setup secure keystore integration to bind the master key credentials behind OS biometrics (Face ID/Fingerprint).
+- [x] Implement `AppState` listener which triggers a database purge and loads the `/unlock` screen if the app is backgrounded.
+- [x] Set up user inactivity timers to auto-lock the app after 60 seconds of no touch interaction.
+- [x] Build a clipboard safety hook (auto-clear copied passwords after 30 seconds).
+- [x] Run comprehensive manual security audits and verify build pipelines on EAS.

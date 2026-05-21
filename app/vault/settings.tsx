@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,6 +24,12 @@ import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
 import { parseMeta } from "@/src/services/crypto";
 import { CyberCard } from "@/src/components/CyberCard";
+import {
+  isBiometricsSupported,
+  isBiometricEnabled,
+  enableBiometric,
+  disableBiometric,
+} from "@/src/services/biometricService";
 
 // Helper: parse clean filename
 function getFilenameFromUri(uri?: string): string {
@@ -43,8 +50,68 @@ function getFilenameFromUri(uri?: string): string {
 
 export default function VaultSettingsScreen() {
   const router = useRouter();
-  const { closeDatabase, db, fileUri, isDirty, saveDatabase } = useVaultStore();
-  const { clearVault, hasSavedVault } = useFilePicker();
+  const {
+    closeDatabase,
+    _db: db,
+    filePath: fileUri,
+    isDirty,
+    markClean,
+  } = useVaultStore();
+  const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
+
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [showBiometricPasswordInput, setShowBiometricPasswordInput] =
+    useState(false);
+  const [biometricPassword, setBiometricPassword] = useState("");
+
+  useEffect(() => {
+    async function checkBiometrics() {
+      const supported = await isBiometricsSupported();
+      const enabled = await isBiometricEnabled();
+      setBiometricSupported(supported);
+      setBiometricEnabled(enabled);
+    }
+    checkBiometrics();
+  }, []);
+
+  const handleToggleBiometric = useCallback(async () => {
+    if (biometricEnabled) {
+      await disableBiometric();
+      setBiometricEnabled(false);
+      setShowBiometricPasswordInput(false);
+      setBiometricPassword("");
+      Alert.alert("Success", "Biometric unlock disabled.");
+    } else {
+      setShowBiometricPasswordInput(true);
+    }
+  }, [biometricEnabled]);
+
+  const handleConfirmBiometric = useCallback(async () => {
+    if (!biometricPassword) {
+      Alert.alert("Error", "Please enter your master password.");
+      return;
+    }
+    try {
+      const verifiedDb = await loadVault(biometricPassword);
+      if (verifiedDb) {
+        const success = await enableBiometric(biometricPassword);
+        if (success) {
+          setBiometricEnabled(true);
+          setShowBiometricPasswordInput(false);
+          setBiometricPassword("");
+          Alert.alert("Success", "Biometric unlock enabled successfully.");
+        } else {
+          Alert.alert("Error", "Failed to enable biometric authentication.");
+        }
+      }
+    } catch (e: any) {
+      Alert.alert(
+        "Verification Failed",
+        e?.message || "Invalid master password."
+      );
+    }
+  }, [biometricPassword, loadVault]);
 
   const stats = useMemo(() => {
     if (!db) return null;
@@ -60,7 +127,8 @@ export default function VaultSettingsScreen() {
   const handleSave = useCallback(async () => {
     if (!db) return;
     try {
-      await saveDatabase();
+      await saveVault(db);
+      markClean();
       Alert.alert("Success", "Vault saved successfully.");
     } catch (e: any) {
       Alert.alert(
@@ -68,7 +136,7 @@ export default function VaultSettingsScreen() {
         e?.message || "Failed to write database file."
       );
     }
-  }, [db, saveDatabase]);
+  }, [db, saveVault, markClean]);
 
   const handleForget = useCallback(() => {
     Alert.alert(
@@ -162,7 +230,7 @@ export default function VaultSettingsScreen() {
                 numberOfLines={1}
                 ellipsizeMode="middle"
               >
-                {getFilenameFromUri(fileUri)}
+                {getFilenameFromUri(fileUri ?? undefined)}
               </Text>
             </View>
           </CyberCard>
@@ -197,6 +265,61 @@ export default function VaultSettingsScreen() {
               color={Colors.textMuted}
             />
           </Pressable>
+
+          {biometricSupported && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.biometricRow}>
+                <View style={styles.actionBtnTextContainer}>
+                  <Text style={styles.actionBtnText}>Biometric Unlock</Text>
+                  <Text style={styles.actionBtnSub}>
+                    {biometricEnabled
+                      ? "Use Face ID / Fingerprint to unlock"
+                      : "Enable hardware-backed biometric unlock"}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={handleToggleBiometric}
+                  style={styles.switchButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={biometricEnabled ? "toggle" : "toggle-outline"}
+                    size={38}
+                    color={
+                      biometricEnabled ? Colors.accentMint : Colors.textMuted
+                    }
+                  />
+                </Pressable>
+              </View>
+
+              {showBiometricPasswordInput && (
+                <View style={styles.confirmPasswordContainer}>
+                  <Text style={styles.confirmLabel}>
+                    Confirm Master Password
+                  </Text>
+                  <View style={styles.confirmInputRow}>
+                    <TextInput
+                      style={styles.confirmInput}
+                      secureTextEntry
+                      value={biometricPassword}
+                      onChangeText={setBiometricPassword}
+                      placeholder="Master Password"
+                      placeholderTextColor={Colors.textDisabled}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Pressable
+                      onPress={handleConfirmBiometric}
+                      style={styles.confirmBtn}
+                    >
+                      <Text style={styles.confirmBtnText}>Verify</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+            </>
+          )}
 
           {hasSavedVault && (
             <>
@@ -394,5 +517,63 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body.regular,
     fontSize: FontSizes.micro,
     color: Colors.textDisabled,
+  },
+  biometricRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.xs,
+  },
+  switchButton: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.xs,
+    minHeight: TouchTarget.min,
+    minWidth: TouchTarget.min,
+  },
+  confirmPasswordContainer: {
+    marginTop: Spacing.sm,
+    padding: Spacing.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  confirmLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  confirmInputRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    alignItems: "center",
+  },
+  confirmInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: Colors.backgroundPrimary,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.sm,
+    color: Colors.textPrimary,
+    paddingHorizontal: Spacing.sm,
+    fontFamily: Fonts.mono.regular,
+  },
+  confirmBtn: {
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.sm,
+    paddingHorizontal: Spacing.md,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  confirmBtnText: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.backgroundPrimary,
   },
 });

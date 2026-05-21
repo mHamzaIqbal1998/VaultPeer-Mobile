@@ -22,7 +22,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Clipboard from "expo-clipboard";
+import { useClipboard } from "@/src/hooks/useClipboard";
 import * as Haptics from "expo-haptics";
 import {
   Colors,
@@ -125,6 +125,7 @@ export default function EntryDetailScreen() {
   const router = useRouter();
 
   const { getEntry, deleteEntry, logAccess } = useVaultStore();
+  const { copyToClipboard } = useClipboard();
 
   const entry = getEntry(id ?? "");
 
@@ -137,17 +138,16 @@ export default function EntryDetailScreen() {
 
   const handleCopy = useCallback(
     async (text: string, fieldName: string) => {
-      try {
-        await Clipboard.setStringAsync(text);
+      const isSensitive = fieldName.toLowerCase() === "password";
+      const success = await copyToClipboard(text, isSensitive);
+      if (success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (entry) {
           logAccess(entry.uuid, entry.title, "copied");
         }
-      } catch {
-        // Silent fail — clipboard might not be available in all environments
       }
     },
-    [entry, logAccess]
+    [entry, logAccess, copyToClipboard]
   );
 
   const handleDelete = useCallback(() => {

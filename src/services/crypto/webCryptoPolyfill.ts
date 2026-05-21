@@ -69,7 +69,7 @@ const digest = async (
     ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
     : new Uint8Array(data);
 
-  return Crypto.digest(expoAlgo, typedArray);
+  return Crypto.digest(expoAlgo, typedArray as any);
 };
 
 const importKey = async (

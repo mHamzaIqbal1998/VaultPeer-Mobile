@@ -1,8 +1,22 @@
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
+import { useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors, Fonts } from "@/src/constants/theme";
+import { useVaultStore } from "@/src/stores/useVaultStore";
 
 export default function VaultLayout() {
+  const { _db: db } = useVaultStore();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!db) {
+      router.replace("/");
+    }
+  }, [db, router]);
+
+  if (!db) {
+    return null;
+  }
   return (
     <Tabs
       screenOptions={{
