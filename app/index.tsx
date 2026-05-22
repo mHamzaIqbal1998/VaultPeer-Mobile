@@ -90,6 +90,7 @@ export default function FileSetupScreen() {
     createNewVault,
     loadVault,
     clearVault,
+    clearError,
   } = useFilePicker();
   const { openDatabase, closeDatabase } = useVaultStore();
 
@@ -145,6 +146,12 @@ export default function FileSetupScreen() {
       setMode("select");
     }
   }, [hasSavedVault, activeDb]);
+
+  // Clear file errors and form errors on screen mode transition
+  useEffect(() => {
+    setFormError(null);
+    clearError();
+  }, [mode, clearError]);
 
   const [bioEnabled, setBioEnabled] = useState(false);
   const hasAutoTriggeredBioRef = useRef(false);

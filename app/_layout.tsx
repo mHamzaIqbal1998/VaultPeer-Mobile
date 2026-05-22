@@ -9,6 +9,76 @@ import { initCryptoEngine } from "@/src/services/crypto";
 import { FilePickerProvider } from "@/src/context/FilePickerContext";
 import { AppSecurityWrapper } from "@/src/components/AppSecurityWrapper";
 
+/* eslint-disable */
+// Silence expo-keep-awake unhandled promise rejections on Android dev builds
+const isDev = typeof __DEV__ !== "undefined" && __DEV__;
+if (isDev) {
+  const customTrackingOptions = {
+    allRejections: true,
+    onUnhandled: (id: any, rejection: any) => {
+      let message = "";
+      let stack: string | undefined;
+      if (rejection instanceof Error) {
+        message = `${rejection.name}: ${rejection.message}`;
+        stack = rejection.stack;
+      } else {
+        message =
+          typeof rejection === "string" ? rejection : JSON.stringify(rejection);
+      }
+
+      if (message && message.toLowerCase().includes("keep awake")) {
+        return;
+      }
+
+      const warning = `Possible unhandled promise rejection (id: ${id}):\n${message}`;
+      try {
+        const LogBox = require("react-native").LogBox;
+        if (LogBox && typeof LogBox.addLog === "function") {
+          LogBox.addLog({
+            level: "warn",
+            message: {
+              content: warning,
+              substitutions: [],
+            },
+            componentStack: [],
+            componentStackType: null,
+            stack,
+            category: "possible_unhandled_promise_rejection",
+          });
+        } else {
+          console.warn(warning);
+        }
+      } catch {
+        console.warn(warning);
+      }
+    },
+    onHandled: (id: any) => {
+      const warning =
+        `Promise rejection handled (id: ${id})\n` +
+        "This means you can ignore any previous messages of the form " +
+        `"Possible unhandled promise rejection (id: ${id}):"`;
+      console.warn(warning);
+    },
+  };
+
+  if (
+    typeof HermesInternal !== "undefined" &&
+    HermesInternal &&
+    (HermesInternal as any).enablePromiseRejectionTracker
+  ) {
+    (HermesInternal as any).enablePromiseRejectionTracker(
+      customTrackingOptions
+    );
+  } else {
+    try {
+      require("promise/setimmediate/rejection-tracking").enable(
+        customTrackingOptions
+      );
+    } catch {}
+  }
+}
+/* eslint-enable */
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 

@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
 import * as SecureStore from "expo-secure-store";
 import * as kdbxweb from "kdbxweb";
 import {
@@ -42,6 +48,7 @@ interface FilePickerContextType {
     password: string
   ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
   clearVault: () => Promise<void>;
+  clearError: () => void;
 }
 
 // Keys for SecureStore persistence
@@ -55,6 +62,21 @@ const KEY_VAULT_BOOKMARK = "vault_file_bookmark";
 const FilePickerContext = createContext<FilePickerContextType | undefined>(
   undefined
 );
+
+function validateKdbxSignature(arrayBuffer: ArrayBuffer) {
+  if (arrayBuffer.byteLength < 8) {
+    throw new Error("Invalid vault file: File is too small.");
+  }
+  const view = new DataView(arrayBuffer);
+  const magic = view.getUint32(0, true); // Little endian
+  const magic2 = view.getUint32(4, true); // Little endian
+  if (
+    magic !== 0x9aa2d903 ||
+    (magic2 !== 0xb54bfb67 && magic2 !== 0xb54bfb65)
+  ) {
+    throw new Error("Invalid vault file: Not a KeePass database.");
+  }
+}
 
 export function FilePickerProvider({
   children,
@@ -108,7 +130,10 @@ export function FilePickerProvider({
       // 3. Convert Base64 to ArrayBuffer
       const arrayBuffer = base64ToArrayBuffer(base64Content);
 
-      // 4. Decrypt KDBX database
+      // 4. Validate KeePass signature
+      validateKdbxSignature(arrayBuffer);
+
+      // 5. Decrypt KDBX database
       const db = await decryptDatabase(arrayBuffer, password);
 
       // Disable previous biometric settings since we changed files
@@ -147,6 +172,11 @@ export function FilePickerProvider({
       if (!pickResult || !pickResult.uri) {
         return null;
       }
+
+      // Read file and validate it's a valid KDBX file before storing reference
+      const base64Content = await readFile(pickResult.uri, pickResult.bookmark);
+      const arrayBuffer = base64ToArrayBuffer(base64Content);
+      validateKdbxSignature(arrayBuffer);
 
       await disableBiometric();
 
@@ -276,6 +306,10 @@ export function FilePickerProvider({
     try {
       const base64Content = await readFile(fileUri, bookmark || "");
       const arrayBuffer = base64ToArrayBuffer(base64Content);
+
+      // Validate KeePass signature
+      validateKdbxSignature(arrayBuffer);
+
       const db = await decryptDatabase(arrayBuffer, password);
       return { db, fileUri };
     } catch (err) {
@@ -310,6 +344,10 @@ export function FilePickerProvider({
     }
   }
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   return (
     <FilePickerContext.Provider
       value={{
@@ -324,6 +362,7 @@ export function FilePickerProvider({
         saveVault,
         loadVault,
         clearVault,
+        clearError,
       }}
     >
       {children}
