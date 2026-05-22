@@ -77,21 +77,6 @@ function createMockGroup(overrides: MockGroupOverrides = {}): {
   };
 }
 
-function createMockDatabase(rootGroup: ReturnType<typeof createMockGroup>) {
-  return {
-    getDefaultGroup: () => rootGroup,
-    meta: {
-      name: "Test Vault",
-      desc: "A test vault for unit testing",
-      settingsChanged: new Date("2024-06-15T12:00:00Z"),
-    },
-    header: {
-      version: 4,
-      kdfParameters: new Map([["$UUID", "ef636ddf-fake-uuid"]]),
-    },
-  };
-}
-
 // ────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────
@@ -193,7 +178,7 @@ describe("Database Parser", () => {
   });
 
   describe("parseDatabase", () => {
-    it("should return both meta and rootGroup", () => {
+    it("should return both meta and rootGroup, including cipher and KDF details", () => {
       const root = createMockGroup({
         entries: [
           createMockEntry({ title: "Entry 1" }),
@@ -206,14 +191,46 @@ describe("Database Parser", () => {
           }),
         ],
       });
-      const db = createMockDatabase(root);
+      const db = {
+        getDefaultGroup: () => root,
+        meta: {
+          name: "Test Vault",
+          desc: "A test vault for unit testing",
+          settingsChanged: new Date("2024-06-15T12:00:00Z"),
+        },
+        header: {
+          version: 4,
+          dataCipherUuid: "1gOKK4tvTLWlJDOaMdu1mg==", // ChaCha20 in base64
+          kdfParameters: new Map([["$UUID", "nimLGVbbR3OyPfw+xvCh5g=="]]), // Argon2id in base64
+        },
+      };
       const result = parseDatabase(db as never);
 
       expect(result.meta.name).toBe("Test Vault");
       expect(result.meta.entryCount).toBe(3);
       expect(result.meta.groupCount).toBe(1);
+      expect(result.meta.cipherName).toBe("ChaCha20");
+      expect(result.meta.kdfName).toBe("Argon2id");
       expect(result.rootGroup.entries).toHaveLength(2);
       expect(result.rootGroup.groups).toHaveLength(1);
+    });
+
+    it("should fall back to AES-256 for unknown or missing cipher UUIDs", () => {
+      const root = createMockGroup();
+      const db = {
+        getDefaultGroup: () => root,
+        meta: {
+          name: "Test Vault",
+          settingsChanged: new Date(),
+        },
+        header: {
+          version: 4,
+          kdfParameters: new Map([["$UUID", "c9d9f39a-fake-aeskdf"]]),
+        },
+      };
+      const result = parseDatabase(db as never);
+      expect(result.meta.cipherName).toBe("AES-256");
+      expect(result.meta.kdfName).toBe("AES-KDF");
     });
   });
 });

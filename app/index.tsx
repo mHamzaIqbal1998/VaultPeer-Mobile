@@ -108,6 +108,15 @@ export default function FileSetupScreen() {
   const [activeDb, setActiveDb] = useState<kdbxweb.Kdbx | null>(null);
   const [dbStats, setDbStats] = useState<VaultMeta | null>(null);
 
+  // Advanced Settings State
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selectedKdf, setSelectedKdf] = useState<
+    "Argon2id" | "Argon2d" | "AES-KDF"
+  >("Argon2id");
+  const [selectedCipher, setSelectedCipher] = useState<"AES-256" | "ChaCha20">(
+    "AES-256"
+  );
+
   // Active status/local loading
   const [localLoading, setLocalLoading] = useState(false);
 
@@ -254,13 +263,20 @@ export default function FileSetupScreen() {
     try {
       const { db, fileUri: newUri } = await createNewVault(
         newVaultName.trim(),
-        newPassword
+        newPassword,
+        {
+          kdf: selectedKdf,
+          cipher: selectedCipher,
+        }
       );
       setActiveDb(db);
       setDbStats(parseMeta(db));
       setNewVaultName("");
       setNewPassword("");
       setConfirmPassword("");
+      setShowAdvanced(false);
+      setSelectedKdf("Argon2id");
+      setSelectedCipher("AES-256");
       openDatabase(db, newUri);
       router.replace("/vault");
     } catch {
@@ -642,6 +658,97 @@ export default function FileSetupScreen() {
                       />
                     </View>
 
+                    {/* Advanced Settings Accordion */}
+                    <Pressable
+                      onPress={() => setShowAdvanced(!showAdvanced)}
+                      style={styles.advancedHeader}
+                    >
+                      <View style={styles.advancedHeaderLabelContainer}>
+                        <Ionicons
+                          name="options-outline"
+                          size={18}
+                          color={Colors.textMuted}
+                          style={styles.inputIcon}
+                        />
+                        <Text style={styles.advancedHeaderTitle}>
+                          Advanced Settings
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={showAdvanced ? "chevron-up" : "chevron-down"}
+                        size={18}
+                        color={Colors.textMuted}
+                      />
+                    </Pressable>
+
+                    {showAdvanced && (
+                      <View style={styles.advancedContent}>
+                        {/* Encryption Cipher Section */}
+                        <View style={styles.optionSection}>
+                          <Text style={styles.optionLabel}>
+                            Encryption Cipher
+                          </Text>
+                          <View style={styles.segmentedControl}>
+                            {(["AES-256", "ChaCha20"] as const).map(
+                              (cipher) => (
+                                <Pressable
+                                  key={cipher}
+                                  onPress={() => setSelectedCipher(cipher)}
+                                  style={[
+                                    styles.segmentBtn,
+                                    selectedCipher === cipher &&
+                                      styles.segmentBtnActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.segmentBtnText,
+                                      selectedCipher === cipher &&
+                                        styles.segmentBtnTextActive,
+                                    ]}
+                                  >
+                                    {cipher}
+                                  </Text>
+                                </Pressable>
+                              )
+                            )}
+                          </View>
+                        </View>
+
+                        {/* Key Derivation (KDF) Section */}
+                        <View style={styles.optionSection}>
+                          <Text style={styles.optionLabel}>
+                            Key Derivation (KDF)
+                          </Text>
+                          <View style={styles.segmentedControl}>
+                            {(["Argon2id", "Argon2d", "AES-KDF"] as const).map(
+                              (kdf) => (
+                                <Pressable
+                                  key={kdf}
+                                  onPress={() => setSelectedKdf(kdf)}
+                                  style={[
+                                    styles.segmentBtn,
+                                    selectedKdf === kdf &&
+                                      styles.segmentBtnActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.segmentBtnText,
+                                      selectedKdf === kdf &&
+                                        styles.segmentBtnTextActive,
+                                    ]}
+                                  >
+                                    {kdf}
+                                  </Text>
+                                </Pressable>
+                              )
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    )}
+
                     <Pressable
                       onPress={handleCreateVault}
                       disabled={isLoading}
@@ -675,6 +782,9 @@ export default function FileSetupScreen() {
                       onPress={() => {
                         setMode("select");
                         setFormError(null);
+                        setShowAdvanced(false);
+                        setSelectedKdf("Argon2id");
+                        setSelectedCipher("AES-256");
                       }}
                       style={styles.textButton}
                     >
@@ -978,5 +1088,65 @@ const styles = StyleSheet.create({
   },
   bioButtonDisabled: {
     opacity: 0.5,
+  },
+  advancedHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  advancedHeaderLabelContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  advancedHeaderTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textSecondary,
+  },
+  advancedContent: {
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  optionSection: {
+    gap: Spacing.xs,
+  },
+  optionLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  segmentedControl: {
+    flexDirection: "row",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    padding: 2,
+    gap: 2,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: Radii.sm,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 32,
+  },
+  segmentBtnActive: {
+    backgroundColor: Colors.accentMintDim,
+  },
+  segmentBtnText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  segmentBtnTextActive: {
+    fontFamily: Fonts.heading.semiBold,
+    color: Colors.accentMint,
   },
 });

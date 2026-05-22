@@ -8,6 +8,7 @@
  * layer never imports the crypto library directly.
  */
 
+import { KdbxUuid } from "kdbxweb";
 import type { Kdbx, KdbxEntry, KdbxGroup } from "kdbxweb";
 import type { VaultEntry, VaultGroup, VaultMeta } from "@/src/types/kdbx";
 
@@ -124,6 +125,98 @@ function countEntries(group: VaultGroup): number {
   );
 }
 
+function base64ToHex(b64: string): string {
+  try {
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const lookup = new Uint8Array(256);
+    for (let i = 0; i < chars.length; i++) {
+      lookup[chars.charCodeAt(i)] = i;
+    }
+    const bufferLength = b64.length * 0.75;
+    const len = b64.length;
+    let p = 0;
+    const bytes = new Uint8Array(bufferLength);
+    for (let i = 0; i < len; i += 4) {
+      const encoded1 = lookup[b64.charCodeAt(i)];
+      const encoded2 = lookup[b64.charCodeAt(i + 1)];
+      const encoded3 = lookup[b64.charCodeAt(i + 2)];
+      const encoded4 = lookup[b64.charCodeAt(i + 3)];
+      bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+      bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+      bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+    }
+    let hex = "";
+    for (let i = 0; i < p; i++) {
+      hex += bytes[i].toString(16).padStart(2, "0");
+    }
+    return hex.slice(0, 32);
+  } catch {
+    return "";
+  }
+}
+
+function uuidToHex(uuid: any): string {
+  if (!uuid) return "";
+  if (typeof uuid === "string") {
+    if (uuid.endsWith("==") || uuid.length === 24) {
+      const decoded = base64ToHex(uuid);
+      if (decoded) return decoded;
+    }
+    return uuid;
+  }
+  let bytes: ArrayBuffer | Uint8Array;
+  if (uuid instanceof KdbxUuid) {
+    bytes = uuid.toBytes();
+  } else if (uuid.bytes instanceof ArrayBuffer) {
+    bytes = uuid.bytes;
+  } else if (typeof uuid.toBytes === "function") {
+    bytes = uuid.toBytes();
+  } else if (uuid instanceof ArrayBuffer || uuid instanceof Uint8Array) {
+    bytes = uuid;
+  } else if (typeof uuid === "object" && uuid !== null) {
+    if (uuid.id && typeof uuid.id === "string") {
+      const idStr = uuid.id;
+      if (idStr.endsWith("==") || idStr.length === 24) {
+        const decoded = base64ToHex(idStr);
+        if (decoded) return decoded;
+      }
+      return idStr;
+    }
+    bytes = new Uint8Array(Object.values(uuid) as number[]);
+  } else {
+    return String(uuid);
+  }
+
+  const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let hex = "";
+  for (let i = 0; i < uint8.length; i++) {
+    hex += uint8[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+/**
+ * Derive a human-readable encryption cipher name from the database header.
+ */
+function getCipherName(db: Kdbx): string {
+  try {
+    const cipherUuid = (db.header as unknown as { dataCipherUuid?: unknown })
+      ?.dataCipherUuid;
+    if (!cipherUuid) return "AES-256";
+
+    const hex = uuidToHex(cipherUuid);
+    if (hex.includes("31c1f2e6") || hex === "McHy5r9xQ1C+WAUhavxa/w==")
+      return "AES-256";
+    if (hex.includes("d6038a2b") || hex === "1gOKK4tvTLWlJDOaMdu1mg==")
+      return "ChaCha20";
+
+    return "Custom Cipher";
+  } catch {
+    return "AES-256";
+  }
+}
+
 /**
  * Extract high-level metadata from an unlocked Kdbx database.
  */
@@ -136,6 +229,7 @@ export function parseMeta(db: Kdbx): VaultMeta {
     description: db.meta?.desc ?? "",
     version: (db.header as unknown as { version?: number })?.version ?? 4,
     kdfName: getKdfName(db),
+    cipherName: getCipherName(db),
     lastModified: toISOString(db.meta?.settingsChanged ?? new Date()),
     entryCount: countEntries(parsedRoot),
     groupCount: parsedRoot.groups.length,
@@ -156,7 +250,7 @@ function getKdfName(db: Kdbx): string {
     if (!uuid) return "Unknown";
 
     // Standard KeePass KDF UUIDs
-    const uuidStr = String(uuid);
+    const uuidStr = uuidToHex(uuid);
     if (uuidStr.includes("ef636ddf")) return "Argon2d";
     if (uuidStr.includes("9e298b19")) return "Argon2id";
     if (uuidStr.includes("c9d9f39a")) return "AES-KDF";

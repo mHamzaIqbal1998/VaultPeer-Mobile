@@ -54,6 +54,12 @@ A unique, minimal dark-mode-first aesthetic with a tech-organic cyber feel. Focu
 - **Alternatives Considered**: Targeted AES-KDF patching inside `kdbxweb` internals (brittle/unmaintainable), pure JS worker threads (still slow).
 - **Rationale**: Elevates key derivation (AES-KDF), database decryption (AES-CBC), and hashing (HMAC) speeds to native C++ bounds (~100–200ms) without altering any database parsing or UI code.
 
+### 5. Custom Creation Algorithms
+
+- **Decision**: Expand database creation parameters to support Custom Ciphers (AES-256 / ChaCha20) and KDFs (Argon2id / Argon2d / AES-KDF) hidden behind an accordion using segmented pill tabs.
+- **Alternatives Considered**: Native select components (clunky, styling limitations), raw string inputs (unsafe for non-technical users).
+- **Rationale**: Keeps the default creation screen clean, prevents accidental insecure inputs, and matches standard KeePassDX customization flows.
+
 ---
 
 ## 📅 Phased Implementation Plan
@@ -120,3 +126,17 @@ Optimizes symmetric ciphers and hashing to resolve slow file loading (e.g., stro
 - [x] Implement DOMException wrap handlers to align native JSI errors with standard WebCrypto signatures.
 - [x] Write Jest tests validating native encryption/decryption against standard ciphers.
 - [x] Measure file decryption benchmarks on development builds to verify sub-second file opening times.
+
+### Phase 7: Custom Database Algorithms & Meta Display
+
+Enables user selection of encryption ciphers and key derivation functions (KDF) on creation, and fixes metadata labeling in settings.
+
+- [x] Fix the KDF name display bug by converting the KDF UUID byte array to a hex string inside `databaseParser.ts` (instead of casting to `String(uuid)`).
+- [x] Extend the `VaultMeta` interface to include `cipherName: string`.
+- [x] Implement cipher identification logic in `databaseParser.ts` by checking `db.header.dataCipherUuid`.
+- [x] Update `app/vault/settings.tsx` to render two distinct rows: "Encryption Cipher" and "Key Derivation (KDF)".
+- [x] Update `createNewDatabase` in `cryptoEngine.ts` to accept optional `kdf` and `cipher` overrides and configure database headers appropriately.
+- [x] Add the "Advanced Settings" collapsible accordion inside the database creation section of `app/index.tsx`.
+- [x] Build segmented pill selection views for Cipher (AES-256, ChaCha20) and KDF (Argon2id, Argon2d, AES-KDF).
+- [x] Pass chosen selections from the UI down to the `createNewVault` context action.
+- [x] Write unit tests verifying that all KDF/Cipher configuration combinations serialize and load successfully.

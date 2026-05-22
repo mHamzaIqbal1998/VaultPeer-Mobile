@@ -31,7 +31,11 @@ interface FilePickerContextType {
   selectVaultFile: () => Promise<string | null>;
   createNewVault: (
     name: string,
-    password: string
+    password: string,
+    options?: {
+      kdf?: "Argon2id" | "Argon2d" | "AES-KDF";
+      cipher?: "AES-256" | "ChaCha20";
+    }
   ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
   saveVault: (db: kdbxweb.Kdbx) => Promise<boolean>;
   loadVault: (
@@ -170,13 +174,17 @@ export function FilePickerProvider({
    */
   async function createNewVault(
     name: string,
-    password: string
+    password: string,
+    options?: {
+      kdf?: "Argon2id" | "Argon2d" | "AES-KDF";
+      cipher?: "AES-256" | "ChaCha20";
+    }
   ): Promise<{ db: kdbxweb.Kdbx; fileUri: string }> {
     setIsLoading(true);
     setError(null);
     try {
       // 1. Instantiate a new database using crypto engine
-      const db = createNewDatabase(name, password);
+      const db = createNewDatabase(name, password, undefined, options);
 
       // 2. Serialize database
       const arrayBuffer = await db.save();

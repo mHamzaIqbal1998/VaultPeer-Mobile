@@ -206,7 +206,7 @@ const digest = async (
           : algoName === "SHA-512"
             ? "SHA-512"
             : algoName,
-        uint8Data
+        uint8Data as any
       );
     } catch (error) {
       throw wrapDOMException(error, `digest(${algoName})`, "OperationError");
@@ -252,10 +252,10 @@ const importKey = async (
       const rawKey = toUint8Array(keyData);
       return await native.webcrypto.subtle.importKey(
         "raw",
-        rawKey,
+        rawKey as any,
         algorithm,
         extractable,
-        keyUsages
+        keyUsages as any
       );
     } catch (error) {
       throw wrapDOMException(error, "importKey", "DataError");

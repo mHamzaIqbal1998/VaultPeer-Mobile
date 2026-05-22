@@ -29,6 +29,8 @@ export interface VaultMeta {
   version: number;
   /** Key derivation function identifier */
   kdfName: string;
+  /** Encryption cipher name */
+  cipherName: string;
   /** ISO-8601 timestamp of last database modification */
   lastModified: string;
   /** Number of total entries across all groups */

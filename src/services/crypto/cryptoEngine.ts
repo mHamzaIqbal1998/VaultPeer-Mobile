@@ -112,12 +112,17 @@ export async function encryptDatabase(db: kdbxweb.Kdbx): Promise<ArrayBuffer> {
  * @param name       Database name
  * @param password   Master password
  * @param keyFile    Optional key file data
+ * @param options    Optional custom algorithms overrides
  * @returns          New Kdbx database instance
  */
 export function createNewDatabase(
   name: string,
   password?: string,
-  keyFile?: ArrayBuffer
+  keyFile?: ArrayBuffer,
+  options?: {
+    kdf?: "Argon2id" | "Argon2d" | "AES-KDF";
+    cipher?: "AES-256" | "ChaCha20";
+  }
 ): kdbxweb.Kdbx {
   if (!_initialized) {
     throw new Error(
@@ -126,5 +131,45 @@ export function createNewDatabase(
   }
 
   const credentials = createCredentials(password, keyFile);
-  return kdbxweb.Kdbx.create(credentials, name);
+  const db = kdbxweb.Kdbx.create(credentials, name);
+
+  // Apply custom KDF overrides
+  if (options?.kdf) {
+    let kdfId: string;
+    switch (options.kdf) {
+      case "Argon2id":
+        kdfId = "nimLGVbbR3OyPfw+xvCh5g==";
+        break;
+      case "Argon2d":
+        kdfId = "72Nt34wpREuR96mkA+MKDA==";
+        break;
+      case "AES-KDF":
+        kdfId = "ydnzmmKKRGC/dA0IwYpP6g==";
+        break;
+      default:
+        kdfId = "nimLGVbbR3OyPfw+xvCh5g==";
+    }
+    db.setKdf(kdfId);
+  }
+
+  // Apply custom Cipher overrides
+  if (options?.cipher) {
+    let cipherId: string;
+    switch (options.cipher) {
+      case "AES-256":
+        cipherId = "McHy5r9xQ1C+WAUhavxa/w==";
+        break;
+      case "ChaCha20":
+        cipherId = "1gOKK4tvTLWlJDOaMdu1mg==";
+        break;
+      default:
+        cipherId = "McHy5r9xQ1C+WAUhavxa/w==";
+    }
+    db.header.dataCipherUuid = new kdbxweb.KdbxUuid(cipherId);
+
+    // Regenerate salts because IV length depends on the cipher
+    db.header.generateSalts();
+  }
+
+  return db;
 }

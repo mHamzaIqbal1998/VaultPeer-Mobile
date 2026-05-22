@@ -219,7 +219,12 @@ export default function VaultSettingsScreen() {
             </View>
             <View style={styles.divider} />
             <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>KDF / Encryption</Text>
+              <Text style={styles.statsLabel}>Encryption Cipher</Text>
+              <Text style={styles.statsValue}>{stats.cipherName}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.statsRow}>
+              <Text style={styles.statsLabel}>Key Derivation (KDF)</Text>
               <Text style={styles.statsValue}>{stats.kdfName}</Text>
             </View>
             <View style={styles.divider} />
