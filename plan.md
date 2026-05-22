@@ -48,6 +48,12 @@ A unique, minimal dark-mode-first aesthetic with a tech-organic cyber feel. Focu
 - **Alternatives Considered**: Simple local authentication check (verified via biometrics but password remains in RAM in plaintext, insecure).
 - **Rationale**: Ensures security is hardware-enforced and user credentials are encrypted until biometrically validated.
 
+### 4. Native SubtleCrypto Polyfill
+
+- **Decision**: Global SubtleCrypto polyfill using `react-native-quick-crypto`.
+- **Alternatives Considered**: Targeted AES-KDF patching inside `kdbxweb` internals (brittle/unmaintainable), pure JS worker threads (still slow).
+- **Rationale**: Elevates key derivation (AES-KDF), database decryption (AES-CBC), and hashing (HMAC) speeds to native C++ bounds (~100–200ms) without altering any database parsing or UI code.
+
 ---
 
 ## 📅 Phased Implementation Plan
@@ -103,3 +109,14 @@ Secures database states in runtime and integrates biometrics.
 - [x] Set up user inactivity timers to auto-lock the app after 60 seconds of no touch interaction.
 - [x] Build a clipboard safety hook (auto-clear copied passwords after 30 seconds).
 - [x] Run comprehensive manual security audits and verify build pipelines on EAS.
+
+### Phase 6: High-Performance JSI WebCrypto Polyfill
+
+Optimizes symmetric ciphers and hashing to resolve slow file loading (e.g., strong AES-KDF databases).
+
+- [x] Install `react-native-quick-crypto` JSI library.
+- [x] Implement mapping handlers in `webCryptoPolyfill.ts` to forward `global.crypto.subtle` calls directly to `react-native-quick-crypto` native methods.
+- [x] Implement native-speed `digest`, `importKey`, `sign`, `encrypt`, and `decrypt` operations for SHA-256/512, HMAC, and AES-CBC.
+- [x] Implement DOMException wrap handlers to align native JSI errors with standard WebCrypto signatures.
+- [x] Write Jest tests validating native encryption/decryption against standard ciphers.
+- [x] Measure file decryption benchmarks on development builds to verify sub-second file opening times.
