@@ -1,0 +1,10 @@
+{
+  "name": "vaultpeer-file-system",
+  "version": "0.1.0",
+  "description": "In-place file system access for VaultPeer using Android SAF and iOS Security-Scoped Bookmarks",
+  "main": "index.ts",
+  "types": "index.ts",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

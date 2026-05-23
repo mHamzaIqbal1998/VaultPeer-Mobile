@@ -4,15 +4,21 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "development"
+      }
+    },
     "local-sideload": {
       "ios": {
         "simulator": true,
         "config": "sideload.yml"
       }
-    },
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal"
     },
     "preview": {
       "android": {
