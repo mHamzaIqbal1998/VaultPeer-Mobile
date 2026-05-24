@@ -175,22 +175,24 @@ export default function FileSetupScreen() {
   const handleBiometricUnlock = useCallback(async () => {
     setFormError(null);
     setLocalLoading(true);
-    try {
-      const storedPassword = await getStoredPassword();
-      if (!storedPassword) {
-        return; // User cancelled
+    setTimeout(async () => {
+      try {
+        const storedPassword = await getStoredPassword();
+        if (!storedPassword) {
+          setLocalLoading(false);
+          return; // User cancelled
+        }
+        const { db, fileUri: currentUri } = await loadVault(storedPassword);
+        setActiveDb(db);
+        setDbStats(parseMeta(db));
+        setPassword("");
+        openDatabase(db, currentUri);
+        router.replace("/vault");
+      } catch (e: any) {
+        setFormError(e?.message || "Biometric authentication failed.");
+        setLocalLoading(false);
       }
-      const { db, fileUri: currentUri } = await loadVault(storedPassword);
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setPassword("");
-      openDatabase(db, currentUri);
-      router.replace("/vault");
-    } catch (e: any) {
-      setFormError(e?.message || "Biometric authentication failed.");
-    } finally {
-      setLocalLoading(false);
-    }
+    }, 50);
   }, [loadVault, openDatabase, router]);
 
   useEffect(() => {
@@ -248,18 +250,20 @@ export default function FileSetupScreen() {
     }
     setFormError(null);
     setLocalLoading(true);
-    try {
-      const { db, fileUri: currentUri } = await loadVault(password);
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setPassword("");
-      openDatabase(db, currentUri);
-      router.replace("/vault");
-    } catch {
-      // Error handled by FilePickerContext
-    } finally {
-      setLocalLoading(false);
-    }
+    setTimeout(async () => {
+      try {
+        const { db, fileUri: currentUri } = await loadVault(password);
+        setActiveDb(db);
+        setDbStats(parseMeta(db));
+        setPassword("");
+        openDatabase(db, currentUri);
+        router.replace("/vault");
+      } catch {
+        // Error handled by FilePickerContext
+      } finally {
+        setLocalLoading(false);
+      }
+    }, 50);
   };
 
   const handleCreateVault = async () => {
@@ -277,30 +281,32 @@ export default function FileSetupScreen() {
     }
     setFormError(null);
     setLocalLoading(true);
-    try {
-      const { db, fileUri: newUri } = await createNewVault(
-        newVaultName.trim(),
-        newPassword,
-        {
-          kdf: selectedKdf,
-          cipher: selectedCipher,
-        }
-      );
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setNewVaultName("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setShowAdvanced(false);
-      setSelectedKdf("Argon2id");
-      setSelectedCipher("AES-256");
-      openDatabase(db, newUri);
-      router.replace("/vault");
-    } catch {
-      // Error handled by FilePickerContext
-    } finally {
-      setLocalLoading(false);
-    }
+    setTimeout(async () => {
+      try {
+        const { db, fileUri: newUri } = await createNewVault(
+          newVaultName.trim(),
+          newPassword,
+          {
+            kdf: selectedKdf,
+            cipher: selectedCipher,
+          }
+        );
+        setActiveDb(db);
+        setDbStats(parseMeta(db));
+        setNewVaultName("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setShowAdvanced(false);
+        setSelectedKdf("Argon2id");
+        setSelectedCipher("AES-256");
+        openDatabase(db, newUri);
+        router.replace("/vault");
+      } catch {
+        // Error handled by FilePickerContext
+      } finally {
+        setLocalLoading(false);
+      }
+    }, 50);
   };
 
   const handleLockVault = () => {

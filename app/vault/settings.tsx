@@ -97,27 +97,29 @@ export default function VaultSettingsScreen() {
       return;
     }
     setVerifying(true);
-    try {
-      const { db: verifiedDb } = await loadVault(biometricPassword);
-      if (verifiedDb) {
-        const success = await enableBiometric(biometricPassword);
-        if (success) {
-          setBiometricEnabled(true);
-          setShowBiometricPasswordInput(false);
-          setBiometricPassword("");
-          Alert.alert("Success", "Biometric unlock enabled successfully.");
-        } else {
-          Alert.alert("Error", "Failed to enable biometric authentication.");
+    setTimeout(async () => {
+      try {
+        const { db: verifiedDb } = await loadVault(biometricPassword);
+        if (verifiedDb) {
+          const success = await enableBiometric(biometricPassword);
+          if (success) {
+            setBiometricEnabled(true);
+            setShowBiometricPasswordInput(false);
+            setBiometricPassword("");
+            Alert.alert("Success", "Biometric unlock enabled successfully.");
+          } else {
+            Alert.alert("Error", "Failed to enable biometric authentication.");
+          }
         }
+      } catch (e: any) {
+        Alert.alert(
+          "Verification Failed",
+          e?.message || "Invalid master password."
+        );
+      } finally {
+        setVerifying(false);
       }
-    } catch (e: any) {
-      Alert.alert(
-        "Verification Failed",
-        e?.message || "Invalid master password."
-      );
-    } finally {
-      setVerifying(false);
-    }
+    }, 50);
   }, [biometricPassword, loadVault, verifying]);
 
   const stats = useMemo(() => {
@@ -134,18 +136,20 @@ export default function VaultSettingsScreen() {
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
     setSaving(true);
-    try {
-      await saveVault(db);
-      markClean();
-      Alert.alert("Success", "Vault saved successfully.");
-    } catch (e: any) {
-      Alert.alert(
-        "Error Saving",
-        e?.message || "Failed to write database file."
-      );
-    } finally {
-      setSaving(false);
-    }
+    setTimeout(async () => {
+      try {
+        await saveVault(db);
+        markClean();
+        Alert.alert("Success", "Vault saved successfully.");
+      } catch (e: any) {
+        Alert.alert(
+          "Error Saving",
+          e?.message || "Failed to write database file."
+        );
+      } finally {
+        setSaving(false);
+      }
+    }, 50);
   }, [db, saveVault, markClean, saving]);
 
   const handleForget = useCallback(() => {

@@ -264,31 +264,34 @@ export default function EntryEditScreen() {
     };
 
     setSaving(true);
-    try {
-      if (isNew) {
-        const parentUuid = groupId;
-        if (!parentUuid) {
-          Alert.alert("Error", "No parent group specified.");
-          return;
+    setTimeout(async () => {
+      try {
+        if (isNew) {
+          const parentUuid = groupId;
+          if (!parentUuid) {
+            Alert.alert("Error", "No parent group specified.");
+            setSaving(false);
+            return;
+          }
+          const entry = await createEntry(parentUuid, payload);
+          if (entry) {
+            logAccess(entry.uuid, entry.title, "created");
+            router.back();
+          }
+        } else if (entryId) {
+          const entry = await updateEntry(entryId, payload);
+          if (entry) {
+            logAccess(entry.uuid, entry.title, "updated");
+            router.back();
+          }
         }
-        const entry = await createEntry(parentUuid, payload);
-        if (entry) {
-          logAccess(entry.uuid, entry.title, "created");
-          router.back();
-        }
-      } else if (entryId) {
-        const entry = await updateEntry(entryId, payload);
-        if (entry) {
-          logAccess(entry.uuid, entry.title, "updated");
-          router.back();
-        }
+      } catch (err: any) {
+        console.error(err);
+        Alert.alert("Save Failed", err.message || "Failed to save the entry.");
+      } finally {
+        setSaving(false);
       }
-    } catch (err: any) {
-      console.error(err);
-      Alert.alert("Save Failed", err.message || "Failed to save the entry.");
-    } finally {
-      setSaving(false);
-    }
+    }, 50);
   }, [
     saving,
     isNew,

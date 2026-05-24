@@ -327,18 +327,20 @@ export default function VaultBrowserScreen() {
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
     setSaving(true);
-    try {
-      await saveVault(db);
-      markClean();
-      Alert.alert("Success", "Vault saved successfully.");
-    } catch (e: any) {
-      Alert.alert(
-        "Error Saving",
-        e?.message || "Failed to write database file."
-      );
-    } finally {
-      setSaving(false);
-    }
+    setTimeout(async () => {
+      try {
+        await saveVault(db);
+        markClean();
+        Alert.alert("Success", "Vault saved successfully.");
+      } catch (e: any) {
+        Alert.alert(
+          "Error Saving",
+          e?.message || "Failed to write database file."
+        );
+      } finally {
+        setSaving(false);
+      }
+    }, 50);
   }, [db, saveVault, markClean, saving]);
 
   // ────── Render Helpers ──────
