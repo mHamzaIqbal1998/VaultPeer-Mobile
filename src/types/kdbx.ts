@@ -43,6 +43,14 @@ export interface VaultMeta {
 // Entry / Group Model
 // ────────────────────────────────────────────
 
+export interface VaultAttachment {
+  id: string;
+  name: string;
+  size: number;
+  /** Base64 encoded binary data */
+  data: string;
+}
+
 /** A single password entry */
 export interface VaultEntry {
   uuid: string;
@@ -62,6 +70,14 @@ export interface VaultEntry {
   modifiedAt: string;
   /** Arbitrary custom string fields */
   fields: Record<string, string>;
+  /** Names of custom fields that are secure (stored as ProtectedValue) */
+  secureFields: string[];
+  /** Entry attachments */
+  attachments: VaultAttachment[];
+  /** Whether the entry has an expiration date set */
+  expires: boolean;
+  /** ISO-8601 expiration timestamp */
+  expiryTime?: string;
   /** Entry tags */
   tags: string[];
   /** Parent group UUID */

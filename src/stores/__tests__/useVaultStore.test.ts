@@ -34,7 +34,7 @@ describe("useVaultStore", () => {
     expect(state.isDirty).toBe(false);
   });
 
-  it("should add a new entry and update the parsed state and indices", () => {
+  it("should add a new entry and update the parsed state and indices", async () => {
     const db = createNewDatabase("Test Vault", "password123");
     useVaultStore.getState().openDatabase(db, "test-path.kdbx");
 
@@ -43,7 +43,7 @@ describe("useVaultStore", () => {
     const initialEntryCount = stateBefore.entryIndex.size;
 
     // Create entry
-    const newEntry = useVaultStore.getState().createEntry(rootUuid, {
+    const newEntry = await useVaultStore.getState().createEntry(rootUuid, {
       title: "New Entry Title",
       username: "user123",
       password: "securepassword",
@@ -68,7 +68,71 @@ describe("useVaultStore", () => {
     expect(foundEntry?.title).toBe("New Entry Title");
   });
 
-  it("should handle recycle bin conditional permanent deletion for entries", () => {
+  it("should support tags, custom fields, expiration, and attachments in createEntry and updateEntry", async () => {
+    const db = createNewDatabase("Test Vault", "password123");
+    useVaultStore.getState().openDatabase(db, "test-path.kdbx");
+
+    const state = useVaultStore.getState();
+    const rootUuid = state.rootGroup!.uuid;
+
+    // Test attachments payload
+    const testAttachment = {
+      id: "test.txt",
+      name: "test.txt",
+      size: 11,
+      data: "SGVsbG8gV29ybGQ=", // "Hello World" in base64
+    };
+
+    const newEntry = await state.createEntry(rootUuid, {
+      title: "Detailed Entry",
+      username: "user",
+      password: "pwd",
+      fields: {
+        PinCode: "1234",
+        PlainField: "NotSecret",
+      },
+      secureFields: ["PinCode"],
+      tags: ["work", "finance"],
+      expires: true,
+      expiryTime: new Date(Date.now() + 100000).toISOString(),
+      attachments: [testAttachment],
+    });
+
+    expect(newEntry).not.toBeNull();
+    expect(newEntry?.title).toBe("Detailed Entry");
+    expect(newEntry?.tags).toEqual(["work", "finance"]);
+    expect(newEntry?.expires).toBe(true);
+    expect(newEntry?.fields["PinCode"]).toBe("1234");
+    expect(newEntry?.fields["PlainField"]).toBe("NotSecret");
+    expect(newEntry?.secureFields).toContain("PinCode");
+    expect(newEntry?.attachments.length).toBe(1);
+    expect(newEntry?.attachments[0].name).toBe("test.txt");
+    expect(newEntry?.attachments[0].data).toBe("SGVsbG8gV29ybGQ=");
+
+    // Test update
+    const updatedEntry = await useVaultStore
+      .getState()
+      .updateEntry(newEntry!.uuid, {
+        title: "Updated Detailed Entry",
+        fields: {
+          PinCode: "4321",
+          NewField: "Added",
+        },
+        secureFields: ["PinCode"],
+        tags: ["personal"],
+        expires: false,
+      });
+
+    expect(updatedEntry).not.toBeNull();
+    expect(updatedEntry?.title).toBe("Updated Detailed Entry");
+    expect(updatedEntry?.tags).toEqual(["personal"]);
+    expect(updatedEntry?.expires).toBe(false);
+    expect(updatedEntry?.fields["PinCode"]).toBe("4321");
+    expect(updatedEntry?.fields["NewField"]).toBe("Added");
+    expect(updatedEntry?.fields["PlainField"]).toBeUndefined(); // removed since not in fields map
+  });
+
+  it("should handle recycle bin conditional permanent deletion for entries", async () => {
     const db = createNewDatabase("Test Vault", "password123");
     db.meta.recycleBinEnabled = true;
     db.createRecycleBin();
@@ -80,7 +144,7 @@ describe("useVaultStore", () => {
     expect(recycleBinUuid).toBeDefined();
 
     // Create entry
-    const entry = useVaultStore.getState().createEntry(rootUuid, {
+    const entry = await useVaultStore.getState().createEntry(rootUuid, {
       title: "Recycle Me",
       username: "user123",
       password: "pass",

@@ -29,6 +29,24 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { CyberCard } from "@/src/components/CyberCard";
+import * as DocumentPicker from "expo-document-picker";
+import { readFile } from "vaultpeer-file-system";
+import type { VaultAttachment } from "@/src/types/kdbx";
+
+interface CustomFieldState {
+  id: string;
+  key: string;
+  value: string;
+  isSecure: boolean;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
 
 function FormField({
   label,
@@ -109,36 +127,152 @@ export default function EntryEditScreen() {
   const [url, setUrl] = useState(existing?.url ?? "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
 
-  const handleSave = useCallback(() => {
+  const [customFields, setCustomFields] = useState<CustomFieldState[]>(() => {
+    if (!existing || !existing.fields) return [];
+    return Object.entries(existing.fields).map(([key, value]) => ({
+      id: Math.random().toString(),
+      key,
+      value,
+      isSecure: existing.secureFields?.includes(key) ?? false,
+    }));
+  });
+
+  const [attachments, setAttachments] = useState<VaultAttachment[]>(() => {
+    return existing?.attachments ? [...existing.attachments] : [];
+  });
+
+  const [expires, setExpires] = useState(existing?.expires ?? false);
+  const [expiryPreset, setExpiryPreset] = useState<string>(() => {
+    if (!existing?.expires || !existing.expiryTime) return "1 Month";
+    return "Custom";
+  });
+  const [customExpiryText, setCustomExpiryText] = useState<string>(() => {
+    if (existing?.expiryTime) {
+      const d = new Date(existing.expiryTime);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    const d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
+
+  const [tags, setTags] = useState<string[]>(
+    existing?.tags ? [...existing.tags] : []
+  );
+  const [newTagInput, setNewTagInput] = useState("");
+
+  const handleAddAttachment = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (res.canceled || !res.assets || res.assets.length === 0) {
+        return;
+      }
+
+      const asset = res.assets[0];
+      const base64Data = await readFile(asset.uri);
+
+      const newAttachment: VaultAttachment = {
+        id: asset.name,
+        name: asset.name,
+        size: asset.size ?? 0,
+        data: base64Data,
+      };
+
+      setAttachments((prev) => {
+        const filtered = prev.filter((a) => a.name !== asset.name);
+        return [...filtered, newAttachment];
+      });
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert("Error", err.message || "Failed to import attachment.");
+    }
+  };
+
+  const handleSave = useCallback(async () => {
     if (!title.trim()) {
       Alert.alert("Missing Title", "Please enter a title for this entry.");
       return;
     }
+
+    const fieldsMap: Record<string, string> = {};
+    const secureFieldsList: string[] = [];
+    for (const f of customFields) {
+      const keyTrimmed = f.key.trim();
+      if (keyTrimmed) {
+        fieldsMap[keyTrimmed] = f.value;
+        if (f.isSecure) {
+          secureFieldsList.push(keyTrimmed);
+        }
+      }
+    }
+
+    let finalExpiryTime: string | undefined = undefined;
+    if (expires) {
+      if (expiryPreset === "1 Week") {
+        finalExpiryTime = new Date(
+          Date.now() + 7 * 24 * 60 * 60 * 1000
+        ).toISOString();
+      } else if (expiryPreset === "1 Month") {
+        finalExpiryTime = new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ).toISOString();
+      } else if (expiryPreset === "3 Months") {
+        finalExpiryTime = new Date(
+          Date.now() + 90 * 24 * 60 * 60 * 1000
+        ).toISOString();
+      } else if (expiryPreset === "6 Months") {
+        finalExpiryTime = new Date(
+          Date.now() + 180 * 24 * 60 * 60 * 1000
+        ).toISOString();
+      } else if (expiryPreset === "1 Year") {
+        finalExpiryTime = new Date(
+          Date.now() + 365 * 24 * 60 * 60 * 1000
+        ).toISOString();
+      } else if (expiryPreset === "Custom") {
+        const parsed = Date.parse(customExpiryText.trim().replace(" ", "T"));
+        if (isNaN(parsed)) {
+          Alert.alert(
+            "Invalid Date",
+            "Please enter a valid expiry date in YYYY-MM-DD HH:MM format."
+          );
+          return;
+        }
+        finalExpiryTime = new Date(parsed).toISOString();
+      }
+    }
+
+    const payload = {
+      title: title.trim(),
+      username,
+      password,
+      url,
+      notes,
+      fields: fieldsMap,
+      secureFields: secureFieldsList,
+      attachments,
+      expires,
+      expiryTime: finalExpiryTime,
+      tags,
+    };
+
     if (isNew) {
       const parentUuid = groupId;
       if (!parentUuid) {
         Alert.alert("Error", "No parent group specified.");
         return;
       }
-      const entry = createEntry(parentUuid, {
-        title: title.trim(),
-        username,
-        password,
-        url,
-        notes,
-      });
+      const entry = await createEntry(parentUuid, payload);
       if (entry) {
         logAccess(entry.uuid, entry.title, "created");
         router.back();
       }
     } else if (entryId) {
-      const entry = updateEntry(entryId, {
-        title: title.trim(),
-        username,
-        password,
-        url,
-        notes,
-      });
+      const entry = await updateEntry(entryId, payload);
       if (entry) {
         logAccess(entry.uuid, entry.title, "updated");
         router.back();
@@ -151,6 +285,12 @@ export default function EntryEditScreen() {
     password,
     url,
     notes,
+    customFields,
+    expires,
+    expiryPreset,
+    customExpiryText,
+    attachments,
+    tags,
     groupId,
     entryId,
     createEntry,
@@ -161,12 +301,38 @@ export default function EntryEditScreen() {
 
   const handleDiscard = useCallback(() => {
     const hasChanges = isNew
-      ? title || username || password || url || notes
+      ? title ||
+        username ||
+        password ||
+        url ||
+        notes ||
+        customFields.length > 0 ||
+        attachments.length > 0 ||
+        expires ||
+        tags.length > 0
       : title !== existing?.title ||
         username !== existing?.username ||
         password !== existing?.password ||
         url !== existing?.url ||
-        notes !== existing?.notes;
+        notes !== existing?.notes ||
+        JSON.stringify(
+          customFields.map((f) => ({
+            key: f.key,
+            val: f.value,
+            sec: f.isSecure,
+          }))
+        ) !==
+          JSON.stringify(
+            Object.entries(existing?.fields || {}).map(([key, value]) => ({
+              key,
+              val: value,
+              sec: existing?.secureFields?.includes(key) ?? false,
+            }))
+          ) ||
+        JSON.stringify(attachments.map((a) => a.name)) !==
+          JSON.stringify((existing?.attachments || []).map((a) => a.name)) ||
+        expires !== existing?.expires ||
+        JSON.stringify(tags) !== JSON.stringify(existing?.tags || []);
 
     if (hasChanges) {
       Alert.alert("Discard Changes?", "You have unsaved changes.", [
@@ -176,7 +342,20 @@ export default function EntryEditScreen() {
     } else {
       router.back();
     }
-  }, [isNew, title, username, password, url, notes, existing, router]);
+  }, [
+    isNew,
+    title,
+    username,
+    password,
+    url,
+    notes,
+    customFields,
+    attachments,
+    expires,
+    tags,
+    existing,
+    router,
+  ]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -244,6 +423,286 @@ export default function EntryEditScreen() {
                 iconName="document-text-outline"
                 multiline
               />
+            </CyberCard>
+
+            {/* ── Tags ── */}
+            <CyberCard style={{ padding: Spacing.xl, marginTop: Spacing.lg }}>
+              <Text style={styles.sectionTitle}>Tags</Text>
+              <View style={styles.tagsContainer}>
+                {tags.map((tag) => (
+                  <View key={tag} style={styles.tagItem}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                    <Pressable
+                      onPress={() =>
+                        setTags((prev) => prev.filter((t) => t !== tag))
+                      }
+                      style={styles.tagDeleteBtn}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name="close-circle"
+                        size={14}
+                        color={Colors.statusError}
+                      />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.addTagRow}>
+                <TextInput
+                  style={styles.tagInput}
+                  value={newTagInput}
+                  onChangeText={setNewTagInput}
+                  placeholder="New tag..."
+                  placeholderTextColor={Colors.textDisabled}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  onPress={() => {
+                    const trimmed = newTagInput.trim();
+                    if (trimmed && !tags.includes(trimmed)) {
+                      setTags((prev) => [...prev, trimmed]);
+                      setNewTagInput("");
+                    }
+                  }}
+                  style={styles.addTagBtn}
+                >
+                  <Ionicons
+                    name="add"
+                    size={20}
+                    color={Colors.backgroundPrimary}
+                  />
+                </Pressable>
+              </View>
+            </CyberCard>
+
+            {/* ── Custom Fields ── */}
+            <CyberCard style={{ padding: Spacing.xl, marginTop: Spacing.lg }}>
+              <Text style={styles.sectionTitle}>Custom Fields</Text>
+              {customFields.map((field) => (
+                <View key={field.id} style={styles.customFieldRow}>
+                  <View style={styles.customFieldInputs}>
+                    <TextInput
+                      style={styles.customFieldKeyInput}
+                      value={field.key}
+                      onChangeText={(val) => {
+                        setCustomFields((prev) =>
+                          prev.map((f) =>
+                            f.id === field.id ? { ...f, key: val } : f
+                          )
+                        );
+                      }}
+                      placeholder="Field Name"
+                      placeholderTextColor={Colors.textDisabled}
+                      autoCapitalize="none"
+                    />
+                    <TextInput
+                      style={styles.customFieldValueInput}
+                      value={field.value}
+                      onChangeText={(val) => {
+                        setCustomFields((prev) =>
+                          prev.map((f) =>
+                            f.id === field.id ? { ...f, value: val } : f
+                          )
+                        );
+                      }}
+                      placeholder="Field Value"
+                      placeholderTextColor={Colors.textDisabled}
+                      secureTextEntry={field.isSecure}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <View style={styles.customFieldActions}>
+                    <Pressable
+                      onPress={() => {
+                        setCustomFields((prev) =>
+                          prev.map((f) =>
+                            f.id === field.id
+                              ? { ...f, isSecure: !f.isSecure }
+                              : f
+                          )
+                        );
+                      }}
+                      style={styles.customFieldActionBtn}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name={
+                          field.isSecure ? "lock-closed" : "lock-open-outline"
+                        }
+                        size={18}
+                        color={
+                          field.isSecure ? Colors.accentMint : Colors.textMuted
+                        }
+                      />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setCustomFields((prev) =>
+                          prev.filter((f) => f.id !== field.id)
+                        );
+                      }}
+                      style={styles.customFieldActionBtn}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={18}
+                        color={Colors.statusError}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              <Pressable
+                onPress={() => {
+                  setCustomFields((prev) => [
+                    ...prev,
+                    {
+                      id: Math.random().toString(),
+                      key: "",
+                      value: "",
+                      isSecure: false,
+                    },
+                  ]);
+                }}
+                style={styles.addFieldBtn}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={16}
+                  color={Colors.accentMint}
+                />
+                <Text style={styles.addFieldBtnText}>Add Custom Field</Text>
+              </Pressable>
+            </CyberCard>
+
+            {/* ── Expiration ── */}
+            <CyberCard style={{ padding: Spacing.xl, marginTop: Spacing.lg }}>
+              <View style={styles.expiryHeaderRow}>
+                <Text style={styles.sectionTitle}>Expiration</Text>
+                <Pressable
+                  onPress={() => setExpires(!expires)}
+                  style={[styles.checkbox, expires && styles.checkboxChecked]}
+                  hitSlop={8}
+                >
+                  {expires && (
+                    <Ionicons
+                      name="checkmark"
+                      size={14}
+                      color={Colors.backgroundPrimary}
+                    />
+                  )}
+                </Pressable>
+              </View>
+
+              {expires && (
+                <View>
+                  <View style={styles.presetGrid}>
+                    {[
+                      "1 Week",
+                      "1 Month",
+                      "3 Months",
+                      "6 Months",
+                      "1 Year",
+                      "Custom",
+                    ].map((preset) => (
+                      <Pressable
+                        key={preset}
+                        onPress={() => setExpiryPreset(preset)}
+                        style={[
+                          styles.presetBtn,
+                          expiryPreset === preset && styles.presetBtnActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.presetBtnText,
+                            expiryPreset === preset &&
+                              styles.presetBtnTextActive,
+                          ]}
+                        >
+                          {preset}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {expiryPreset === "Custom" && (
+                    <View style={styles.customExpiryContainer}>
+                      <Text style={styles.customExpiryLabel}>
+                        Custom Expiry (YYYY-MM-DD HH:MM)
+                      </Text>
+                      <TextInput
+                        style={styles.customExpiryInput}
+                        value={customExpiryText}
+                        onChangeText={setCustomExpiryText}
+                        placeholder="e.g. 2026-12-31 23:59"
+                        placeholderTextColor={Colors.textDisabled}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                  )}
+                </View>
+              )}
+            </CyberCard>
+
+            {/* ── Attachments ── */}
+            <CyberCard
+              style={{
+                padding: Spacing.xl,
+                marginTop: Spacing.lg,
+                marginBottom: Spacing.xl,
+              }}
+            >
+              <Text style={styles.sectionTitle}>Attachments</Text>
+              {attachments.map((attachment) => (
+                <View key={attachment.id} style={styles.attachmentEditRow}>
+                  <View style={styles.attachmentEditInfo}>
+                    <Ionicons
+                      name="document-attach-outline"
+                      size={18}
+                      color={Colors.accentMint}
+                    />
+                    <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
+                      <Text style={styles.attachmentEditName} numberOfLines={1}>
+                        {attachment.name}
+                      </Text>
+                      <Text style={styles.attachmentEditSize}>
+                        {formatSize(attachment.size)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      setAttachments((prev) =>
+                        prev.filter((a) => a.id !== attachment.id)
+                      );
+                    }}
+                    style={styles.attachmentDeleteBtn}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color={Colors.statusError}
+                    />
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable
+                onPress={handleAddAttachment}
+                style={styles.addAttachmentBtn}
+              >
+                <Ionicons
+                  name="cloud-upload-outline"
+                  size={16}
+                  color={Colors.accentMint}
+                />
+                <Text style={styles.addAttachmentBtnText}>Add Attachment</Text>
+              </Pressable>
             </CyberCard>
           </Animated.View>
         </ScrollView>
@@ -340,5 +799,242 @@ const styles = StyleSheet.create({
     minHeight: 36,
     alignItems: "center",
     justifyContent: "center",
+  },
+  sectionTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+    marginBottom: Spacing.md,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  tagsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  tagItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.accentMintDim,
+    paddingLeft: Spacing.md,
+    paddingRight: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    gap: Spacing.xs,
+  },
+  tagText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.accentMint,
+  },
+  tagDeleteBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addTagRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  tagInput: {
+    flex: 1,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    height: 40,
+  },
+  addTagBtn: {
+    width: 40,
+    height: 40,
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  customFieldRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  customFieldInputs: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
+  customFieldKeyInput: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    height: 38,
+  },
+  customFieldValueInput: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    height: 38,
+  },
+  customFieldActions: {
+    flexDirection: "row",
+    gap: Spacing.xs,
+  },
+  customFieldActionBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  addFieldBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: Colors.accentMint,
+    marginTop: Spacing.sm,
+  },
+  addFieldBtnText: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.accentMint,
+  },
+  expiryHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 2,
+    borderColor: Colors.borderSageActive,
+    borderRadius: Radii.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.accentMint,
+    borderColor: Colors.accentMint,
+  },
+  presetGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  presetBtn: {
+    flex: 1,
+    minWidth: "28%",
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingVertical: Spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  presetBtnActive: {
+    borderColor: Colors.accentMint,
+    backgroundColor: Colors.accentMintDim,
+  },
+  presetBtnText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textSecondary,
+  },
+  presetBtnTextActive: {
+    color: Colors.accentMint,
+    fontFamily: Fonts.heading.medium,
+  },
+  customExpiryContainer: {
+    marginTop: Spacing.sm,
+  },
+  customExpiryLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginBottom: Spacing.xs,
+  },
+  customExpiryInput: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.mono.regular,
+    fontSize: FontSizes.bodySmall,
+    height: 40,
+  },
+  attachmentEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderSage,
+    marginBottom: Spacing.sm,
+  },
+  attachmentEditInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  attachmentEditName: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  attachmentEditSize: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  attachmentDeleteBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addAttachmentBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: Colors.accentMint,
+    marginTop: Spacing.sm,
+  },
+  addAttachmentBtnText: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.accentMint,
   },
 });

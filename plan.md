@@ -140,3 +140,19 @@ Enables user selection of encryption ciphers and key derivation functions (KDF) 
 - [x] Build segmented pill selection views for Cipher (AES-256, ChaCha20) and KDF (Argon2id, Argon2d, AES-KDF).
 - [x] Pass chosen selections from the UI down to the `createNewVault` context action.
 - [x] Write unit tests verifying that all KDF/Cipher configuration combinations serialize and load successfully.
+
+### Phase 8: Custom Fields, Attachments, Expiry, & Tags Support
+
+Enhances the database entries to support the full range of entry attributes provided by KeePass/KeePassDX, including custom key-value pairs (plaintext & secure), binary attachments (adding, removing, exporting), entry tags editor, and expiration dates.
+
+- [x] Extend the `VaultEntry` and related types in `src/types/kdbx.ts` to support custom fields metadata (`secureFields`), binary attachments (`VaultAttachment`), and expiration settings (`expires`, `expiryTime`).
+- [x] Update `parseDatabase` in `src/services/crypto/databaseParser.ts` to parse standard entry binaries (converting ArrayBuffer/ProtectedValue values into base64 strings), track custom field security settings (flagging `ProtectedValue` types as secure), and parse entry expiration/tags.
+- [x] Refactor store actions `createEntry` and `updateEntry` in `src/stores/useVaultStore.ts` to be asynchronous (`Promise<VaultEntry | null>`) and support setting custom fields (plaintext vs `ProtectedValue`), registering new binary attachments in the database pool (`db.binaries.add`), and managing entry expiration/tags.
+- [x] Update the Entry Detail screen `app/entry/[id].tsx` to render secure custom fields with togglable visibility, list entry attachments, and show expiration indicators.
+- [x] Implement attachment export / download using the native `createFile` mechanism from `VaultPeerFileSystem` (writing to a temp cache file first, then calling `createFile` to let the user save it to their system).
+- [x] Refactor the Entry Edit screen `app/entry/edit.tsx` to include interactive controls for:
+  - Dynamic tags editor (adding/deleting tags).
+  - Custom fields builder (adding plaintext or secure fields, editing names/values, and removing fields).
+  - Attachment picker (using `expo-document-picker` to select files, reading them as base64 via `readFile`, and saving them to the entry).
+  - Expiration scheduler (date picker for `expiryTime` with a toggle switch for `expires`).
+- [x] Write robust unit and integration tests to verify parser extraction, store synchronization of attachments/custom fields, and binary database cleanup.

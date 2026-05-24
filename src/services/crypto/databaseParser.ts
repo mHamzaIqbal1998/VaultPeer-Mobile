@@ -8,9 +8,21 @@
  * layer never imports the crypto library directly.
  */
 
-import { KdbxUuid } from "kdbxweb";
-import type { Kdbx, KdbxEntry, KdbxGroup } from "kdbxweb";
-import type { VaultEntry, VaultGroup, VaultMeta } from "@/src/types/kdbx";
+import { KdbxUuid, ProtectedValue } from "kdbxweb";
+import type {
+  Kdbx,
+  KdbxEntry,
+  KdbxGroup,
+  KdbxBinary,
+  KdbxBinaryWithHash,
+} from "kdbxweb";
+import type {
+  VaultEntry,
+  VaultGroup,
+  VaultMeta,
+  VaultAttachment,
+} from "@/src/types/kdbx";
+import { arrayBufferToBase64 } from "../base64";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -58,8 +70,14 @@ export function parseEntry(
     "Notes",
   ]);
   const fields: Record<string, string> = {};
+  const secureFields: string[] = [];
   entry.fields.forEach((value, key) => {
     if (!standardFields.has(key)) {
+      const isSecure =
+        typeof value === "object" && value !== null && "getText" in value;
+      if (isSecure) {
+        secureFields.push(key);
+      }
       fields[key] =
         typeof value === "string"
           ? value
@@ -68,6 +86,44 @@ export function parseEntry(
             : String(value);
     }
   });
+
+  const attachments: VaultAttachment[] = [];
+  if (entry.binaries) {
+    entry.binaries.forEach((binVal, key) => {
+      let rawBin: KdbxBinary;
+      if (binVal && typeof binVal === "object" && "value" in binVal) {
+        rawBin = (binVal as KdbxBinaryWithHash).value;
+      } else {
+        rawBin = binVal as KdbxBinary;
+      }
+
+      if (rawBin) {
+        let base64Data = "";
+        let size = 0;
+        const anyBin = rawBin as any;
+        if (
+          anyBin instanceof ProtectedValue ||
+          (typeof anyBin === "object" && "toBase64" in anyBin)
+        ) {
+          base64Data = anyBin.toBase64();
+          size = anyBin.byteLength ?? 0;
+        } else if (anyBin instanceof ArrayBuffer) {
+          base64Data = arrayBufferToBase64(anyBin);
+          size = anyBin.byteLength;
+        } else if (anyBin instanceof Uint8Array) {
+          base64Data = arrayBufferToBase64(anyBin.buffer);
+          size = anyBin.byteLength;
+        }
+
+        attachments.push({
+          id: key,
+          name: key,
+          size,
+          data: base64Data,
+        });
+      }
+    });
+  }
 
   return {
     uuid: uuidToString(entry.uuid),
@@ -83,6 +139,12 @@ export function parseEntry(
     createdAt: toISOString(entry.times?.creationTime),
     modifiedAt: toISOString(entry.times?.lastModTime),
     fields,
+    secureFields,
+    attachments,
+    expires: !!entry.times?.expires,
+    expiryTime: entry.times?.expiryTime
+      ? toISOString(entry.times.expiryTime)
+      : undefined,
     tags: entry.tags ?? [],
     parentGroupUuid,
   };

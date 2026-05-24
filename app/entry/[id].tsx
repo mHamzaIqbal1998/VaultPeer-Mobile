@@ -37,6 +37,16 @@ import {
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import { CyberCard } from "@/src/components/CyberCard";
+import { createFile, writeTempFile } from "vaultpeer-file-system";
+import type { VaultAttachment } from "@/src/types/kdbx";
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -134,6 +144,37 @@ export default function EntryDetailScreen() {
   const { copyToClipboard } = useClipboard();
 
   const entry = getEntry(id ?? "");
+
+  const [exporting, setExporting] = useState<string | null>(null);
+
+  const handleExportAttachment = useCallback(
+    async (attachment: VaultAttachment) => {
+      try {
+        setExporting(attachment.name);
+        const tempFileUri = await writeTempFile(attachment.data);
+        await createFile(attachment.name, tempFileUri);
+        Alert.alert(
+          "Success",
+          `Saved attachment "${attachment.name}" successfully.`
+        );
+      } catch (err: any) {
+        console.error(err);
+        Alert.alert(
+          "Export Failed",
+          err?.message || "Could not save the attachment."
+        );
+      } finally {
+        setExporting(null);
+      }
+    },
+    []
+  );
+
+  const isExpired =
+    entry?.expires &&
+    entry?.expiryTime &&
+    new Date(entry.expiryTime).getTime() < Date.now();
+  const expiryDate = entry?.expiryTime ? new Date(entry.expiryTime) : null;
 
   // Log view on mount
   useEffect(() => {
@@ -310,6 +351,32 @@ export default function EntryDetailScreen() {
               <Ionicons name={iconName} size={28} color={Colors.accentMint} />
             </View>
             <Text style={styles.entryTitle}>{entry.title || "Untitled"}</Text>
+            {entry.expires && (
+              <View style={styles.expiryBadgeRow}>
+                {isExpired ? (
+                  <View style={[styles.expiryBadge, styles.expiryBadgeExpired]}>
+                    <Ionicons
+                      name="warning"
+                      size={12}
+                      color={Colors.statusError}
+                    />
+                    <Text style={styles.expiryBadgeTextExpired}>EXPIRED</Text>
+                  </View>
+                ) : (
+                  <View style={styles.expiryBadge}>
+                    <Ionicons
+                      name="time"
+                      size={12}
+                      color={Colors.statusWarning}
+                    />
+                    <Text style={styles.expiryBadgeText}>
+                      Expires:{" "}
+                      {expiryDate ? expiryDate.toLocaleString() : "Never"}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
             {entry.tags.length > 0 && (
               <View style={styles.tagsRow}>
                 {entry.tags.map((tag) => (
@@ -362,8 +429,52 @@ export default function EntryDetailScreen() {
                 label={key}
                 value={value}
                 iconName="pricetag-outline"
+                isMasked={entry.secureFields?.includes(key)}
+                isMono={entry.secureFields?.includes(key)}
                 onCopy={() => handleCopy(value, key)}
               />
+            ))}
+          </CyberCard>
+        )}
+
+        {/* ── Attachments ── */}
+        {entry.attachments && entry.attachments.length > 0 && (
+          <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+            <Text style={styles.sectionTitle}>Attachments</Text>
+            {entry.attachments.map((attachment) => (
+              <View key={attachment.id} style={styles.attachmentRow}>
+                <View style={styles.attachmentInfo}>
+                  <Ionicons
+                    name="document-attach-outline"
+                    size={20}
+                    color={Colors.accentMint}
+                  />
+                  <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
+                    <Text style={styles.attachmentName} numberOfLines={1}>
+                      {attachment.name}
+                    </Text>
+                    <Text style={styles.attachmentSize}>
+                      {formatSize(attachment.size)}
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={() => handleExportAttachment(attachment)}
+                  style={styles.attachmentExportBtn}
+                  disabled={exporting === attachment.name}
+                  hitSlop={8}
+                >
+                  {exporting === attachment.name ? (
+                    <Text style={styles.exportText}>...</Text>
+                  ) : (
+                    <Ionicons
+                      name="download-outline"
+                      size={20}
+                      color={Colors.accentMint}
+                    />
+                  )}
+                </Pressable>
+              </View>
             ))}
           </CyberCard>
         )}
@@ -615,5 +726,70 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading.medium,
     fontSize: FontSizes.body,
     color: Colors.accentMint,
+  },
+
+  // Expiry badge
+  expiryBadgeRow: {
+    marginTop: Spacing.xs,
+  },
+  expiryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.statusWarningDim,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radii.sm,
+    gap: Spacing.xs,
+  },
+  expiryBadgeExpired: {
+    backgroundColor: Colors.statusErrorDim,
+  },
+  expiryBadgeText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.statusWarning,
+  },
+  expiryBadgeTextExpired: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.caption,
+    color: Colors.statusError,
+    letterSpacing: 0.5,
+  },
+
+  // Attachments
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderSage,
+  },
+  attachmentInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  attachmentName: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  attachmentSize: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  attachmentExportBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exportText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
   },
 });
