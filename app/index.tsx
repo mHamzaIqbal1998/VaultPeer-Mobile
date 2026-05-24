@@ -25,7 +25,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
-  withSequence,
   withTiming,
   Easing,
   FadeInDown,
@@ -136,19 +135,24 @@ export default function FileSetupScreen() {
   const [localLoading, setLocalLoading] = useState(false);
 
   // Shield glow animation
-  const glowOpacity = useSharedValue(0.4);
+  const glowScale = useSharedValue(1.0);
+  const glowOpacity = useSharedValue(0.3);
+
   useEffect(() => {
-    glowOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.ease) })
-      ),
+    glowScale.value = withRepeat(
+      withTiming(1.2, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
       -1,
-      false
+      true
     );
-  }, [glowOpacity]);
+    glowOpacity.value = withRepeat(
+      withTiming(0.8, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [glowScale, glowOpacity]);
 
   const glowStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: glowScale.value }],
     opacity: glowOpacity.value,
   }));
 
@@ -896,9 +900,12 @@ const styles = StyleSheet.create({
     height: 76,
     borderRadius: 38,
     backgroundColor: Colors.accentMintDim,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    ...Shadows.glow,
+    borderWidth: 1.5,
+    borderColor: "rgba(52, 211, 153, 0.3)",
+    ...Platform.select<any>({
+      ios: Shadows.glow,
+      android: {},
+    }),
   },
   title: {
     fontFamily: Fonts.heading.semiBold,
