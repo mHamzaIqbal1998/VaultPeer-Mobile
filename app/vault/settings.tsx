@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -64,6 +65,8 @@ export default function VaultSettingsScreen() {
   const [showBiometricPasswordInput, setShowBiometricPasswordInput] =
     useState(false);
   const [biometricPassword, setBiometricPassword] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function checkBiometrics() {
@@ -88,10 +91,12 @@ export default function VaultSettingsScreen() {
   }, [biometricEnabled]);
 
   const handleConfirmBiometric = useCallback(async () => {
+    if (verifying) return;
     if (!biometricPassword) {
       Alert.alert("Error", "Please enter your master password.");
       return;
     }
+    setVerifying(true);
     try {
       const { db: verifiedDb } = await loadVault(biometricPassword);
       if (verifiedDb) {
@@ -110,8 +115,10 @@ export default function VaultSettingsScreen() {
         "Verification Failed",
         e?.message || "Invalid master password."
       );
+    } finally {
+      setVerifying(false);
     }
-  }, [biometricPassword, loadVault]);
+  }, [biometricPassword, loadVault, verifying]);
 
   const stats = useMemo(() => {
     if (!db) return null;
@@ -125,7 +132,8 @@ export default function VaultSettingsScreen() {
   }, [closeDatabase, router]);
 
   const handleSave = useCallback(async () => {
-    if (!db) return;
+    if (!db || saving) return;
+    setSaving(true);
     try {
       await saveVault(db);
       markClean();
@@ -135,8 +143,10 @@ export default function VaultSettingsScreen() {
         "Error Saving",
         e?.message || "Failed to write database file."
       );
+    } finally {
+      setSaving(false);
     }
-  }, [db, saveVault, markClean]);
+  }, [db, saveVault, markClean, saving]);
 
   const handleForget = useCallback(() => {
     Alert.alert(
@@ -184,17 +194,28 @@ export default function VaultSettingsScreen() {
             </Text>
             <Pressable
               onPress={handleSave}
+              disabled={saving}
               style={({ pressed }) => [
                 styles.saveBtn,
                 pressed && styles.saveBtnPressed,
+                saving && { opacity: 0.6 },
               ]}
             >
-              <Ionicons
-                name="save-outline"
-                size={16}
-                color={Colors.backgroundPrimary}
-              />
-              <Text style={styles.saveBtnText}>Save Changes</Text>
+              {saving ? (
+                <ActivityIndicator
+                  size="small"
+                  color={Colors.backgroundPrimary}
+                />
+              ) : (
+                <>
+                  <Ionicons
+                    name="save-outline"
+                    size={16}
+                    color={Colors.backgroundPrimary}
+                  />
+                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                </>
+              )}
             </Pressable>
           </CyberCard>
         )}
@@ -316,9 +337,17 @@ export default function VaultSettingsScreen() {
                     />
                     <Pressable
                       onPress={handleConfirmBiometric}
-                      style={styles.confirmBtn}
+                      disabled={verifying}
+                      style={[styles.confirmBtn, verifying && { opacity: 0.6 }]}
                     >
-                      <Text style={styles.confirmBtnText}>Verify</Text>
+                      {verifying ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={Colors.backgroundPrimary}
+                        />
+                      ) : (
+                        <Text style={styles.confirmBtnText}>Verify</Text>
+                      )}
                     </Pressable>
                   </View>
                 </View>

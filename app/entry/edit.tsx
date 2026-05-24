@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -121,6 +122,7 @@ export default function EntryEditScreen() {
   const isNew = !entryId;
   const existing = entryId ? getEntry(entryId) : null;
 
+  const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(existing?.title ?? "");
   const [username, setUsername] = useState(existing?.username ?? "");
   const [password, setPassword] = useState(existing?.password ?? "");
@@ -194,6 +196,7 @@ export default function EntryEditScreen() {
   };
 
   const handleSave = useCallback(async () => {
+    if (saving) return;
     if (!title.trim()) {
       Alert.alert("Missing Title", "Please enter a title for this entry.");
       return;
@@ -260,25 +263,34 @@ export default function EntryEditScreen() {
       tags,
     };
 
-    if (isNew) {
-      const parentUuid = groupId;
-      if (!parentUuid) {
-        Alert.alert("Error", "No parent group specified.");
-        return;
+    setSaving(true);
+    try {
+      if (isNew) {
+        const parentUuid = groupId;
+        if (!parentUuid) {
+          Alert.alert("Error", "No parent group specified.");
+          return;
+        }
+        const entry = await createEntry(parentUuid, payload);
+        if (entry) {
+          logAccess(entry.uuid, entry.title, "created");
+          router.back();
+        }
+      } else if (entryId) {
+        const entry = await updateEntry(entryId, payload);
+        if (entry) {
+          logAccess(entry.uuid, entry.title, "updated");
+          router.back();
+        }
       }
-      const entry = await createEntry(parentUuid, payload);
-      if (entry) {
-        logAccess(entry.uuid, entry.title, "created");
-        router.back();
-      }
-    } else if (entryId) {
-      const entry = await updateEntry(entryId, payload);
-      if (entry) {
-        logAccess(entry.uuid, entry.title, "updated");
-        router.back();
-      }
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert("Save Failed", err.message || "Failed to save the entry.");
+    } finally {
+      setSaving(false);
     }
   }, [
+    saving,
     isNew,
     title,
     username,
@@ -362,16 +374,30 @@ export default function EntryEditScreen() {
       <View style={styles.header}>
         <Pressable
           onPress={handleDiscard}
-          style={styles.backButton}
+          disabled={saving}
+          style={[styles.backButton, saving && { opacity: 0.5 }]}
           hitSlop={8}
         >
-          <Ionicons name="close" size={24} color={Colors.textMuted} />
+          <Ionicons
+            name="close"
+            size={24}
+            color={saving ? Colors.textDisabled : Colors.textMuted}
+          />
         </Pressable>
         <Text style={styles.headerTitle}>
           {isNew ? "New Entry" : "Edit Entry"}
         </Text>
-        <Pressable onPress={handleSave} style={styles.saveButton} hitSlop={8}>
-          <Text style={styles.saveButtonText}>Save</Text>
+        <Pressable
+          onPress={handleSave}
+          disabled={saving}
+          style={[styles.saveButton, saving && { opacity: 0.6 }]}
+          hitSlop={8}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={Colors.backgroundPrimary} />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
         </Pressable>
       </View>
 

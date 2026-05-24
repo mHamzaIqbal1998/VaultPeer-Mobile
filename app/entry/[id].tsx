@@ -17,6 +17,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -134,16 +135,16 @@ export default function EntryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
-  const {
-    getEntry,
-    deleteEntry,
-    restoreEntry,
-    logAccess,
-    isGroupInRecycleBin,
-  } = useVaultStore();
+  const deleteEntry = useVaultStore((state) => state.deleteEntry);
+  const restoreEntry = useVaultStore((state) => state.restoreEntry);
+  const logAccess = useVaultStore((state) => state.logAccess);
+  const isGroupInRecycleBin = useVaultStore(
+    (state) => state.isGroupInRecycleBin
+  );
+  const entry = useVaultStore(
+    useCallback((state) => state.entryIndex.get(id ?? "") ?? null, [id])
+  );
   const { copyToClipboard } = useClipboard();
-
-  const entry = getEntry(id ?? "");
 
   const [exporting, setExporting] = useState<string | null>(null);
 
@@ -289,7 +290,7 @@ export default function EntryDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={Colors.accentMint} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          Entry Detail
+          {entry?.title || "Entry Detail"}
         </Text>
         <View style={styles.headerActions}>
           {inRecycleBin ? (
@@ -465,7 +466,7 @@ export default function EntryDetailScreen() {
                   hitSlop={8}
                 >
                   {exporting === attachment.name ? (
-                    <Text style={styles.exportText}>...</Text>
+                    <ActivityIndicator size="small" color={Colors.accentMint} />
                   ) : (
                     <Ionicons
                       name="download-outline"
@@ -786,10 +787,5 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
-  },
-  exportText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
   },
 });

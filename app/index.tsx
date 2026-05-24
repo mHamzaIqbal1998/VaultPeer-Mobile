@@ -106,8 +106,18 @@ export default function FileSetupScreen() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Unlocked State
+  const storeDb = useVaultStore((state) => state._db);
   const [activeDb, setActiveDb] = useState<kdbxweb.Kdbx | null>(null);
   const [dbStats, setDbStats] = useState<VaultMeta | null>(null);
+
+  useEffect(() => {
+    setActiveDb(storeDb);
+    if (storeDb) {
+      setDbStats(parseMeta(storeDb));
+    } else {
+      setDbStats(null);
+    }
+  }, [storeDb]);
 
   // Advanced Settings State
   const [showAdvanced, setShowAdvanced] = useState(false);

@@ -34,6 +34,20 @@ describe("useVaultStore", () => {
     expect(state.isDirty).toBe(false);
   });
 
+  it("should clear the state on closeDatabase", () => {
+    const db = createNewDatabase("Test Vault", "password123");
+    useVaultStore.getState().openDatabase(db, "test-path.kdbx");
+    expect(useVaultStore.getState()._db).toBe(db);
+
+    useVaultStore.getState().closeDatabase();
+    const state = useVaultStore.getState();
+    expect(state._db).toBeNull();
+    expect(state.rootGroup).toBeNull();
+    expect(state.activeGroupUuid).toBeNull();
+    expect(state.entryIndex.size).toBe(0);
+    expect(state.groupIndex.size).toBe(0);
+  });
+
   it("should add a new entry and update the parsed state and indices", async () => {
     const db = createNewDatabase("Test Vault", "password123");
     useVaultStore.getState().openDatabase(db, "test-path.kdbx");
