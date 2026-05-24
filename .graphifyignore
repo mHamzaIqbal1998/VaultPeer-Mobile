@@ -1,0 +1,8 @@
+# .graphifyignore
+node_modules/
+dist/
+.expo/
+.env*
+*.generated.py
+android/
+ios/
