@@ -187,8 +187,7 @@ export default function FileSetupScreen() {
           return; // User cancelled
         }
         const { db, fileUri: currentUri } = await loadVault(storedPassword);
-        setActiveDb(db);
-        setDbStats(parseMeta(db));
+        setRedirecting(true);
         setPassword("");
         openDatabase(db, currentUri);
         router.replace("/vault");
@@ -257,14 +256,12 @@ export default function FileSetupScreen() {
     setTimeout(async () => {
       try {
         const { db, fileUri: currentUri } = await loadVault(password);
-        setActiveDb(db);
-        setDbStats(parseMeta(db));
+        setRedirecting(true);
         setPassword("");
         openDatabase(db, currentUri);
         router.replace("/vault");
       } catch {
         // Error handled by FilePickerContext
-      } finally {
         setLocalLoading(false);
       }
     }, 50);
@@ -295,8 +292,7 @@ export default function FileSetupScreen() {
             cipher: selectedCipher,
           }
         );
-        setActiveDb(db);
-        setDbStats(parseMeta(db));
+        setRedirecting(true);
         setNewVaultName("");
         setNewPassword("");
         setConfirmPassword("");
@@ -307,7 +303,6 @@ export default function FileSetupScreen() {
         router.replace("/vault");
       } catch {
         // Error handled by FilePickerContext
-      } finally {
         setLocalLoading(false);
       }
     }, 50);

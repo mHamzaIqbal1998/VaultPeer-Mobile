@@ -434,37 +434,39 @@ export default function EntryDetailScreen() {
         </Animated.View>
 
         {/* ── Core Fields ── */}
-        <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
-          <FieldRow
-            label="Username"
-            value={entry.username}
-            iconName="person-outline"
-            onCopy={() => handleCopy(entry.username, "Username")}
-          />
-          <FieldRow
-            label="Password"
-            value={entry.password}
-            iconName="key-outline"
-            isMasked
-            isMono
-            onCopy={() => handleCopy(entry.password, "Password")}
-          />
-          <FieldRow
-            label="URL"
-            value={entry.url}
-            iconName="globe-outline"
-            onCopy={() => handleCopy(entry.url, "URL")}
-          />
-          <FieldRow
-            label="Notes"
-            value={entry.notes}
-            iconName="document-text-outline"
-            onCopy={() => handleCopy(entry.notes, "Notes")}
-          />
-        </CyberCard>
+        {entry.username || entry.password || entry.url || entry.notes ? (
+          <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+            <FieldRow
+              label="Username"
+              value={entry.username}
+              iconName="person-outline"
+              onCopy={() => handleCopy(entry.username, "Username")}
+            />
+            <FieldRow
+              label="Password"
+              value={entry.password}
+              iconName="key-outline"
+              isMasked
+              isMono
+              onCopy={() => handleCopy(entry.password, "Password")}
+            />
+            <FieldRow
+              label="URL"
+              value={entry.url}
+              iconName="globe-outline"
+              onCopy={() => handleCopy(entry.url, "URL")}
+            />
+            <FieldRow
+              label="Notes"
+              value={entry.notes}
+              iconName="document-text-outline"
+              onCopy={() => handleCopy(entry.notes, "Notes")}
+            />
+          </CyberCard>
+        ) : null}
 
         {/* ── Custom Fields ── */}
-        {Object.keys(entry.fields).length > 0 && (
+        {Object.entries(entry.fields).some(([_, val]) => !!val) && (
           <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
             <Text style={styles.sectionTitle}>Custom Fields</Text>
             {Object.entries(entry.fields).map(([key, value]) => (
