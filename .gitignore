@@ -48,3 +48,5 @@ app-example
 **/ios/build/
 **/.cxx/
 
+# graphify
+graphify-out/
