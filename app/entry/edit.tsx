@@ -1,8 +1,4 @@
-/**
- * Entry Edit Screen — Create or update a password entry.
- */
-
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,7 +11,7 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -33,6 +29,11 @@ import { CyberCard } from "@/src/components/CyberCard";
 import * as DocumentPicker from "expo-document-picker";
 import { readFile } from "vaultpeer-file-system";
 import type { VaultAttachment } from "@/src/types/kdbx";
+import * as Haptics from "expo-haptics";
+import {
+  generatePassword,
+  estimatePasswordStrength,
+} from "@/src/services/passwordGenerator";
 
 interface CustomFieldState {
   id: string;
@@ -58,6 +59,7 @@ function FormField({
   multiline,
   iconName,
   mono,
+  rightElement,
 }: {
   label: string;
   value: string;
@@ -67,6 +69,7 @@ function FormField({
   multiline?: boolean;
   iconName: React.ComponentProps<typeof Ionicons>["name"];
   mono?: boolean;
+  rightElement?: React.ReactNode;
 }) {
   const [showSecret, setShowSecret] = useState(false);
   return (
@@ -106,6 +109,7 @@ function FormField({
             />
           </Pressable>
         )}
+        {rightElement}
       </View>
     </View>
   );
@@ -128,6 +132,53 @@ export default function EntryEditScreen() {
   const [password, setPassword] = useState(existing?.password ?? "");
   const [url, setUrl] = useState(existing?.url ?? "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
+
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [genLength, setGenLength] = useState(16);
+  const [genUppercase, setGenUppercase] = useState(true);
+  const [genLowercase, setGenLowercase] = useState(true);
+  const [genNumbers, setGenNumbers] = useState(true);
+  const [genSymbols, setGenSymbols] = useState(true);
+  const [genExcludeLookalikes, setGenExcludeLookalikes] = useState(false);
+
+  const handleGenerateInline = useCallback(() => {
+    if (!genUppercase && !genLowercase && !genNumbers && !genSymbols) {
+      return;
+    }
+    const pwd = generatePassword({
+      length: genLength,
+      useUppercase: genUppercase,
+      useLowercase: genLowercase,
+      useNumbers: genNumbers,
+      useSymbols: genSymbols,
+      excludeLookalikes: genExcludeLookalikes,
+    });
+    setPassword(pwd);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [
+    genLength,
+    genUppercase,
+    genLowercase,
+    genNumbers,
+    genSymbols,
+    genExcludeLookalikes,
+  ]);
+
+  // Auto-regenerate password when options change, but only if generator is active
+  useEffect(() => {
+    if (showGenerator) {
+      handleGenerateInline();
+    }
+  }, [
+    showGenerator,
+    genLength,
+    genUppercase,
+    genLowercase,
+    genNumbers,
+    genSymbols,
+    genExcludeLookalikes,
+    handleGenerateInline,
+  ]);
 
   const [customFields, setCustomFields] = useState<CustomFieldState[]>(() => {
     if (!existing || !existing.fields) return [];
@@ -372,6 +423,8 @@ export default function EntryEditScreen() {
     router,
   ]);
 
+  const strength = estimatePasswordStrength(password);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -436,7 +489,239 @@ export default function EntryEditScreen() {
                 iconName="key-outline"
                 secureTextEntry
                 mono
+                rightElement={
+                  <Pressable
+                    onPress={() => {
+                      if (!showGenerator) {
+                        setShowGenerator(true);
+                        if (!password) {
+                          const newPwd = generatePassword({
+                            length: genLength,
+                            useUppercase: genUppercase,
+                            useLowercase: genLowercase,
+                            useNumbers: genNumbers,
+                            useSymbols: genSymbols,
+                            excludeLookalikes: genExcludeLookalikes,
+                          });
+                          setPassword(newPwd);
+                          Haptics.impactAsync(
+                            Haptics.ImpactFeedbackStyle.Medium
+                          );
+                        }
+                      } else {
+                        setShowGenerator(false);
+                      }
+                    }}
+                    style={styles.eyeBtn}
+                    hitSlop={8}
+                    accessibilityLabel="Toggle inline password generator"
+                  >
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={18}
+                      color={
+                        showGenerator ? Colors.accentMint : Colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                }
               />
+
+              {password.length > 0 && (
+                <Animated.View
+                  entering={FadeInDown.duration(200)}
+                  style={styles.strengthContainer}
+                >
+                  <View style={styles.strengthHeader}>
+                    <Text style={styles.strengthLabel}>Password Strength</Text>
+                    <Text
+                      style={[styles.strengthValue, { color: strength.color }]}
+                    >
+                      {strength.label} ({Math.round(strength.entropy)} bits)
+                    </Text>
+                  </View>
+                  <View style={styles.strengthBarContainer}>
+                    {[0, 1, 2, 3].map((index) => {
+                      const active = strength.score >= index + 1;
+                      return (
+                        <View
+                          key={index}
+                          style={[
+                            styles.strengthBar,
+                            active
+                              ? { backgroundColor: strength.color }
+                              : { backgroundColor: Colors.surfaceElevated },
+                          ]}
+                        />
+                      );
+                    })}
+                  </View>
+                </Animated.View>
+              )}
+
+              {showGenerator && (
+                <Animated.View
+                  entering={FadeInDown.duration(250)}
+                  exiting={FadeOutUp.duration(200)}
+                  style={styles.generatorPanel}
+                >
+                  <View style={styles.generatorHeaderRow}>
+                    <Text style={styles.generatorTitle}>Inline Generator</Text>
+                    <Pressable
+                      onPress={handleGenerateInline}
+                      style={styles.regenerateBtn}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name="refresh"
+                        size={14}
+                        color={Colors.accentMint}
+                      />
+                      <Text style={styles.regenerateBtnText}>Regenerate</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.generatorLengthRow}>
+                    <Text style={styles.generatorLengthLabel}>
+                      Length:{" "}
+                      <Text style={styles.generatorLengthVal}>{genLength}</Text>
+                    </Text>
+                    <View style={styles.genLengthControls}>
+                      <Pressable
+                        onPress={() => {
+                          setGenLength((prev) => Math.max(8, prev - 1));
+                          Haptics.impactAsync(
+                            Haptics.ImpactFeedbackStyle.Light
+                          );
+                        }}
+                        style={styles.genLengthBtn}
+                        hitSlop={4}
+                      >
+                        <Ionicons
+                          name="remove"
+                          size={14}
+                          color={Colors.textPrimary}
+                        />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          setGenLength((prev) => Math.min(64, prev + 1));
+                          Haptics.impactAsync(
+                            Haptics.ImpactFeedbackStyle.Light
+                          );
+                        }}
+                        style={styles.genLengthBtn}
+                        hitSlop={4}
+                      >
+                        <Ionicons
+                          name="add"
+                          size={14}
+                          color={Colors.textPrimary}
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  {/* Character Toggle Pills */}
+                  <View style={styles.genPillsGrid}>
+                    <Pressable
+                      onPress={() => {
+                        setGenUppercase(!genUppercase);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={[
+                        styles.genPill,
+                        genUppercase && styles.genPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.genPillText,
+                          genUppercase && styles.genPillTextActive,
+                        ]}
+                      >
+                        A-Z
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setGenLowercase(!genLowercase);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={[
+                        styles.genPill,
+                        genLowercase && styles.genPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.genPillText,
+                          genLowercase && styles.genPillTextActive,
+                        ]}
+                      >
+                        a-z
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setGenNumbers(!genNumbers);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={[
+                        styles.genPill,
+                        genNumbers && styles.genPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.genPillText,
+                          genNumbers && styles.genPillTextActive,
+                        ]}
+                      >
+                        0-9
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setGenSymbols(!genSymbols);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={[
+                        styles.genPill,
+                        genSymbols && styles.genPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.genPillText,
+                          genSymbols && styles.genPillTextActive,
+                        ]}
+                      >
+                        !@#
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setGenExcludeLookalikes(!genExcludeLookalikes);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={[
+                        styles.genPill,
+                        genExcludeLookalikes && styles.genPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.genPillText,
+                          genExcludeLookalikes && styles.genPillTextActive,
+                        ]}
+                      >
+                        No Lookalikes
+                      </Text>
+                    </Pressable>
+                  </View>
+                </Animated.View>
+              )}
               <FormField
                 label="URL"
                 value={url}
@@ -1067,6 +1352,141 @@ const styles = StyleSheet.create({
   addAttachmentBtnText: {
     fontFamily: Fonts.heading.medium,
     fontSize: FontSizes.bodySmall,
+    color: Colors.accentMint,
+  },
+  strengthContainer: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.surfaceCard,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  strengthHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  strengthLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  strengthValue: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+  },
+  strengthBarContainer: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    height: 6,
+  },
+  strengthBar: {
+    flex: 1,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  generatorPanel: {
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    padding: Spacing.md,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
+    gap: Spacing.md,
+  },
+  generatorHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  generatorTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  regenerateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  regenerateBtnText: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.accentMint,
+  },
+  generatorLengthRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  generatorLengthLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+  },
+  generatorLengthVal: {
+    fontFamily: Fonts.heading.semiBold,
+    color: Colors.textPrimary,
+  },
+  genLengthControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  genLengthBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: Radii.sm,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceCard,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  genPillsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+  },
+  genPill: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    backgroundColor: Colors.surfaceElevated,
+    minHeight: 32,
+    justifyContent: "center",
+  },
+  genPillActive: {
+    backgroundColor: Colors.accentMintDim,
+    borderColor: Colors.accentMint,
+  },
+  genPillText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  genPillTextActive: {
+    fontFamily: Fonts.heading.medium,
     color: Colors.accentMint,
   },
 });
