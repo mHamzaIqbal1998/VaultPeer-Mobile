@@ -1,3 +1,15 @@
+import { Platform } from "react-native";
+
+let quickBase64: any = null;
+try {
+  if (Platform.OS !== "web") {
+    // Dynamic require so it doesn't fail in test/web environments where it's not mocked or linked
+    quickBase64 = require("react-native-quick-base64");
+  }
+} catch (e) {
+  // Fall back to JS implementation
+}
+
 const chars =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -5,6 +17,10 @@ const chars =
  * Encodes an ArrayBuffer into a Base64 string.
  */
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  if (quickBase64 && typeof quickBase64.fromByteArray === "function") {
+    return quickBase64.fromByteArray(new Uint8Array(buffer));
+  }
+
   const bytes = new Uint8Array(buffer);
   const len = bytes.length;
   let base64 = "";
@@ -33,6 +49,20 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
  * Decodes a Base64 string into an ArrayBuffer.
  */
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  if (quickBase64 && typeof quickBase64.toByteArray === "function") {
+    const uint8 = quickBase64.toByteArray(base64);
+    if (
+      uint8.byteOffset === 0 &&
+      uint8.byteLength === uint8.buffer.byteLength
+    ) {
+      return uint8.buffer;
+    }
+    return uint8.buffer.slice(
+      uint8.byteOffset,
+      uint8.byteOffset + uint8.byteLength
+    );
+  }
+
   // Remove padding characters and whitespace
   const cleaned = base64.replace(/[^A-Za-z0-9+/]/g, "");
   const len = cleaned.length;

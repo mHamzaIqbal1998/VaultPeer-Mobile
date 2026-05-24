@@ -21,6 +21,10 @@ import { Platform } from "react-native";
 import * as ExpoCrypto from "expo-crypto";
 import CryptoJS from "crypto-js";
 
+// WeakMap to store raw key data for WebCrypto CryptoKey objects.
+// This allows us to retrieve key bytes synchronously for fast Node-style operations.
+const rawKeyMap = new WeakMap<any, Uint8Array>();
+
 // ────────────────────────────────────────────
 // DOMException Wrapper
 // ────────────────────────────────────────────
@@ -88,6 +92,14 @@ type QuickCryptoModule = {
     subtle: SubtleCrypto;
     getRandomValues: <T extends ArrayBufferView>(array: T) => T;
   };
+  createCipheriv?: (algorithm: string, key: Uint8Array, iv: Uint8Array) => any;
+  createDecipheriv?: (
+    algorithm: string,
+    key: Uint8Array,
+    iv: Uint8Array
+  ) => any;
+  createHash?: (algorithm: string) => any;
+  createHmac?: (algorithm: string, key: Uint8Array) => any;
   install?: () => void;
 };
 
@@ -200,6 +212,21 @@ const digest = async (
   if (native?.webcrypto?.subtle) {
     try {
       const uint8Data = toUint8Array(data);
+      if (typeof native.createHash === "function") {
+        const hashAlgo =
+          algoName === "SHA-256"
+            ? "sha256"
+            : algoName === "SHA-512"
+              ? "sha512"
+              : algoName.toLowerCase();
+        const hash = native.createHash(hashAlgo);
+        hash.update(uint8Data);
+        const result = hash.digest();
+        return result.buffer.slice(
+          result.byteOffset,
+          result.byteOffset + result.byteLength
+        );
+      }
       return await native.webcrypto.subtle.digest(
         algoName === "SHA-256"
           ? "SHA-256"
@@ -250,13 +277,18 @@ const importKey = async (
   if (native?.webcrypto?.subtle) {
     try {
       const rawKey = toUint8Array(keyData);
-      return await native.webcrypto.subtle.importKey(
+      const keyObj = await native.webcrypto.subtle.importKey(
         "raw",
         rawKey as any,
         algorithm,
         extractable,
         keyUsages as any
       );
+      if (keyObj && typeof keyObj === "object") {
+        rawKeyMap.set(keyObj, rawKey);
+        (keyObj as any)._rawKey = rawKey;
+      }
+      return keyObj;
     } catch (error) {
       throw wrapDOMException(error, "importKey", "DataError");
     }
@@ -293,6 +325,21 @@ const sign = async (
   const native = getNativeModule();
   if (native?.webcrypto?.subtle) {
     try {
+      const rawKey = rawKeyMap.get(key) || key._rawKey;
+      if (rawKey && typeof native.createHmac === "function") {
+        const hashName =
+          key.algorithm?.hash?.name?.toUpperCase?.() ??
+          algorithm?.hash?.name?.toUpperCase?.() ??
+          "SHA-256";
+        const hmacAlgo = hashName === "SHA-512" ? "sha512" : "sha256";
+        const hmac = native.createHmac(hmacAlgo, toUint8Array(rawKey));
+        hmac.update(toUint8Array(data));
+        const result = hmac.digest();
+        return result.buffer.slice(
+          result.byteOffset,
+          result.byteOffset + result.byteLength
+        );
+      }
       return await native.webcrypto.subtle.sign(algorithm, key, data);
     } catch (error) {
       throw wrapDOMException(error, "sign(HMAC)", "OperationError");
@@ -346,6 +393,23 @@ const encrypt = async (
   const native = getNativeModule();
   if (native?.webcrypto?.subtle) {
     try {
+      const rawKey = rawKeyMap.get(key) || key._rawKey;
+      if (rawKey && typeof native.createCipheriv === "function") {
+        const keyBytes = toUint8Array(rawKey);
+        const ivBytes = toUint8Array(algorithm.iv);
+        const dataBytes = toUint8Array(data);
+        const cipher = native.createCipheriv("aes-256-cbc", keyBytes, ivBytes);
+        const r1 = cipher.update(dataBytes);
+        const r2 = cipher.final();
+        const totalLength = r1.length + r2.length;
+        const result = new Uint8Array(totalLength);
+        result.set(r1, 0);
+        result.set(r2, r1.length);
+        return result.buffer.slice(
+          result.byteOffset,
+          result.byteOffset + result.byteLength
+        );
+      }
       return await native.webcrypto.subtle.encrypt(algorithm, key, data);
     } catch (error) {
       throw wrapDOMException(error, "encrypt(AES-CBC)", "OperationError");
@@ -393,6 +457,27 @@ const decrypt = async (
   const native = getNativeModule();
   if (native?.webcrypto?.subtle) {
     try {
+      const rawKey = rawKeyMap.get(key) || key._rawKey;
+      if (rawKey && typeof native.createDecipheriv === "function") {
+        const keyBytes = toUint8Array(rawKey);
+        const ivBytes = toUint8Array(algorithm.iv);
+        const dataBytes = toUint8Array(data);
+        const decipher = native.createDecipheriv(
+          "aes-256-cbc",
+          keyBytes,
+          ivBytes
+        );
+        const r1 = decipher.update(dataBytes);
+        const r2 = decipher.final();
+        const totalLength = r1.length + r2.length;
+        const result = new Uint8Array(totalLength);
+        result.set(r1, 0);
+        result.set(r2, r1.length);
+        return result.buffer.slice(
+          result.byteOffset,
+          result.byteOffset + result.byteLength
+        );
+      }
       return await native.webcrypto.subtle.decrypt(algorithm, key, data);
     } catch (error) {
       throw wrapDOMException(error, "decrypt(AES-CBC)", "OperationError");
