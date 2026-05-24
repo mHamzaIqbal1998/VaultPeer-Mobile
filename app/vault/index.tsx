@@ -18,6 +18,7 @@ import {
   TextInput,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -159,6 +160,7 @@ export default function VaultBrowserScreen() {
   const [showRenameInput, setShowRenameInput] = useState(false);
   const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
   const [renameGroupName, setRenameGroupName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const isAtRoot = breadcrumbs.length === 0;
 
@@ -323,18 +325,23 @@ export default function VaultBrowserScreen() {
   }, [activeGroup, deleteGroup, isGroupInRecycleBin]);
 
   const handleSave = useCallback(async () => {
-    if (!db) return;
-    try {
-      await saveVault(db);
-      markClean();
-      Alert.alert("Success", "Vault saved successfully.");
-    } catch (e: any) {
-      Alert.alert(
-        "Error Saving",
-        e?.message || "Failed to write database file."
-      );
-    }
-  }, [db, saveVault, markClean]);
+    if (!db || saving) return;
+    setSaving(true);
+    setTimeout(async () => {
+      try {
+        await saveVault(db);
+        markClean();
+        Alert.alert("Success", "Vault saved successfully.");
+      } catch (e: any) {
+        Alert.alert(
+          "Error Saving",
+          e?.message || "Failed to write database file."
+        );
+      } finally {
+        setSaving(false);
+      }
+    }, 50);
+  }, [db, saveVault, markClean, saving]);
 
   // ────── Render Helpers ──────
 
@@ -449,15 +456,20 @@ export default function VaultBrowserScreen() {
             >
               <Pressable
                 onPress={handleSave}
-                style={styles.iconButton}
+                disabled={saving}
+                style={[styles.iconButton, saving && { opacity: 0.6 }]}
                 hitSlop={8}
                 accessibilityLabel="Save changes"
               >
-                <Ionicons
-                  name="save-outline"
-                  size={22}
-                  color={Colors.accentMint}
-                />
+                {saving ? (
+                  <ActivityIndicator size="small" color={Colors.accentMint} />
+                ) : (
+                  <Ionicons
+                    name="save-outline"
+                    size={22}
+                    color={Colors.accentMint}
+                  />
+                )}
               </Pressable>
             </Animated.View>
           )}

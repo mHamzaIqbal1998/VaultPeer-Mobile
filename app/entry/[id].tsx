@@ -17,6 +17,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,6 +38,16 @@ import {
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import { CyberCard } from "@/src/components/CyberCard";
+import { createFile, writeTempFile } from "vaultpeer-file-system";
+import type { VaultAttachment } from "@/src/types/kdbx";
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -59,7 +70,7 @@ function FieldRow({
 }) {
   const [revealed, setRevealed] = useState(!isMasked);
 
-  if (!value && !isMasked) return null;
+  if (!value) return null;
 
   const displayValue = !revealed ? "••••••••••••" : value || "(empty)";
 
@@ -124,16 +135,49 @@ export default function EntryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
-  const {
-    getEntry,
-    deleteEntry,
-    restoreEntry,
-    logAccess,
-    isGroupInRecycleBin,
-  } = useVaultStore();
+  const deleteEntry = useVaultStore((state) => state.deleteEntry);
+  const restoreEntry = useVaultStore((state) => state.restoreEntry);
+  const logAccess = useVaultStore((state) => state.logAccess);
+  const isGroupInRecycleBin = useVaultStore(
+    (state) => state.isGroupInRecycleBin
+  );
+  const entry = useVaultStore(
+    useCallback((state) => state.entryIndex.get(id ?? "") ?? null, [id])
+  );
   const { copyToClipboard } = useClipboard();
 
-  const entry = getEntry(id ?? "");
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  const handleExportAttachment = useCallback(
+    async (attachment: VaultAttachment) => {
+      try {
+        setExporting(attachment.name);
+        const tempFileUri = await writeTempFile(attachment.data);
+        await createFile(attachment.name, tempFileUri);
+        Alert.alert(
+          "Success",
+          `Saved attachment "${attachment.name}" successfully.`
+        );
+      } catch (err: any) {
+        console.error(err);
+        Alert.alert(
+          "Export Failed",
+          err?.message || "Could not save the attachment."
+        );
+      } finally {
+        setExporting(null);
+      }
+    },
+    []
+  );
+
+  const isExpired =
+    entry?.expires &&
+    entry?.expiryTime &&
+    new Date(entry.expiryTime).getTime() < Date.now();
+  const expiryDate = entry?.expiryTime ? new Date(entry.expiryTime) : null;
 
   // Log view on mount
   useEffect(() => {
@@ -161,7 +205,7 @@ export default function EntryDetailScreen() {
     : false;
 
   const handleDelete = useCallback(() => {
-    if (!entry) return;
+    if (!entry || deleting) return;
     const title = inRecycleBin ? "Permanently Delete Entry" : "Delete Entry";
     const message = inRecycleBin
       ? `Are you sure you want to permanently delete "${entry.title}"? This action cannot be undone.`
@@ -174,16 +218,24 @@ export default function EntryDetailScreen() {
         text: deleteBtnText,
         style: "destructive",
         onPress: () => {
-          deleteEntry(entry.uuid);
-          logAccess(entry.uuid, entry.title, "deleted");
-          router.back();
+          setDeleting(true);
+          setTimeout(() => {
+            try {
+              deleteEntry(entry.uuid);
+              logAccess(entry.uuid, entry.title, "deleted");
+              router.back();
+            } catch (err) {
+              setDeleting(false);
+              console.error(err);
+            }
+          }, 50);
         },
       },
     ]);
-  }, [entry, deleteEntry, logAccess, router, inRecycleBin]);
+  }, [entry, deleteEntry, logAccess, router, inRecycleBin, deleting]);
 
   const handleRestore = useCallback(() => {
-    if (!entry) return;
+    if (!entry || restoring) return;
     Alert.alert(
       "Restore Entry",
       `Are you sure you want to restore "${entry.title}"?`,
@@ -192,18 +244,27 @@ export default function EntryDetailScreen() {
         {
           text: "Restore",
           onPress: () => {
-            const success = restoreEntry(entry.uuid);
-            if (success) {
-              logAccess(entry.uuid, entry.title, "updated");
-              router.back();
-            } else {
-              Alert.alert("Error", "Failed to restore entry.");
-            }
+            setRestoring(true);
+            setTimeout(() => {
+              try {
+                const success = restoreEntry(entry.uuid);
+                if (success) {
+                  logAccess(entry.uuid, entry.title, "updated");
+                  router.back();
+                } else {
+                  setRestoring(false);
+                  Alert.alert("Error", "Failed to restore entry.");
+                }
+              } catch (err) {
+                setRestoring(false);
+                console.error(err);
+              }
+            }, 50);
           },
         },
       ]
     );
-  }, [entry, restoreEntry, logAccess, router]);
+  }, [entry, restoreEntry, logAccess, router, restoring]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;
@@ -241,33 +302,49 @@ export default function EntryDetailScreen() {
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
-          style={styles.backButton}
+          disabled={restoring || deleting}
+          style={[
+            styles.backButton,
+            (restoring || deleting) && { opacity: 0.5 },
+          ]}
           hitSlop={8}
           accessibilityLabel="Go back"
         >
           <Ionicons name="chevron-back" size={24} color={Colors.accentMint} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          Entry Detail
+          {entry?.title || "Entry Detail"}
         </Text>
         <View style={styles.headerActions}>
           {inRecycleBin ? (
             <Pressable
               onPress={handleRestore}
-              style={styles.headerActionBtn}
+              disabled={restoring || deleting}
+              style={[
+                styles.headerActionBtn,
+                (restoring || deleting) && { opacity: 0.5 },
+              ]}
               hitSlop={8}
               accessibilityLabel="Restore entry"
             >
-              <Ionicons
-                name="arrow-undo-outline"
-                size={22}
-                color={Colors.accentMint}
-              />
+              {restoring ? (
+                <ActivityIndicator size="small" color={Colors.accentMint} />
+              ) : (
+                <Ionicons
+                  name="arrow-undo-outline"
+                  size={22}
+                  color={Colors.accentMint}
+                />
+              )}
             </Pressable>
           ) : (
             <Pressable
               onPress={handleEdit}
-              style={styles.headerActionBtn}
+              disabled={restoring || deleting}
+              style={[
+                styles.headerActionBtn,
+                (restoring || deleting) && { opacity: 0.5 },
+              ]}
               hitSlop={8}
               accessibilityLabel="Edit entry"
             >
@@ -280,15 +357,23 @@ export default function EntryDetailScreen() {
           )}
           <Pressable
             onPress={handleDelete}
-            style={styles.headerActionBtn}
+            disabled={restoring || deleting}
+            style={[
+              styles.headerActionBtn,
+              (restoring || deleting) && { opacity: 0.5 },
+            ]}
             hitSlop={8}
             accessibilityLabel="Delete entry"
           >
-            <Ionicons
-              name="trash-outline"
-              size={22}
-              color={Colors.statusError}
-            />
+            {deleting ? (
+              <ActivityIndicator size="small" color={Colors.statusError} />
+            ) : (
+              <Ionicons
+                name="trash-outline"
+                size={22}
+                color={Colors.statusError}
+              />
+            )}
           </Pressable>
         </View>
       </View>
@@ -310,6 +395,32 @@ export default function EntryDetailScreen() {
               <Ionicons name={iconName} size={28} color={Colors.accentMint} />
             </View>
             <Text style={styles.entryTitle}>{entry.title || "Untitled"}</Text>
+            {entry.expires && (
+              <View style={styles.expiryBadgeRow}>
+                {isExpired ? (
+                  <View style={[styles.expiryBadge, styles.expiryBadgeExpired]}>
+                    <Ionicons
+                      name="warning"
+                      size={12}
+                      color={Colors.statusError}
+                    />
+                    <Text style={styles.expiryBadgeTextExpired}>EXPIRED</Text>
+                  </View>
+                ) : (
+                  <View style={styles.expiryBadge}>
+                    <Ionicons
+                      name="time"
+                      size={12}
+                      color={Colors.statusWarning}
+                    />
+                    <Text style={styles.expiryBadgeText}>
+                      Expires:{" "}
+                      {expiryDate ? expiryDate.toLocaleString() : "Never"}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
             {entry.tags.length > 0 && (
               <View style={styles.tagsRow}>
                 {entry.tags.map((tag) => (
@@ -323,37 +434,39 @@ export default function EntryDetailScreen() {
         </Animated.View>
 
         {/* ── Core Fields ── */}
-        <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
-          <FieldRow
-            label="Username"
-            value={entry.username}
-            iconName="person-outline"
-            onCopy={() => handleCopy(entry.username, "Username")}
-          />
-          <FieldRow
-            label="Password"
-            value={entry.password}
-            iconName="key-outline"
-            isMasked
-            isMono
-            onCopy={() => handleCopy(entry.password, "Password")}
-          />
-          <FieldRow
-            label="URL"
-            value={entry.url}
-            iconName="globe-outline"
-            onCopy={() => handleCopy(entry.url, "URL")}
-          />
-          <FieldRow
-            label="Notes"
-            value={entry.notes}
-            iconName="document-text-outline"
-            onCopy={() => handleCopy(entry.notes, "Notes")}
-          />
-        </CyberCard>
+        {entry.username || entry.password || entry.url || entry.notes ? (
+          <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+            <FieldRow
+              label="Username"
+              value={entry.username}
+              iconName="person-outline"
+              onCopy={() => handleCopy(entry.username, "Username")}
+            />
+            <FieldRow
+              label="Password"
+              value={entry.password}
+              iconName="key-outline"
+              isMasked
+              isMono
+              onCopy={() => handleCopy(entry.password, "Password")}
+            />
+            <FieldRow
+              label="URL"
+              value={entry.url}
+              iconName="globe-outline"
+              onCopy={() => handleCopy(entry.url, "URL")}
+            />
+            <FieldRow
+              label="Notes"
+              value={entry.notes}
+              iconName="document-text-outline"
+              onCopy={() => handleCopy(entry.notes, "Notes")}
+            />
+          </CyberCard>
+        ) : null}
 
         {/* ── Custom Fields ── */}
-        {Object.keys(entry.fields).length > 0 && (
+        {Object.entries(entry.fields).some(([_, val]) => !!val) && (
           <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
             <Text style={styles.sectionTitle}>Custom Fields</Text>
             {Object.entries(entry.fields).map(([key, value]) => (
@@ -362,8 +475,52 @@ export default function EntryDetailScreen() {
                 label={key}
                 value={value}
                 iconName="pricetag-outline"
+                isMasked={entry.secureFields?.includes(key)}
+                isMono={entry.secureFields?.includes(key)}
                 onCopy={() => handleCopy(value, key)}
               />
+            ))}
+          </CyberCard>
+        )}
+
+        {/* ── Attachments ── */}
+        {entry.attachments && entry.attachments.length > 0 && (
+          <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+            <Text style={styles.sectionTitle}>Attachments</Text>
+            {entry.attachments.map((attachment) => (
+              <View key={attachment.id} style={styles.attachmentRow}>
+                <View style={styles.attachmentInfo}>
+                  <Ionicons
+                    name="document-attach-outline"
+                    size={20}
+                    color={Colors.accentMint}
+                  />
+                  <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
+                    <Text style={styles.attachmentName} numberOfLines={1}>
+                      {attachment.name}
+                    </Text>
+                    <Text style={styles.attachmentSize}>
+                      {formatSize(attachment.size)}
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={() => handleExportAttachment(attachment)}
+                  style={styles.attachmentExportBtn}
+                  disabled={exporting === attachment.name}
+                  hitSlop={8}
+                >
+                  {exporting === attachment.name ? (
+                    <ActivityIndicator size="small" color={Colors.accentMint} />
+                  ) : (
+                    <Ionicons
+                      name="download-outline"
+                      size={20}
+                      color={Colors.accentMint}
+                    />
+                  )}
+                </Pressable>
+              </View>
             ))}
           </CyberCard>
         )}
@@ -615,5 +772,65 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading.medium,
     fontSize: FontSizes.body,
     color: Colors.accentMint,
+  },
+
+  // Expiry badge
+  expiryBadgeRow: {
+    marginTop: Spacing.xs,
+  },
+  expiryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.statusWarningDim,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radii.sm,
+    gap: Spacing.xs,
+  },
+  expiryBadgeExpired: {
+    backgroundColor: Colors.statusErrorDim,
+  },
+  expiryBadgeText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.statusWarning,
+  },
+  expiryBadgeTextExpired: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.caption,
+    color: Colors.statusError,
+    letterSpacing: 0.5,
+  },
+
+  // Attachments
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderSage,
+  },
+  attachmentInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  attachmentName: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  attachmentSize: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  attachmentExportBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

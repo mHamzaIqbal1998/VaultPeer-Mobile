@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -64,6 +65,8 @@ export default function VaultSettingsScreen() {
   const [showBiometricPasswordInput, setShowBiometricPasswordInput] =
     useState(false);
   const [biometricPassword, setBiometricPassword] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function checkBiometrics() {
@@ -88,30 +91,36 @@ export default function VaultSettingsScreen() {
   }, [biometricEnabled]);
 
   const handleConfirmBiometric = useCallback(async () => {
+    if (verifying) return;
     if (!biometricPassword) {
       Alert.alert("Error", "Please enter your master password.");
       return;
     }
-    try {
-      const { db: verifiedDb } = await loadVault(biometricPassword);
-      if (verifiedDb) {
-        const success = await enableBiometric(biometricPassword);
-        if (success) {
-          setBiometricEnabled(true);
-          setShowBiometricPasswordInput(false);
-          setBiometricPassword("");
-          Alert.alert("Success", "Biometric unlock enabled successfully.");
-        } else {
-          Alert.alert("Error", "Failed to enable biometric authentication.");
+    setVerifying(true);
+    setTimeout(async () => {
+      try {
+        const { db: verifiedDb } = await loadVault(biometricPassword);
+        if (verifiedDb) {
+          const success = await enableBiometric(biometricPassword);
+          if (success) {
+            setBiometricEnabled(true);
+            setShowBiometricPasswordInput(false);
+            setBiometricPassword("");
+            Alert.alert("Success", "Biometric unlock enabled successfully.");
+          } else {
+            Alert.alert("Error", "Failed to enable biometric authentication.");
+          }
         }
+      } catch (e: any) {
+        Alert.alert(
+          "Verification Failed",
+          e?.message || "Invalid master password."
+        );
+      } finally {
+        setVerifying(false);
       }
-    } catch (e: any) {
-      Alert.alert(
-        "Verification Failed",
-        e?.message || "Invalid master password."
-      );
-    }
-  }, [biometricPassword, loadVault]);
+    }, 50);
+  }, [biometricPassword, loadVault, verifying]);
 
   const stats = useMemo(() => {
     if (!db) return null;
@@ -125,18 +134,23 @@ export default function VaultSettingsScreen() {
   }, [closeDatabase, router]);
 
   const handleSave = useCallback(async () => {
-    if (!db) return;
-    try {
-      await saveVault(db);
-      markClean();
-      Alert.alert("Success", "Vault saved successfully.");
-    } catch (e: any) {
-      Alert.alert(
-        "Error Saving",
-        e?.message || "Failed to write database file."
-      );
-    }
-  }, [db, saveVault, markClean]);
+    if (!db || saving) return;
+    setSaving(true);
+    setTimeout(async () => {
+      try {
+        await saveVault(db);
+        markClean();
+        Alert.alert("Success", "Vault saved successfully.");
+      } catch (e: any) {
+        Alert.alert(
+          "Error Saving",
+          e?.message || "Failed to write database file."
+        );
+      } finally {
+        setSaving(false);
+      }
+    }, 50);
+  }, [db, saveVault, markClean, saving]);
 
   const handleForget = useCallback(() => {
     Alert.alert(
@@ -184,17 +198,28 @@ export default function VaultSettingsScreen() {
             </Text>
             <Pressable
               onPress={handleSave}
+              disabled={saving}
               style={({ pressed }) => [
                 styles.saveBtn,
                 pressed && styles.saveBtnPressed,
+                saving && { opacity: 0.6 },
               ]}
             >
-              <Ionicons
-                name="save-outline"
-                size={16}
-                color={Colors.backgroundPrimary}
-              />
-              <Text style={styles.saveBtnText}>Save Changes</Text>
+              {saving ? (
+                <ActivityIndicator
+                  size="small"
+                  color={Colors.backgroundPrimary}
+                />
+              ) : (
+                <>
+                  <Ionicons
+                    name="save-outline"
+                    size={16}
+                    color={Colors.backgroundPrimary}
+                  />
+                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                </>
+              )}
             </Pressable>
           </CyberCard>
         )}
@@ -316,9 +341,17 @@ export default function VaultSettingsScreen() {
                     />
                     <Pressable
                       onPress={handleConfirmBiometric}
-                      style={styles.confirmBtn}
+                      disabled={verifying}
+                      style={[styles.confirmBtn, verifying && { opacity: 0.6 }]}
                     >
-                      <Text style={styles.confirmBtnText}>Verify</Text>
+                      {verifying ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={Colors.backgroundPrimary}
+                        />
+                      ) : (
+                        <Text style={styles.confirmBtnText}>Verify</Text>
+                      )}
                     </Pressable>
                   </View>
                 </View>

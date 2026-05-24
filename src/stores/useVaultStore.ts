@@ -16,6 +16,7 @@ import { create } from "zustand";
 import * as kdbxweb from "kdbxweb";
 import { parseDatabase } from "../services/crypto/databaseParser";
 import type { VaultEntry, VaultGroup, VaultMeta } from "../types/kdbx";
+import { base64ToArrayBuffer } from "../services/base64";
 
 // ────────────────────────────────────────────
 // History Entry
@@ -78,8 +79,11 @@ interface VaultStoreState {
   createEntry: (
     parentGroupUuid: string,
     data: Partial<VaultEntry>
-  ) => VaultEntry | null;
-  updateEntry: (uuid: string, data: Partial<VaultEntry>) => VaultEntry | null;
+  ) => Promise<VaultEntry | null>;
+  updateEntry: (
+    uuid: string,
+    data: Partial<VaultEntry>
+  ) => Promise<VaultEntry | null>;
   deleteEntry: (uuid: string) => boolean;
   restoreEntry: (uuid: string) => boolean;
 
@@ -304,7 +308,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     return get().entryIndex.get(uuid) ?? null;
   },
 
-  createEntry: (parentGroupUuid, data) => {
+  createEntry: async (parentGroupUuid, data) => {
     const state = get();
     const db = state._db;
     if (!db) return null;
@@ -332,13 +336,45 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     // Set custom fields
     if (data.fields) {
+      const secureFields = data.secureFields || [];
       for (const [key, value] of Object.entries(data.fields)) {
-        newKdbxEntry.fields.set(key, value);
+        if (secureFields.includes(key)) {
+          newKdbxEntry.fields.set(
+            key,
+            kdbxweb.ProtectedValue.fromString(value)
+          );
+        } else {
+          newKdbxEntry.fields.set(key, value);
+        }
       }
     }
 
     if (data.tags) {
       newKdbxEntry.tags = [...data.tags];
+    }
+
+    // Expiration
+    if (data.expires !== undefined) {
+      newKdbxEntry.times.expires = data.expires;
+    }
+    if (data.expiryTime !== undefined) {
+      newKdbxEntry.times.expiryTime = data.expiryTime
+        ? new Date(data.expiryTime)
+        : undefined;
+    }
+
+    // Attachments
+    if (data.attachments !== undefined) {
+      for (const attachment of data.attachments) {
+        const buffer = base64ToArrayBuffer(attachment.data);
+        const binaryWithHash = await db.binaries.add(buffer);
+        newKdbxEntry.binaries.set(attachment.name, binaryWithHash);
+      }
+      try {
+        db.cleanup({ binaries: true });
+      } catch {
+        // best-effort
+      }
     }
 
     // Re-parse to update React state
@@ -359,7 +395,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     return newEntry;
   },
 
-  updateEntry: (uuid, data) => {
+  updateEntry: async (uuid, data) => {
     const state = get();
     const db = state._db;
     if (!db) return null;
@@ -404,13 +440,60 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
         }
       });
 
+      const secureFields = data.secureFields || [];
       for (const [key, value] of Object.entries(data.fields)) {
-        entry.fields.set(key, value);
+        if (secureFields.includes(key)) {
+          entry.fields.set(key, kdbxweb.ProtectedValue.fromString(value));
+        } else {
+          entry.fields.set(key, value);
+        }
       }
     }
 
     if (data.tags) {
       entry.tags = [...data.tags];
+    }
+
+    // Expiration
+    if (data.expires !== undefined) {
+      entry.times.expires = data.expires;
+    }
+    if (data.expiryTime !== undefined) {
+      entry.times.expiryTime = data.expiryTime
+        ? new Date(data.expiryTime)
+        : undefined;
+    }
+
+    // Attachments
+    if (data.attachments !== undefined) {
+      // 1. Remove attachments that are no longer present
+      const newNames = new Set(data.attachments.map((a) => a.name));
+      entry.binaries.forEach((_val, key) => {
+        if (!newNames.has(key)) {
+          entry.binaries.delete(key);
+        }
+      });
+
+      // 2. Add or update attachments
+      for (const attachment of data.attachments) {
+        // Check if there is an existing attachment with same name and same base64 data
+        const existing = state.entryIndex
+          .get(entry.uuid.id)
+          ?.attachments.find((a) => a.name === attachment.name);
+        if (existing && existing.data === attachment.data) {
+          continue;
+        }
+
+        const buffer = base64ToArrayBuffer(attachment.data);
+        const binaryWithHash = await db.binaries.add(buffer);
+        entry.binaries.set(attachment.name, binaryWithHash);
+      }
+
+      try {
+        db.cleanup({ binaries: true });
+      } catch {
+        // best-effort
+      }
     }
 
     // Update modification time

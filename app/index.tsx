@@ -25,7 +25,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
-  withSequence,
   withTiming,
   Easing,
   FadeInDown,
@@ -106,8 +105,22 @@ export default function FileSetupScreen() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Unlocked State
+  const storeDb = useVaultStore((state) => state._db);
   const [activeDb, setActiveDb] = useState<kdbxweb.Kdbx | null>(null);
   const [dbStats, setDbStats] = useState<VaultMeta | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
+
+  useEffect(() => {
+    setActiveDb(storeDb);
+    if (storeDb) {
+      setDbStats(parseMeta(storeDb));
+      setRedirecting(true);
+      router.replace("/vault");
+    } else {
+      setDbStats(null);
+      setRedirecting(false);
+    }
+  }, [storeDb, router]);
 
   // Advanced Settings State
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -122,19 +135,24 @@ export default function FileSetupScreen() {
   const [localLoading, setLocalLoading] = useState(false);
 
   // Shield glow animation
-  const glowOpacity = useSharedValue(0.4);
+  const glowScale = useSharedValue(1.0);
+  const glowOpacity = useSharedValue(0.3);
+
   useEffect(() => {
-    glowOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.ease) })
-      ),
+    glowScale.value = withRepeat(
+      withTiming(1.2, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
       -1,
-      false
+      true
     );
-  }, [glowOpacity]);
+    glowOpacity.value = withRepeat(
+      withTiming(0.8, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [glowScale, glowOpacity]);
 
   const glowStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: glowScale.value }],
     opacity: glowOpacity.value,
   }));
 
@@ -165,22 +183,23 @@ export default function FileSetupScreen() {
   const handleBiometricUnlock = useCallback(async () => {
     setFormError(null);
     setLocalLoading(true);
-    try {
-      const storedPassword = await getStoredPassword();
-      if (!storedPassword) {
-        return; // User cancelled
+    setTimeout(async () => {
+      try {
+        const storedPassword = await getStoredPassword();
+        if (!storedPassword) {
+          setLocalLoading(false);
+          return; // User cancelled
+        }
+        const { db, fileUri: currentUri } = await loadVault(storedPassword);
+        setRedirecting(true);
+        setPassword("");
+        openDatabase(db, currentUri);
+        router.replace("/vault");
+      } catch (e: any) {
+        setFormError(e?.message || "Biometric authentication failed.");
+        setLocalLoading(false);
       }
-      const { db, fileUri: currentUri } = await loadVault(storedPassword);
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setPassword("");
-      openDatabase(db, currentUri);
-      router.replace("/vault");
-    } catch (e: any) {
-      setFormError(e?.message || "Biometric authentication failed.");
-    } finally {
-      setLocalLoading(false);
-    }
+    }, 50);
   }, [loadVault, openDatabase, router]);
 
   useEffect(() => {
@@ -238,18 +257,18 @@ export default function FileSetupScreen() {
     }
     setFormError(null);
     setLocalLoading(true);
-    try {
-      const { db, fileUri: currentUri } = await loadVault(password);
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setPassword("");
-      openDatabase(db, currentUri);
-      router.replace("/vault");
-    } catch {
-      // Error handled by FilePickerContext
-    } finally {
-      setLocalLoading(false);
-    }
+    setTimeout(async () => {
+      try {
+        const { db, fileUri: currentUri } = await loadVault(password);
+        setRedirecting(true);
+        setPassword("");
+        openDatabase(db, currentUri);
+        router.replace("/vault");
+      } catch {
+        // Error handled by FilePickerContext
+        setLocalLoading(false);
+      }
+    }, 50);
   };
 
   const handleCreateVault = async () => {
@@ -267,30 +286,30 @@ export default function FileSetupScreen() {
     }
     setFormError(null);
     setLocalLoading(true);
-    try {
-      const { db, fileUri: newUri } = await createNewVault(
-        newVaultName.trim(),
-        newPassword,
-        {
-          kdf: selectedKdf,
-          cipher: selectedCipher,
-        }
-      );
-      setActiveDb(db);
-      setDbStats(parseMeta(db));
-      setNewVaultName("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setShowAdvanced(false);
-      setSelectedKdf("Argon2id");
-      setSelectedCipher("AES-256");
-      openDatabase(db, newUri);
-      router.replace("/vault");
-    } catch {
-      // Error handled by FilePickerContext
-    } finally {
-      setLocalLoading(false);
-    }
+    setTimeout(async () => {
+      try {
+        const { db, fileUri: newUri } = await createNewVault(
+          newVaultName.trim(),
+          newPassword,
+          {
+            kdf: selectedKdf,
+            cipher: selectedCipher,
+          }
+        );
+        setRedirecting(true);
+        setNewVaultName("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setShowAdvanced(false);
+        setSelectedKdf("Argon2id");
+        setSelectedCipher("AES-256");
+        openDatabase(db, newUri);
+        router.replace("/vault");
+      } catch {
+        // Error handled by FilePickerContext
+        setLocalLoading(false);
+      }
+    }, 50);
   };
 
   const handleLockVault = () => {
@@ -351,7 +370,29 @@ export default function FileSetupScreen() {
           )}
 
           {/* Active Database / Unlocked Stats View */}
-          {activeDb && dbStats ? (
+          {redirecting ? (
+            <Animated.View entering={FadeInDown.duration(300)}>
+              <CyberCard
+                style={{
+                  marginBottom: Spacing.xl,
+                  padding: Spacing.xl,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 180,
+                }}
+              >
+                <ActivityIndicator size="large" color={Colors.accentMint} />
+                <Text
+                  style={[
+                    styles.cardTitle,
+                    { marginTop: Spacing.lg, color: Colors.textSecondary },
+                  ]}
+                >
+                  Opening Vault...
+                </Text>
+              </CyberCard>
+            </Animated.View>
+          ) : activeDb && dbStats ? (
             <Animated.View entering={FadeInDown.duration(400)}>
               <CyberCard
                 style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
@@ -859,9 +900,12 @@ const styles = StyleSheet.create({
     height: 76,
     borderRadius: 38,
     backgroundColor: Colors.accentMintDim,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    ...Shadows.glow,
+    borderWidth: 1.5,
+    borderColor: "rgba(52, 211, 153, 0.3)",
+    ...Platform.select<any>({
+      ios: Shadows.glow,
+      android: {},
+    }),
   },
   title: {
     fontFamily: Fonts.heading.semiBold,
@@ -1151,9 +1195,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body.regular,
     fontSize: FontSizes.caption,
     color: Colors.textMuted,
+    textAlign: "center",
   },
   segmentBtnTextActive: {
     fontFamily: Fonts.heading.semiBold,
     color: Colors.accentMint,
+    textAlign: "center",
   },
 });
