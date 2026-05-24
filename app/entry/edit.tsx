@@ -971,12 +971,12 @@ const styles = StyleSheet.create({
   presetGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Spacing.sm,
+    justifyContent: "space-between",
+    rowGap: Spacing.sm,
     marginBottom: Spacing.md,
   },
   presetBtn: {
-    flex: 1,
-    minWidth: "28%",
+    width: "31%",
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
     borderColor: Colors.borderSage,
@@ -993,10 +993,12 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body.regular,
     fontSize: FontSizes.caption,
     color: Colors.textSecondary,
+    textAlign: "center",
   },
   presetBtnTextActive: {
     color: Colors.accentMint,
     fontFamily: Fonts.heading.medium,
+    textAlign: "center",
   },
   customExpiryContainer: {
     marginTop: Spacing.sm,
@@ -1005,7 +1007,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body.regular,
     fontSize: FontSizes.caption,
     color: Colors.textMuted,
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.sm,
   },
   customExpiryInput: {
     backgroundColor: Colors.surfaceElevated,
@@ -1013,10 +1015,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderSage,
     borderRadius: Radii.md,
     paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     color: Colors.textPrimary,
     fontFamily: Fonts.mono.regular,
     fontSize: FontSizes.bodySmall,
-    height: 40,
+    minHeight: 44,
   },
   attachmentEditRow: {
     flexDirection: "row",

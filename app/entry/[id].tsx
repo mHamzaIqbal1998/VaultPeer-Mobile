@@ -70,7 +70,7 @@ function FieldRow({
 }) {
   const [revealed, setRevealed] = useState(!isMasked);
 
-  if (!value && !isMasked) return null;
+  if (!value) return null;
 
   const displayValue = !revealed ? "••••••••••••" : value || "(empty)";
 
@@ -147,6 +147,8 @@ export default function EntryDetailScreen() {
   const { copyToClipboard } = useClipboard();
 
   const [exporting, setExporting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const handleExportAttachment = useCallback(
     async (attachment: VaultAttachment) => {
@@ -203,7 +205,7 @@ export default function EntryDetailScreen() {
     : false;
 
   const handleDelete = useCallback(() => {
-    if (!entry) return;
+    if (!entry || deleting) return;
     const title = inRecycleBin ? "Permanently Delete Entry" : "Delete Entry";
     const message = inRecycleBin
       ? `Are you sure you want to permanently delete "${entry.title}"? This action cannot be undone.`
@@ -216,16 +218,24 @@ export default function EntryDetailScreen() {
         text: deleteBtnText,
         style: "destructive",
         onPress: () => {
-          deleteEntry(entry.uuid);
-          logAccess(entry.uuid, entry.title, "deleted");
-          router.back();
+          setDeleting(true);
+          setTimeout(() => {
+            try {
+              deleteEntry(entry.uuid);
+              logAccess(entry.uuid, entry.title, "deleted");
+              router.back();
+            } catch (err) {
+              setDeleting(false);
+              console.error(err);
+            }
+          }, 50);
         },
       },
     ]);
-  }, [entry, deleteEntry, logAccess, router, inRecycleBin]);
+  }, [entry, deleteEntry, logAccess, router, inRecycleBin, deleting]);
 
   const handleRestore = useCallback(() => {
-    if (!entry) return;
+    if (!entry || restoring) return;
     Alert.alert(
       "Restore Entry",
       `Are you sure you want to restore "${entry.title}"?`,
@@ -234,18 +244,27 @@ export default function EntryDetailScreen() {
         {
           text: "Restore",
           onPress: () => {
-            const success = restoreEntry(entry.uuid);
-            if (success) {
-              logAccess(entry.uuid, entry.title, "updated");
-              router.back();
-            } else {
-              Alert.alert("Error", "Failed to restore entry.");
-            }
+            setRestoring(true);
+            setTimeout(() => {
+              try {
+                const success = restoreEntry(entry.uuid);
+                if (success) {
+                  logAccess(entry.uuid, entry.title, "updated");
+                  router.back();
+                } else {
+                  setRestoring(false);
+                  Alert.alert("Error", "Failed to restore entry.");
+                }
+              } catch (err) {
+                setRestoring(false);
+                console.error(err);
+              }
+            }, 50);
           },
         },
       ]
     );
-  }, [entry, restoreEntry, logAccess, router]);
+  }, [entry, restoreEntry, logAccess, router, restoring]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;
@@ -283,7 +302,11 @@ export default function EntryDetailScreen() {
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
-          style={styles.backButton}
+          disabled={restoring || deleting}
+          style={[
+            styles.backButton,
+            (restoring || deleting) && { opacity: 0.5 },
+          ]}
           hitSlop={8}
           accessibilityLabel="Go back"
         >
@@ -296,20 +319,32 @@ export default function EntryDetailScreen() {
           {inRecycleBin ? (
             <Pressable
               onPress={handleRestore}
-              style={styles.headerActionBtn}
+              disabled={restoring || deleting}
+              style={[
+                styles.headerActionBtn,
+                (restoring || deleting) && { opacity: 0.5 },
+              ]}
               hitSlop={8}
               accessibilityLabel="Restore entry"
             >
-              <Ionicons
-                name="arrow-undo-outline"
-                size={22}
-                color={Colors.accentMint}
-              />
+              {restoring ? (
+                <ActivityIndicator size="small" color={Colors.accentMint} />
+              ) : (
+                <Ionicons
+                  name="arrow-undo-outline"
+                  size={22}
+                  color={Colors.accentMint}
+                />
+              )}
             </Pressable>
           ) : (
             <Pressable
               onPress={handleEdit}
-              style={styles.headerActionBtn}
+              disabled={restoring || deleting}
+              style={[
+                styles.headerActionBtn,
+                (restoring || deleting) && { opacity: 0.5 },
+              ]}
               hitSlop={8}
               accessibilityLabel="Edit entry"
             >
@@ -322,15 +357,23 @@ export default function EntryDetailScreen() {
           )}
           <Pressable
             onPress={handleDelete}
-            style={styles.headerActionBtn}
+            disabled={restoring || deleting}
+            style={[
+              styles.headerActionBtn,
+              (restoring || deleting) && { opacity: 0.5 },
+            ]}
             hitSlop={8}
             accessibilityLabel="Delete entry"
           >
-            <Ionicons
-              name="trash-outline"
-              size={22}
-              color={Colors.statusError}
-            />
+            {deleting ? (
+              <ActivityIndicator size="small" color={Colors.statusError} />
+            ) : (
+              <Ionicons
+                name="trash-outline"
+                size={22}
+                color={Colors.statusError}
+              />
+            )}
           </Pressable>
         </View>
       </View>

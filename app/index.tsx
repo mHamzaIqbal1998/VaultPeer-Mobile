@@ -109,15 +109,19 @@ export default function FileSetupScreen() {
   const storeDb = useVaultStore((state) => state._db);
   const [activeDb, setActiveDb] = useState<kdbxweb.Kdbx | null>(null);
   const [dbStats, setDbStats] = useState<VaultMeta | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     setActiveDb(storeDb);
     if (storeDb) {
       setDbStats(parseMeta(storeDb));
+      setRedirecting(true);
+      router.replace("/vault");
     } else {
       setDbStats(null);
+      setRedirecting(false);
     }
-  }, [storeDb]);
+  }, [storeDb, router]);
 
   // Advanced Settings State
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -367,7 +371,29 @@ export default function FileSetupScreen() {
           )}
 
           {/* Active Database / Unlocked Stats View */}
-          {activeDb && dbStats ? (
+          {redirecting ? (
+            <Animated.View entering={FadeInDown.duration(300)}>
+              <CyberCard
+                style={{
+                  marginBottom: Spacing.xl,
+                  padding: Spacing.xl,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 180,
+                }}
+              >
+                <ActivityIndicator size="large" color={Colors.accentMint} />
+                <Text
+                  style={[
+                    styles.cardTitle,
+                    { marginTop: Spacing.lg, color: Colors.textSecondary },
+                  ]}
+                >
+                  Opening Vault...
+                </Text>
+              </CyberCard>
+            </Animated.View>
+          ) : activeDb && dbStats ? (
             <Animated.View entering={FadeInDown.duration(400)}>
               <CyberCard
                 style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
@@ -1167,9 +1193,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body.regular,
     fontSize: FontSizes.caption,
     color: Colors.textMuted,
+    textAlign: "center",
   },
   segmentBtnTextActive: {
     fontFamily: Fonts.heading.semiBold,
     color: Colors.accentMint,
+    textAlign: "center",
   },
 });
