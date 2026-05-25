@@ -545,3 +545,48 @@ export function setupWebCryptoPolyfill(): void {
 
 // Automatically setup on module load
 setupWebCryptoPolyfill();
+
+// ────────────────────────────────────────────
+// kdbxweb Int64 Polyfill/Patch
+// ────────────────────────────────────────────
+// In KDBX databases edited/merged by some clients (e.g. KeePassDX), date values
+// can be saved with invalid/huge numbers that exceed Number.MAX_SAFE_INTEGER.
+// This patches kdbxweb's Int64 class getter and static from methods to clamp
+// values to Number.MAX_SAFE_INTEGER instead of throwing a "too large number" error.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const kdbxweb = require("kdbxweb");
+  if (kdbxweb && kdbxweb.Int64) {
+    const proto = kdbxweb.Int64.prototype;
+    const originalValueDescriptor = Object.getOwnPropertyDescriptor(
+      proto,
+      "value"
+    );
+    if (originalValueDescriptor) {
+      Object.defineProperty(proto, "value", {
+        get() {
+          if (this.hi >= 0x200000) {
+            return Number.MAX_SAFE_INTEGER;
+          }
+          return originalValueDescriptor.get
+            ? originalValueDescriptor.get.call(this)
+            : this.lo;
+        },
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    const originalFrom = kdbxweb.Int64.from;
+    if (typeof originalFrom === "function") {
+      kdbxweb.Int64.from = function (value: number) {
+        if (value > 0x1fffffffffffff) {
+          return new kdbxweb.Int64(0xffffffff, 0x1fffff);
+        }
+        return originalFrom.call(this, value);
+      };
+    }
+  }
+} catch (e) {
+  console.warn("[WebCryptoPolyfill] Failed to patch kdbxweb Int64:", e);
+}
