@@ -138,6 +138,7 @@ export default function EntryDetailScreen() {
   const deleteEntry = useVaultStore((state) => state.deleteEntry);
   const restoreEntry = useVaultStore((state) => state.restoreEntry);
   const logAccess = useVaultStore((state) => state.logAccess);
+  const getAttachmentData = useVaultStore((state) => state.getAttachmentData);
   const isGroupInRecycleBin = useVaultStore(
     (state) => state.isGroupInRecycleBin
   );
@@ -154,7 +155,16 @@ export default function EntryDetailScreen() {
     async (attachment: VaultAttachment) => {
       try {
         setExporting(attachment.name);
-        const tempFileUri = await writeTempFile(attachment.data);
+        let base64Data = attachment.data;
+        if (!base64Data && entry) {
+          base64Data = await getAttachmentData(entry.uuid, attachment.name);
+        }
+        if (!base64Data) {
+          throw new Error(
+            "Attachment content is empty or could not be loaded."
+          );
+        }
+        const tempFileUri = await writeTempFile(base64Data);
         await createFile(attachment.name, tempFileUri);
         Alert.alert(
           "Success",
@@ -170,7 +180,7 @@ export default function EntryDetailScreen() {
         setExporting(null);
       }
     },
-    []
+    [entry, getAttachmentData]
   );
 
   const isExpired =

@@ -48,7 +48,7 @@ export interface VaultAttachment {
   name: string;
   size: number;
   /** Base64 encoded binary data */
-  data: string;
+  data?: string;
 }
 
 /** A single password entry */

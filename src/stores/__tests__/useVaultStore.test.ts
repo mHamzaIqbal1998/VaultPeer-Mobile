@@ -121,7 +121,13 @@ describe("useVaultStore", () => {
     expect(newEntry?.secureFields).toContain("PinCode");
     expect(newEntry?.attachments.length).toBe(1);
     expect(newEntry?.attachments[0].name).toBe("test.txt");
-    expect(newEntry?.attachments[0].data).toBe("SGVsbG8gV29ybGQ=");
+    expect(newEntry?.attachments[0].data).toBe("");
+
+    // Fetch the data on demand via getAttachmentData
+    const fetchedData = await useVaultStore
+      .getState()
+      .getAttachmentData(newEntry!.uuid, "test.txt");
+    expect(fetchedData).toBe("SGVsbG8gV29ybGQ=");
 
     // Test update
     const updatedEntry = await useVaultStore
