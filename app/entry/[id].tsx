@@ -40,6 +40,8 @@ import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import { CyberCard } from "@/src/components/CyberCard";
 import { createFile, writeTempFile } from "vaultpeer-file-system";
 import type { VaultAttachment } from "@/src/types/kdbx";
+import { parseOtpUri, generateTotp } from "@/src/services/otpService";
+import type { OtpParams } from "@/src/services/otpService";
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -123,6 +125,122 @@ function FieldRow({
       >
         {displayValue}
       </Text>
+    </Animated.View>
+  );
+}
+
+function OtpCard({
+  otpUri,
+  entryTitle,
+  entryUsername,
+  onCopy,
+}: {
+  otpUri: string;
+  entryTitle: string;
+  entryUsername: string;
+  onCopy: (text: string, label: string) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [progress, setProgress] = useState(1);
+  const [params, setParams] = useState<OtpParams | null>(null);
+
+  useEffect(() => {
+    let resolvedParams: OtpParams;
+    try {
+      resolvedParams = parseOtpUri(otpUri);
+    } catch {
+      resolvedParams = {
+        type: "totp",
+        label: entryUsername || "Account",
+        issuer: entryTitle || "Unknown",
+        secret: otpUri.trim(),
+        digits: 6,
+        period: 30,
+        algorithm: "SHA1",
+      };
+    }
+    setParams(resolvedParams);
+
+    const updateOtp = () => {
+      try {
+        const generated = generateTotp(resolvedParams.secret, {
+          digits: resolvedParams.digits,
+          period: resolvedParams.period,
+        });
+        setCode(generated);
+
+        const period = resolvedParams.period;
+        const elapsed = Math.floor(Date.now() / 1000) % period;
+        const remaining = period - elapsed;
+        setTimeLeft(remaining);
+        setProgress(remaining / period);
+      } catch (err) {
+        console.error("Error generating TOTP:", err);
+        setCode("ERROR");
+      }
+    };
+
+    updateOtp();
+    const interval = setInterval(updateOtp, 1000);
+
+    return () => clearInterval(interval);
+  }, [otpUri, entryTitle, entryUsername]);
+
+  if (!params || !code) return null;
+
+  const formattedCode =
+    code.length === 6 ? `${code.substring(0, 3)} ${code.substring(3)}` : code;
+
+  return (
+    <Animated.View entering={FadeInDown.duration(250)}>
+      <CyberCard style={styles.otpCard}>
+        <View style={styles.otpHeader}>
+          <View style={styles.otpInfo}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={20}
+              color={Colors.accentMint}
+            />
+            <View style={{ marginLeft: Spacing.sm }}>
+              <Text style={styles.otpIssuer}>{params.issuer}</Text>
+              <Text style={styles.otpLabel}>{params.label}</Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => onCopy(code, "One-Time Password")}
+            style={styles.otpCopyBtn}
+            hitSlop={8}
+            accessibilityLabel="Copy OTP code"
+          >
+            <Ionicons name="copy-outline" size={18} color={Colors.accentMint} />
+          </Pressable>
+        </View>
+
+        <View style={styles.otpCodeContainer}>
+          <Text style={styles.otpCode}>{formattedCode}</Text>
+        </View>
+
+        <View style={styles.otpProgressRow}>
+          <View style={styles.otpProgressBarBg}>
+            <View
+              style={[
+                styles.otpProgressBarFill,
+                { width: `${progress * 100}%` },
+                progress < 0.2 && { backgroundColor: Colors.statusError },
+              ]}
+            />
+          </View>
+          <Text
+            style={[
+              styles.otpCountdownText,
+              progress < 0.2 && { color: Colors.statusError },
+            ]}
+          >
+            {timeLeft}s
+          </Text>
+        </View>
+      </CyberCard>
     </Animated.View>
   );
 }
@@ -442,6 +560,16 @@ export default function EntryDetailScreen() {
             )}
           </CyberCard>
         </Animated.View>
+
+        {/* ── OTP Card ── */}
+        {entry.otp ? (
+          <OtpCard
+            otpUri={entry.otp}
+            entryTitle={entry.title}
+            entryUsername={entry.username}
+            onCopy={handleCopy}
+          />
+        ) : null}
 
         {/* ── Core Fields ── */}
         {entry.username || entry.password || entry.url || entry.notes ? (
@@ -842,5 +970,77 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  // OTP Card
+  otpCard: {
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  otpHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  otpInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  otpIssuer: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.body,
+    color: Colors.textPrimary,
+  },
+  otpLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  otpCopyBtn: {
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.accentMintDim,
+  },
+  otpCodeContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  otpCode: {
+    fontFamily: Fonts.mono.regular,
+    fontSize: 32,
+    color: Colors.accentMint,
+    letterSpacing: 2,
+  },
+  otpProgressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  otpProgressBarBg: {
+    flex: 1,
+    height: 4,
+    backgroundColor: Colors.borderSage,
+    borderRadius: Radii.full,
+    overflow: "hidden",
+  },
+  otpProgressBarFill: {
+    height: "100%",
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.full,
+  },
+  otpCountdownText: {
+    fontFamily: Fonts.mono.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.accentMint,
+    minWidth: 24,
+    textAlign: "right",
   },
 });

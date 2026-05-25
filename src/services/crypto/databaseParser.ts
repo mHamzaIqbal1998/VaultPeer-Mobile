@@ -67,6 +67,9 @@ export function parseEntry(
     "Password",
     "URL",
     "Notes",
+    "otp",
+    "TimeOtp",
+    "totp",
   ]);
   const fields: Record<string, string> = {};
   const secureFields: string[] = [];
@@ -141,6 +144,11 @@ export function parseEntry(
       ? toISOString(entry.times.expiryTime)
       : undefined,
     tags: entry.tags ?? [],
+    otp:
+      getFieldValue(entry, "otp") ||
+      getFieldValue(entry, "TimeOtp") ||
+      getFieldValue(entry, "totp") ||
+      undefined,
     parentGroupUuid,
   };
 }

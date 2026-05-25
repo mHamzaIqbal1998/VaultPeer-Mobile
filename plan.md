@@ -156,3 +156,24 @@ Enhances the database entries to support the full range of entry attributes prov
   - Attachment picker (using `expo-document-picker` to select files, reading them as base64 via `readFile`, and saving them to the entry).
   - Expiration scheduler (date picker for `expiryTime` with a toggle switch for `expires`).
 - [x] Write robust unit and integration tests to verify parser extraction, store synchronization of attachments/custom fields, and binary database cleanup.
+
+### Phase 9: OTP & QR Camera Scanner Support
+
+Integrates full TOTP (Time-based One-Time Password) support, matching KeePassDX and Google Authenticator. Allows entries to store, generate, and refresh rolling OTP codes, and adds camera scanning support to scan QR codes for quick OTP setup.
+
+- [ ] Install `expo-camera` via expo CLI to enable native QR code scanning.
+- [ ] Implement `src/services/otpService.ts` containing:
+  - Base32 decoding helper to convert standard secret strings into byte arrays.
+  - TOTP generator complying with RFC 6238 using `crypto-js` for HMAC-SHA1.
+  - Parser for `otpauth://` URIs to extract secrets, issuers, digits, and periods.
+- [ ] Extend `VaultEntry` in `src/types/kdbx.ts` to include `otp?: string` (to store the `otpauth://` URI).
+- [ ] Update `databaseParser.ts` to identify the `otp` custom field (or standard KeePass `TimeOtp` / `totp` fields) and populate the `otp` property of the parsed entry.
+- [ ] Refactor `useVaultStore.ts` to support writing/saving the `otp` field to the database as a standard KeePass OTP-configured string field.
+- [ ] Update `app/entry/[id].tsx` to render a dedicated, premium OTP display card when an OTP field is present:
+  - Shows the parsed issuer/account label.
+  - Renders the active 6-digit rolling code (e.g., `456 789`) with clean spacing.
+  - Displays a dynamic circular progress ring or indicator countdown showing the seconds left before rotation.
+  - Copy-to-clipboard button for the OTP code.
+- [ ] Build a QR scanner component using `expo-camera` to scan `otpauth://` QR codes.
+- [ ] Integrate the QR scanner and OTP form fields into `app/entry/edit.tsx` (allowing manual typing of secret/URI or camera scanning to auto-populate).
+- [ ] Add comprehensive unit tests in `src/services/__tests__/otpService.test.ts` to validate TOTP calculations against RFC 6238 test vectors.

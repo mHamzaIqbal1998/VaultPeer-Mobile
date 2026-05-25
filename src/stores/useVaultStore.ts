@@ -370,6 +370,13 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     );
     newKdbxEntry.fields.set("URL", data.url || "");
     newKdbxEntry.fields.set("Notes", data.notes || "");
+    if (data.otp !== undefined) {
+      if (data.otp) {
+        newKdbxEntry.fields.set("otp", data.otp);
+      } else {
+        newKdbxEntry.fields.delete("otp");
+      }
+    }
 
     if (data.iconId !== undefined) {
       newKdbxEntry.icon = data.iconId;
@@ -463,6 +470,13 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     if (data.url !== undefined) entry.fields.set("URL", data.url);
     if (data.notes !== undefined) entry.fields.set("Notes", data.notes);
     if (data.iconId !== undefined) entry.icon = data.iconId;
+    if (data.otp !== undefined) {
+      if (data.otp) {
+        entry.fields.set("otp", data.otp);
+      } else {
+        entry.fields.delete("otp");
+      }
+    }
 
     if (data.fields) {
       // Remove old custom fields not in the new set
@@ -472,6 +486,9 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
         "Password",
         "URL",
         "Notes",
+        "otp",
+        "TimeOtp",
+        "totp",
       ]);
       const newKeys = new Set(Object.keys(data.fields));
 

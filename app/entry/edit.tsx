@@ -34,6 +34,7 @@ import {
   generatePassword,
   estimatePasswordStrength,
 } from "@/src/services/passwordGenerator";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 interface CustomFieldState {
   id: string;
@@ -115,6 +116,99 @@ function FormField({
   );
 }
 
+function QrScannerView({
+  onScan,
+  onClose,
+}: {
+  onScan: (data: string) => void;
+  onClose: () => void;
+}) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [torch, setTorch] = useState(false);
+
+  if (!permission) {
+    return (
+      <View style={styles.scannerOverlayContainer}>
+        <ActivityIndicator size="large" color={Colors.accentMint} />
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.scannerOverlayContainer}>
+        <Ionicons name="camera-outline" size={48} color={Colors.textMuted} />
+        <Text style={styles.scannerPermissionText}>
+          We need your permission to show the camera
+        </Text>
+        <Pressable style={styles.permissionBtn} onPress={requestPermission}>
+          <Text style={styles.permissionBtnText}>Grant Permission</Text>
+        </Pressable>
+        <Pressable style={styles.scannerCloseBtnTop} onPress={onClose}>
+          <Ionicons name="close" size={24} color={Colors.textPrimary} />
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.scannerContainer}>
+      <CameraView
+        style={StyleSheet.absoluteFillObject}
+        barcodeScannerSettings={{
+          barcodeTypes: ["qr"],
+        }}
+        onBarcodeScanned={({ data }) => onScan(data)}
+        enableTorch={torch}
+      >
+        {/* Semi-transparent overlays */}
+        <View style={styles.scannerOverlayTop} />
+        <View style={styles.scannerOverlayMiddleRow}>
+          <View style={styles.scannerOverlaySide} />
+          <View style={styles.scannerTargetFrame}>
+            {/* Glowing corners */}
+            <View style={[styles.corner, styles.topLeftCorner]} />
+            <View style={[styles.corner, styles.topRightCorner]} />
+            <View style={[styles.corner, styles.bottomLeftCorner]} />
+            <View style={[styles.corner, styles.bottomRightCorner]} />
+          </View>
+          <View style={styles.scannerOverlaySide} />
+        </View>
+        <View style={styles.scannerOverlayBottom} />
+
+        {/* Floating Controls */}
+        <SafeAreaView
+          style={styles.scannerControlsContainer}
+          edges={["top", "bottom"]}
+        >
+          <View style={styles.scannerHeaderRow}>
+            <Pressable style={styles.scannerControlCircle} onPress={onClose}>
+              <Ionicons name="close" size={20} color={Colors.textPrimary} />
+            </Pressable>
+            <Text style={styles.scannerTitle}>Scan QR Code</Text>
+            <Pressable
+              style={styles.scannerControlCircle}
+              onPress={() => setTorch(!torch)}
+            >
+              <Ionicons
+                name={torch ? "flash" : "flash-off"}
+                size={20}
+                color={torch ? Colors.accentMint : Colors.textPrimary}
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.scannerFooter}>
+            <Text style={styles.scannerHelpText}>
+              Align the QR code inside the frame to scan
+            </Text>
+          </View>
+        </SafeAreaView>
+      </CameraView>
+    </View>
+  );
+}
+
 export default function EntryEditScreen() {
   const { entryId, groupId } = useLocalSearchParams<{
     entryId?: string;
@@ -132,6 +226,8 @@ export default function EntryEditScreen() {
   const [password, setPassword] = useState(existing?.password ?? "");
   const [url, setUrl] = useState(existing?.url ?? "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [otp, setOtp] = useState(existing?.otp ?? "");
+  const [showScanner, setShowScanner] = useState(false);
 
   const [showGenerator, setShowGenerator] = useState(false);
   const [genLength, setGenLength] = useState(16);
@@ -306,6 +402,7 @@ export default function EntryEditScreen() {
       password,
       url,
       notes,
+      otp: otp.trim(),
       fields: fieldsMap,
       secureFields: secureFieldsList,
       attachments,
@@ -351,6 +448,7 @@ export default function EntryEditScreen() {
     password,
     url,
     notes,
+    otp,
     customFields,
     expires,
     expiryPreset,
@@ -372,6 +470,7 @@ export default function EntryEditScreen() {
         password ||
         url ||
         notes ||
+        otp ||
         customFields.length > 0 ||
         attachments.length > 0 ||
         expires ||
@@ -381,6 +480,7 @@ export default function EntryEditScreen() {
         password !== existing?.password ||
         url !== existing?.url ||
         notes !== existing?.notes ||
+        otp !== (existing?.otp ?? "") ||
         JSON.stringify(
           customFields.map((f) => ({
             key: f.key,
@@ -415,6 +515,7 @@ export default function EntryEditScreen() {
     password,
     url,
     notes,
+    otp,
     customFields,
     attachments,
     expires,
@@ -730,6 +831,32 @@ export default function EntryEditScreen() {
                 iconName="globe-outline"
               />
               <FormField
+                label="OTP Secret or URI"
+                value={otp}
+                onChangeText={setOtp}
+                placeholder="otpauth://... or raw secret"
+                iconName="shield-checkmark-outline"
+                secureTextEntry
+                mono
+                rightElement={
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowScanner(true);
+                    }}
+                    style={styles.eyeBtn}
+                    hitSlop={8}
+                    accessibilityLabel="Scan QR Code"
+                  >
+                    <Ionicons
+                      name="qr-code-outline"
+                      size={18}
+                      color={Colors.accentMint}
+                    />
+                  </Pressable>
+                }
+              />
+              <FormField
                 label="Notes"
                 value={notes}
                 onChangeText={setNotes}
@@ -1021,6 +1148,28 @@ export default function EntryEditScreen() {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {showScanner && (
+        <View style={StyleSheet.absoluteFillObject}>
+          <QrScannerView
+            onScan={(data) => {
+              if (data.startsWith("otpauth://")) {
+                setOtp(data);
+                Haptics.notificationAsync(
+                  Haptics.NotificationFeedbackType.Success
+                );
+              } else {
+                setOtp(data.trim());
+                Haptics.notificationAsync(
+                  Haptics.NotificationFeedbackType.Success
+                );
+              }
+              setShowScanner(false);
+            }}
+            onClose={() => setShowScanner(false)}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1488,5 +1637,141 @@ const styles = StyleSheet.create({
   genPillTextActive: {
     fontFamily: Fonts.heading.medium,
     color: Colors.accentMint,
+  },
+
+  // Scanner Styles
+  scannerContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  scannerOverlayContainer: {
+    flex: 1,
+    backgroundColor: Colors.backgroundPrimary,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  scannerPermissionText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.body,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    marginVertical: Spacing.lg,
+  },
+  permissionBtn: {
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.md,
+  },
+  permissionBtnText: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.backgroundPrimary,
+  },
+  scannerCloseBtnTop: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    padding: Spacing.sm,
+  },
+  scannerOverlayTop: {
+    flex: 1.5,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  scannerOverlayMiddleRow: {
+    flexDirection: "row",
+    height: 250,
+  },
+  scannerOverlaySide: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  scannerOverlayBottom: {
+    flex: 2,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  scannerTargetFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 1,
+    borderColor: "rgba(52, 211, 153, 0.3)",
+    position: "relative",
+  },
+  corner: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    borderColor: Colors.accentMint,
+  },
+  topLeftCorner: {
+    top: -2,
+    left: -2,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderTopLeftRadius: Radii.sm,
+  },
+  topRightCorner: {
+    top: -2,
+    right: -2,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderTopRightRadius: Radii.sm,
+  },
+  bottomLeftCorner: {
+    bottom: -2,
+    left: -2,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderBottomLeftRadius: Radii.sm,
+  },
+  bottomRightCorner: {
+    bottom: -2,
+    right: -2,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderBottomRightRadius: Radii.sm,
+  },
+  scannerControlsContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "space-between",
+  },
+  scannerHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+  },
+  scannerControlCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scannerTitle: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.textPrimary,
+  },
+  scannerFooter: {
+    alignItems: "center",
+    paddingBottom: Spacing.xxl,
+  },
+  scannerHelpText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textSecondary,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    overflow: "hidden",
   },
 });

@@ -80,6 +80,8 @@ export interface VaultEntry {
   expiryTime?: string;
   /** Entry tags */
   tags: string[];
+  /** Standard OTP uri/field string */
+  otp?: string;
   /** Parent group UUID */
   parentGroupUuid: string;
 }
