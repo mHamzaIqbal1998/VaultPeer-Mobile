@@ -65,6 +65,8 @@ describe("Argon2 Bridge", () => {
         hashLength: 32,
         parallelism: 1,
         mode: "argon2id",
+        passwordEncoding: "hex",
+        saltEncoding: "hex",
       })
     );
   });
