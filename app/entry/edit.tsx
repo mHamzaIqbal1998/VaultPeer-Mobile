@@ -26,6 +26,8 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { CyberCard } from "@/src/components/CyberCard";
+import { IconPickerModal } from "@/src/components/IconPickerModal";
+import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import * as DocumentPicker from "expo-document-picker";
 import { readFile } from "vaultpeer-file-system";
 import type { VaultAttachment } from "@/src/types/kdbx";
@@ -255,7 +257,10 @@ export default function EntryEditScreen() {
     if (template) return template.otp ?? "";
     return "";
   });
-  const iconId = existing?.iconId ?? template?.iconId;
+  const [iconId, setIconId] = useState<number>(
+    existing?.iconId ?? template?.iconId ?? 0
+  );
+  const [showIconPicker, setShowIconPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
   const [showGenerator, setShowGenerator] = useState(false);
@@ -523,13 +528,15 @@ export default function EntryEditScreen() {
         customFields.length > 0 ||
         attachments.length > 0 ||
         expires ||
-        tags.length > 0
+        tags.length > 0 ||
+        iconId !== 0
       : title !== existing?.title ||
         username !== existing?.username ||
         password !== existing?.password ||
         url !== existing?.url ||
         notes !== existing?.notes ||
         otp !== (existing?.otp ?? "") ||
+        iconId !== (existing?.iconId ?? 0) ||
         JSON.stringify(
           customFields.map((f) => ({
             key: f.key,
@@ -565,6 +572,7 @@ export default function EntryEditScreen() {
     url,
     notes,
     otp,
+    iconId,
     customFields,
     attachments,
     expires,
@@ -617,6 +625,30 @@ export default function EntryEditScreen() {
         >
           <Animated.View entering={FadeInDown.duration(300)}>
             <CyberCard style={{ padding: Spacing.xl }}>
+              {/* ── Icon Picker Button ── */}
+              <Pressable
+                onPress={() => setShowIconPicker(true)}
+                style={styles.iconPickerBtn}
+                accessibilityLabel="Change entry icon"
+              >
+                <View style={styles.iconPickerCircle}>
+                  <Ionicons
+                    name={getKdbxIconName(iconId)}
+                    size={24}
+                    color={Colors.accentMint}
+                  />
+                </View>
+                <View style={styles.iconPickerInfo}>
+                  <Text style={styles.iconPickerLabel}>Entry Icon</Text>
+                  <Text style={styles.iconPickerHint}>Tap to change</Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={Colors.textMuted}
+                />
+              </Pressable>
+
               <FormField
                 label="Title"
                 value={title}
@@ -1198,6 +1230,14 @@ export default function EntryEditScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* ── Icon Picker Modal ── */}
+      <IconPickerModal
+        visible={showIconPicker}
+        selectedIconId={iconId}
+        onSelect={(id) => setIconId(id)}
+        onClose={() => setShowIconPicker(false)}
+      />
+
       {showScanner && (
         <View style={StyleSheet.absoluteFillObject}>
           <QrScannerView
@@ -1225,6 +1265,43 @@ export default function EntryEditScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.backgroundPrimary },
+
+  // Icon Picker Button
+  iconPickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  iconPickerCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.accentMintDim,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: Colors.accentMint,
+  },
+  iconPickerInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  iconPickerLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  iconPickerHint: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
