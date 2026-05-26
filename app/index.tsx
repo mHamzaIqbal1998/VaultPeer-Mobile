@@ -51,6 +51,7 @@ import {
   isBiometricEnabled,
   getStoredPassword,
 } from "@/src/services/biometricService";
+import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
 
 // ────────────────────────────────────────────
 // Helper: Parse File Name from URI
@@ -229,6 +230,8 @@ export default function FileSetupScreen() {
   // Combined Loading state
   const isLoading = isFsLoading || localLoading;
   const currentError = formError || fsError;
+
+  const strength = estimatePasswordStrength(newPassword);
 
   // ────────────────────────────────────────────
   // Operations
@@ -687,6 +690,46 @@ export default function FileSetupScreen() {
                         />
                       </Pressable>
                     </View>
+
+                    {newPassword.length > 0 && (
+                      <Animated.View
+                        entering={FadeInDown.duration(200)}
+                        style={styles.strengthContainer}
+                      >
+                        <View style={styles.strengthHeader}>
+                          <Text style={styles.strengthLabel}>
+                            Password Strength
+                          </Text>
+                          <Text
+                            style={[
+                              styles.strengthValue,
+                              { color: strength.color },
+                            ]}
+                          >
+                            {strength.label} ({Math.round(strength.entropy)}{" "}
+                            bits)
+                          </Text>
+                        </View>
+                        <View style={styles.strengthBarContainer}>
+                          {[0, 1, 2, 3].map((index) => {
+                            const active = strength.score >= index + 1;
+                            return (
+                              <View
+                                key={index}
+                                style={[
+                                  styles.strengthBar,
+                                  active
+                                    ? { backgroundColor: strength.color }
+                                    : {
+                                        backgroundColor: Colors.surfaceElevated,
+                                      },
+                                ]}
+                              />
+                            );
+                          })}
+                        </View>
+                      </Animated.View>
+                    )}
 
                     <View style={styles.inputContainer}>
                       <Ionicons
@@ -1201,5 +1244,39 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading.semiBold,
     color: Colors.accentMint,
     textAlign: "center",
+  },
+  strengthContainer: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.surfaceCard,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  strengthHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  strengthLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  strengthValue: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+  },
+  strengthBarContainer: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    height: 6,
+  },
+  strengthBar: {
+    flex: 1,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.surfaceElevated,
   },
 });

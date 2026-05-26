@@ -17,6 +17,11 @@ import * as kdbxweb from "kdbxweb";
 import { parseDatabase } from "../services/crypto/databaseParser";
 import type { VaultEntry, VaultGroup, VaultMeta } from "../types/kdbx";
 import { base64ToArrayBuffer, arrayBufferToBase64 } from "../services/base64";
+import { createCredentials } from "../services/crypto";
+import {
+  isBiometricEnabled,
+  enableBiometric,
+} from "../services/biometricService";
 
 // ────────────────────────────────────────────
 // History Entry
@@ -124,6 +129,9 @@ interface VaultStoreState {
   setRecycleBinEnabled: (enabled: boolean) => Promise<void>;
   setRecycleBinGroup: (groupUuid: string) => Promise<void>;
   emptyRecycleBin: () => Promise<boolean>;
+
+  // Credentials / Master Password
+  changeMasterPassword: (newPassword: string) => Promise<boolean>;
 
   // Dirty state
   markClean: () => void;
@@ -1188,6 +1196,35 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     set({ isDirty: true });
     state.refreshParsedState();
     return true;
+  },
+
+  changeMasterPassword: async (newPassword) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    try {
+      const newCredentials = createCredentials(newPassword);
+      await newCredentials.ready;
+      db.credentials = newCredentials;
+
+      const bioActive = await isBiometricEnabled();
+      if (bioActive) {
+        const success = await enableBiometric(newPassword);
+        if (!success) {
+          console.warn(
+            "[VaultStore] Biometric sync cancelled/failed during password update."
+          );
+        }
+      }
+
+      set({ isDirty: true });
+      state.refreshParsedState();
+      return true;
+    } catch (e) {
+      console.error("[VaultStore] Error changing master password:", e);
+      return false;
+    }
   },
 
   // ────── Dirty State ──────

@@ -242,3 +242,18 @@ Integrates KeePassDX-style Recycle Bin configuration. Allows users to enable/dis
 - [x] Refactor the group and entry deletion logic in `useVaultStore.ts` to verify that deletions respect the configured settings (moving items to the designated Recycle Bin if enabled, or deleting permanently if disabled/already in the bin).
 - [x] Expose an on-demand "Empty Recycle Bin" button under Database Settings that purges all entries and subgroups within the designated bin permanently.
 - [x] Write unit tests verifying Recycle Bin state changes, automatic group creation, moving entries to the bin, permanent deletion, and empty bin actions.
+
+### Phase 14: Master Password Strength & Change Operations
+
+Implements visual password strength metrics during database/file creation and provides on-demand Master Password modification from Settings with automatic SecureStore biometric credential synchronization.
+
+- [x] Add the password strength indicator bar and rating (using the existing `estimatePasswordStrength` service) to the database/file creation screen in `app/index.tsx`.
+- [x] Design a secure "Change Master Password" modal/workflow under the Security section of Database Settings in `app/vault/settings.tsx`:
+  - Request the current master password and verify it against `db.credentials.passwordHash`.
+  - Request the new master password (complete with strength indicator and confirm password validation).
+- [x] Implement master password update mechanics in the store:
+  - Generate a new Kdbx credentials instance from the new password.
+  - Set the new credentials on the active database (`db.credentials`).
+  - Update the dirty state of the vault to trigger file saving on close or on manual save.
+  - If biometric unlock is active, call `enableBiometric(newPassword)` to automatically update the master password stored in `SecureStore`.
+- [x] Write unit tests to verify password validation, credentials updates on the Kdbx instance, and SecureStore synchronization.

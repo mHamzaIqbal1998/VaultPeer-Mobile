@@ -46,6 +46,8 @@ import {
   enableBiometric,
   disableBiometric,
 } from "@/src/services/biometricService";
+import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
+import * as kdbxweb from "kdbxweb";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -299,6 +301,7 @@ export default function VaultSettingsScreen() {
     setRecycleBinEnabled,
     setRecycleBinGroup,
     emptyRecycleBin,
+    changeMasterPassword,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -313,6 +316,17 @@ export default function VaultSettingsScreen() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showRecycleBinGroupModal, setShowRecycleBinGroupModal] =
     useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(
+    null
+  );
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
@@ -361,6 +375,81 @@ export default function VaultSettingsScreen() {
       ]
     );
   }, [db, storeMeta, groupIndex, emptyRecycleBin]);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      setChangePasswordError("Please enter your current master password.");
+      return;
+    }
+    if (!newPassword) {
+      setChangePasswordError("Please enter a new master password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError("New passwords do not match.");
+      return;
+    }
+
+    try {
+      const inputHash =
+        await kdbxweb.ProtectedValue.fromString(currentPassword).getHash();
+      const currentHash = (db?.credentials as any)?.passwordHash?.getBinary();
+      if (!currentHash) {
+        setChangePasswordError(
+          "Failed to retrieve current database credentials."
+        );
+        return;
+      }
+
+      let match = inputHash.byteLength === currentHash.byteLength;
+      if (match) {
+        const inputArr = new Uint8Array(inputHash);
+        const currentArr = new Uint8Array(currentHash);
+        for (let i = 0; i < inputArr.length; i++) {
+          if (inputArr[i] !== currentArr[i]) {
+            match = false;
+            break;
+          }
+        }
+      }
+
+      if (!match) {
+        setChangePasswordError("Incorrect current master password.");
+        return;
+      }
+    } catch (e: any) {
+      setChangePasswordError(
+        "Failed to verify current master password: " + (e?.message || "")
+      );
+      return;
+    }
+
+    setChangePasswordError(null);
+    setChangingPassword(true);
+
+    setTimeout(async () => {
+      try {
+        const success = await changeMasterPassword(newPassword);
+        if (success) {
+          Alert.alert(
+            "Success",
+            "Master password updated successfully. Don't forget to save your database to persist changes.",
+            [{ text: "OK" }]
+          );
+          setShowChangePasswordModal(false);
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+        } else {
+          setChangePasswordError("Failed to update master password.");
+        }
+      } catch (e: any) {
+        setChangePasswordError(e?.message || "An unexpected error occurred.");
+      } finally {
+        setChangingPassword(false);
+      }
+    }, 100);
+  };
 
   const [showKdfModal, setShowKdfModal] = useState(false);
 
@@ -697,6 +786,14 @@ export default function VaultSettingsScreen() {
                     )}
                   </React.Fragment>
                 ))}
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="key-outline"
+                  iconColor={Colors.accentMint}
+                  title="Change Master Password"
+                  subtitle="Modify database master passphrase"
+                  onPress={() => setShowChangePasswordModal(true)}
+                />
                 <View style={styles.divider} />
                 <SettingsRow
                   icon="speedometer-outline"
@@ -1052,6 +1149,240 @@ export default function VaultSettingsScreen() {
         />
       )}
 
+      {/* Change Master Password Modal */}
+      <Modal
+        visible={showChangePasswordModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => {
+          if (!changingPassword) {
+            setShowChangePasswordModal(false);
+            setChangePasswordError(null);
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+          }
+        }}
+      >
+        <Animated.View style={modalStyles.overlay}>
+          <Pressable
+            style={modalStyles.overlayPress}
+            onPress={() => {
+              if (!changingPassword) {
+                setShowChangePasswordModal(false);
+                setChangePasswordError(null);
+                setCurrentPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+              }
+            }}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={[modalStyles.modalContainer, { maxHeight: "85%" }]}
+          >
+            <View style={modalStyles.header}>
+              <View style={modalStyles.headerIcon}>
+                <Ionicons
+                  name="key-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={modalStyles.headerTitle}>
+                Change Master Password
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (!changingPassword) {
+                    setShowChangePasswordModal(false);
+                    setChangePasswordError(null);
+                    setCurrentPassword("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                  }
+                }}
+                disabled={changingPassword}
+                hitSlop={12}
+                style={modalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: Spacing.md }}
+            >
+              {changePasswordError && (
+                <View style={styles.errorContainer}>
+                  <Ionicons
+                    name="alert-circle"
+                    size={16}
+                    color={Colors.statusError}
+                  />
+                  <Text style={styles.errorText}>{changePasswordError}</Text>
+                </View>
+              )}
+
+              {/* Current Password */}
+              <Text style={styles.inputLabel}>Current Master Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="lock-closed"
+                  size={18}
+                  color={Colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry={!showCurrentPassword}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Enter current password"
+                  placeholderTextColor={Colors.textDisabled}
+                  editable={!changingPassword}
+                />
+                <Pressable
+                  onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showCurrentPassword ? "eye-off" : "eye"}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+
+              {/* New Password */}
+              <Text style={styles.inputLabel}>New Master Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="key"
+                  size={18}
+                  color={Colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry={!showNewPassword}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="Enter new password"
+                  placeholderTextColor={Colors.textDisabled}
+                  editable={!changingPassword}
+                />
+                <Pressable
+                  onPress={() => setShowNewPassword(!showNewPassword)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showNewPassword ? "eye-off" : "eye"}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+
+              {/* Password Strength Indicator */}
+              {newPassword.length > 0 && (
+                <View style={styles.strengthContainer}>
+                  <View style={styles.strengthHeader}>
+                    <Text style={styles.strengthLabel}>Password Strength</Text>
+                    <Text
+                      style={[
+                        styles.strengthValue,
+                        { color: estimatePasswordStrength(newPassword).color },
+                      ]}
+                    >
+                      {estimatePasswordStrength(newPassword).label} (
+                      {Math.round(
+                        estimatePasswordStrength(newPassword).entropy
+                      )}{" "}
+                      bits)
+                    </Text>
+                  </View>
+                  <View style={styles.strengthBarContainer}>
+                    {[0, 1, 2, 3].map((index) => {
+                      const strength = estimatePasswordStrength(newPassword);
+                      const active = strength.score >= index + 1;
+                      return (
+                        <View
+                          key={index}
+                          style={[
+                            styles.strengthBar,
+                            active
+                              ? { backgroundColor: strength.color }
+                              : { backgroundColor: Colors.surfaceElevated },
+                          ]}
+                        />
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* Confirm New Password */}
+              <Text style={styles.inputLabel}>Confirm New Master Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={Colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={Colors.textDisabled}
+                  editable={!changingPassword}
+                />
+                <Pressable
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? "eye-off" : "eye"}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={handleChangePassword}
+                disabled={changingPassword}
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  pressed && styles.submitButtonPressed,
+                  changingPassword && styles.submitButtonDisabled,
+                ]}
+              >
+                {changingPassword ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={Colors.backgroundPrimary}
+                  />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    Change Master Password
+                  </Text>
+                )}
+              </Pressable>
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
       {/* Group Selector Modal */}
       <Modal
         visible={showGroupModal}
@@ -1383,6 +1714,113 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading.semiBold,
     fontSize: FontSizes.bodySmall,
     color: Colors.backgroundPrimary,
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    backgroundColor: Colors.statusErrorDim,
+    borderColor: Colors.statusError,
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  errorText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.statusError,
+    flex: 1,
+  },
+  inputLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.lg,
+    minHeight: TouchTarget.min,
+  },
+  inputIcon: {
+    marginRight: Spacing.sm,
+  },
+  input: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.body,
+    paddingVertical: Spacing.sm,
+  },
+  eyeButton: {
+    padding: Spacing.xs,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: TouchTarget.min,
+  },
+  submitButton: {
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.md,
+    height: TouchTarget.min,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: Spacing.md,
+    ...Shadows.glow,
+  },
+  submitButtonPressed: {
+    backgroundColor: "#2BC48A",
+    transform: [{ scale: 0.98 }],
+  },
+  submitButtonDisabled: {
+    opacity: 0.5,
+  },
+  submitButtonText: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.backgroundPrimary,
+  },
+  strengthContainer: {
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.lg,
+    backgroundColor: Colors.surfaceCard,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  strengthHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  strengthLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  strengthValue: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+  },
+  strengthBarContainer: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    height: 6,
+  },
+  strengthBar: {
+    flex: 1,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.surfaceElevated,
   },
 });
 
