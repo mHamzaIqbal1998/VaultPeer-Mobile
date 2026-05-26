@@ -207,3 +207,24 @@ Integrates data compression configuration and on-demand database maintenance fea
   - Updates the dirty state of the vault in the store so the user can save the pruned database.
 - [x] Add a confirmation prompt showing a summary before performing the cleanup, and a success alert displaying the result.
 - [x] Write unit tests to verify that changing the compression setting correctly updates the saved file payload format and that manual cleanup successfully purges unlinked binaries.
+
+### Phase 12: Templates Support
+
+Introduces KeePassDX-style entry templates. Allows users to enable templates in database settings, which initializes a standard "Templates" group containing pre-configured formats (Credit Cards, Emails, Secure Notes). During new entry creation, users can choose from default or custom templates to auto-populate fields.
+
+- [x] Add a database configuration toggle "Enable Entry Templates" in Database Settings.
+- [x] Expose a "Template Group" selector menu in Database Settings allowing users to choose which group acts as the active template repository (populating the selector dynamically with all database groups).
+- [x] Implement group and entry seeding logic in the store:
+  - When templates are enabled, check if `db.meta.entryTemplatesGroup` is set and valid.
+  - If not set, check if a root-level group named "Templates" exists.
+  - If missing, create the "Templates" group and set its UUID to `db.meta.entryTemplatesGroup`.
+  - Populate it with default templates: "Credit Card" (with Card Number, Expiry, CVV, Cardholder Name fields), "Email Account" (with Recovery Email, IMAP/SMTP server fields), and "Secure Note" (with a secure multi-line text area).
+- [x] Design a premium template selector modal or screen using a grid layout with vibrant cards for each template:
+  - Display cards with custom icons and descriptive helper text.
+  - Include a "Blank Entry" default card.
+  - Fetch and list any user-created templates from the selected template group dynamically.
+- [x] Integrate the template selection screen into the creation flow:
+  - When tapping the "+" add button inside any group view, if templates are enabled, display the template selector.
+  - Upon selecting a template, navigate to `app/entry/edit.tsx` with the template parameters.
+- [x] Update `app/entry/edit.tsx` to read the template entry's fields (Title, Username, Password, URL, Notes, Custom Fields, and Tags) and pre-fill the form fields on mount.
+- [x] Add unit tests in `src/stores/__tests__/templates.test.ts` to verify group creation, default template seeding, metadata sync via `entryTemplatesGroup`, field duplication to new entries, and custom user templates loading.

@@ -116,6 +116,10 @@ interface VaultStoreState {
     history?: boolean;
   }) => boolean;
 
+  // Templates Support
+  setTemplatesEnabled: (enabled: boolean) => Promise<void>;
+  setTemplatesGroup: (groupUuid: string) => Promise<void>;
+
   // Dirty state
   markClean: () => void;
 }
@@ -893,6 +897,148 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     state.refreshParsedState();
     set({ isDirty: true });
     return true;
+  },
+
+  // ────── Templates Support ──────
+
+  setTemplatesEnabled: async (enabled) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    if (!db.meta.customData) {
+      (db.meta as any).customData = new Map();
+    }
+    db.meta.customData.set("templatesEnabled", {
+      value: enabled ? "true" : "false",
+      lastModified: new Date(),
+    });
+
+    if (enabled) {
+      let templatesGroupKdbx: kdbxweb.KdbxGroup | null = null;
+      if (db.meta.entryTemplatesGroup) {
+        templatesGroupKdbx = findKdbxGroup(
+          db.getDefaultGroup(),
+          db.meta.entryTemplatesGroup.id
+        );
+      }
+
+      if (!templatesGroupKdbx) {
+        const rootGroupKdbx = db.getDefaultGroup();
+        const existingTemplatesGroup = rootGroupKdbx.groups.find(
+          (g) => g.name?.toLowerCase() === "templates"
+        );
+
+        if (existingTemplatesGroup) {
+          templatesGroupKdbx = existingTemplatesGroup;
+          db.meta.entryTemplatesGroup = templatesGroupKdbx.uuid;
+        } else {
+          // Create the Templates group
+          const newGroup = db.createGroup(rootGroupKdbx, "Templates");
+          newGroup.icon = 20; // Folder / Templates icon index
+          templatesGroupKdbx = newGroup;
+          db.meta.entryTemplatesGroup = newGroup.uuid;
+        }
+      }
+
+      if (templatesGroupKdbx) {
+        const hasCard = templatesGroupKdbx.entries.some(
+          (e) => e.fields.get("Title")?.toString() === "Credit Card"
+        );
+        if (!hasCard) {
+          const entry = db.createEntry(templatesGroupKdbx);
+          entry.fields.set("Title", "Credit Card");
+          entry.fields.set("UserName", "");
+          entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+          entry.fields.set("Cardholder Name", "");
+          entry.fields.set("Card Number", "");
+          entry.fields.set("Expiry Date", "");
+          entry.fields.set("CVV", kdbxweb.ProtectedValue.fromString(""));
+          entry.fields.set("PIN", kdbxweb.ProtectedValue.fromString(""));
+          entry.icon = 62;
+        }
+
+        const hasEmail = templatesGroupKdbx.entries.some(
+          (e) => e.fields.get("Title")?.toString() === "Email Account"
+        );
+        if (!hasEmail) {
+          const entry = db.createEntry(templatesGroupKdbx);
+          entry.fields.set("Title", "Email Account");
+          entry.fields.set("UserName", "");
+          entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+          entry.fields.set("Email Address", "");
+          entry.fields.set("Provider", "");
+          entry.icon = 19;
+        }
+
+        const hasNote = templatesGroupKdbx.entries.some(
+          (e) => e.fields.get("Title")?.toString() === "Secure Note"
+        );
+        if (!hasNote) {
+          const entry = db.createEntry(templatesGroupKdbx);
+          entry.fields.set("Title", "Secure Note");
+          entry.fields.set("Notes", "Write your secure note here.");
+          entry.icon = 0;
+        }
+      }
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  setTemplatesGroup: async (groupUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.entryTemplatesGroup = new kdbxweb.KdbxUuid(groupUuid);
+
+    const root = db.getDefaultGroup();
+    const templatesGroupKdbx = findKdbxGroup(root, groupUuid);
+    if (templatesGroupKdbx) {
+      const hasCard = templatesGroupKdbx.entries.some(
+        (e) => e.fields.get("Title")?.toString() === "Credit Card"
+      );
+      if (!hasCard) {
+        const entry = db.createEntry(templatesGroupKdbx);
+        entry.fields.set("Title", "Credit Card");
+        entry.fields.set("UserName", "");
+        entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+        entry.fields.set("Cardholder Name", "");
+        entry.fields.set("Card Number", "");
+        entry.fields.set("Expiry Date", "");
+        entry.fields.set("CVV", kdbxweb.ProtectedValue.fromString(""));
+        entry.fields.set("PIN", kdbxweb.ProtectedValue.fromString(""));
+        entry.icon = 62;
+      }
+
+      const hasEmail = templatesGroupKdbx.entries.some(
+        (e) => e.fields.get("Title")?.toString() === "Email Account"
+      );
+      if (!hasEmail) {
+        const entry = db.createEntry(templatesGroupKdbx);
+        entry.fields.set("Title", "Email Account");
+        entry.fields.set("UserName", "");
+        entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+        entry.fields.set("Email Address", "");
+        entry.fields.set("Provider", "");
+        entry.icon = 19;
+      }
+
+      const hasNote = templatesGroupKdbx.entries.some(
+        (e) => e.fields.get("Title")?.toString() === "Secure Note"
+      );
+      if (!hasNote) {
+        const entry = db.createEntry(templatesGroupKdbx);
+        entry.fields.set("Title", "Secure Note");
+        entry.fields.set("Notes", "Write your secure note here.");
+        entry.icon = 0;
+      }
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
   },
 
   // ────── Dirty State ──────

@@ -300,6 +300,15 @@ export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
     entryCount: countEntries(parsedRoot),
     groupCount: parsedRoot.groups.length,
     compression,
+    entryTemplatesGroup: (() => {
+      const uuidStr = db.meta?.entryTemplatesGroup
+        ? uuidToString(db.meta.entryTemplatesGroup)
+        : undefined;
+      return uuidStr === "AAAAAAAAAAAAAAAAAAAAAA==" ? undefined : uuidStr;
+    })(),
+    entryTemplatesEnabled: db.meta?.customData
+      ? db.meta.customData.get("templatesEnabled")?.value === "true"
+      : false,
   };
 }
 

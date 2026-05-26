@@ -8,6 +8,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -15,6 +16,8 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  FadeIn,
+  FadeOut,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -290,6 +293,9 @@ export default function VaultSettingsScreen() {
     meta: storeMeta,
     cleanupDatabase,
     runCleanupDatabase,
+    setTemplatesEnabled,
+    setTemplatesGroup,
+    groupIndex,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -301,6 +307,13 @@ export default function VaultSettingsScreen() {
   const [biometricPassword, setBiometricPassword] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+
+  const templateGroupName = useMemo(() => {
+    if (!storeMeta?.entryTemplatesGroup) return "Templates";
+    const group = groupIndex.get(storeMeta.entryTemplatesGroup);
+    return group ? group.name : "Templates";
+  }, [storeMeta, groupIndex]);
   const [showKdfModal, setShowKdfModal] = useState(false);
 
   useEffect(() => {
@@ -675,6 +688,62 @@ export default function VaultSettingsScreen() {
               </CyberCard>
             </Animated.View>
 
+            {/* Entry Templates */}
+            <Animated.View entering={FadeInDown.duration(200).delay(175)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="copy-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Entry Templates</Text>
+                </View>
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Enable Entry Templates</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Use predefined templates for creating new entries
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      const newEnabled = !storeMeta?.entryTemplatesEnabled;
+                      await setTemplatesEnabled(newEnabled);
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        storeMeta?.entryTemplatesEnabled
+                          ? "toggle"
+                          : "toggle-outline"
+                      }
+                      size={38}
+                      color={
+                        storeMeta?.entryTemplatesEnabled
+                          ? Colors.accentMint
+                          : Colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+                {storeMeta?.entryTemplatesEnabled && (
+                  <>
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="folder-open-outline"
+                      title="Template Group"
+                      subtitle="Group containing your custom templates"
+                      value={templateGroupName}
+                      onPress={() => setShowGroupModal(true)}
+                    />
+                  </>
+                )}
+              </CyberCard>
+            </Animated.View>
+
             {/* Database Actions */}
             <Animated.View entering={FadeInDown.duration(200).delay(200)}>
               <CyberCard style={styles.card}>
@@ -868,6 +937,89 @@ export default function VaultSettingsScreen() {
           initialParams={kdfInfo}
         />
       )}
+
+      {/* Group Selector Modal */}
+      <Modal
+        visible={showGroupModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => setShowGroupModal(false)}
+      >
+        <Animated.View style={modalStyles.overlay}>
+          <Pressable
+            style={modalStyles.overlayPress}
+            onPress={() => setShowGroupModal(false)}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={modalStyles.modalContainer}
+          >
+            <View style={modalStyles.header}>
+              <View style={modalStyles.headerIcon}>
+                <Ionicons
+                  name="folder-open-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={modalStyles.headerTitle}>Select Template Group</Text>
+              <Pressable
+                onPress={() => setShowGroupModal(false)}
+                hitSlop={12}
+                style={modalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={modalStyles.scrollList}
+              showsVerticalScrollIndicator={false}
+            >
+              {Array.from(groupIndex.values()).map((group) => {
+                const isSelected =
+                  storeMeta?.entryTemplatesGroup === group.uuid;
+                return (
+                  <Pressable
+                    key={group.uuid}
+                    style={[
+                      modalStyles.groupRow,
+                      isSelected && modalStyles.groupRowSelected,
+                    ]}
+                    onPress={async () => {
+                      await setTemplatesGroup(group.uuid);
+                      setShowGroupModal(false);
+                    }}
+                  >
+                    <Ionicons
+                      name="folder"
+                      size={20}
+                      color={isSelected ? Colors.accentMint : Colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        modalStyles.groupName,
+                        isSelected && modalStyles.groupNameSelected,
+                      ]}
+                    >
+                      {group.name}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons
+                        name="checkmark"
+                        size={18}
+                        color={Colors.accentMint}
+                      />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1025,5 +1177,79 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading.semiBold,
     fontSize: FontSizes.bodySmall,
     color: Colors.backgroundPrimary,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  overlayPress: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalContainer: {
+    width: "90%",
+    maxWidth: 400,
+    maxHeight: "70%",
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    padding: Spacing.lg,
+    ...Shadows.elevated,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  headerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.accentMintDim,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.textPrimary,
+  },
+  closeBtn: {
+    width: TouchTarget.min,
+    height: TouchTarget.min,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollList: {
+    maxHeight: 350,
+  },
+  groupRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radii.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  groupRowSelected: {
+    backgroundColor: Colors.accentMintDim,
+  },
+  groupName: {
+    flex: 1,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textSecondary,
+  },
+  groupNameSelected: {
+    fontFamily: Fonts.heading.medium,
+    color: Colors.accentMint,
   },
 });

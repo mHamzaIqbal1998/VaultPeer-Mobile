@@ -39,6 +39,10 @@ export interface VaultMeta {
   groupCount: number;
   /** Compression setting */
   compression?: "None" | "GZip";
+  /** UUID of the entry templates group */
+  entryTemplatesGroup?: string;
+  /** Whether entry templates are enabled */
+  entryTemplatesEnabled?: boolean;
 }
 
 // ────────────────────────────────────────────
