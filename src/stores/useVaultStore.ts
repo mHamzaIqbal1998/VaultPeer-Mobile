@@ -120,6 +120,11 @@ interface VaultStoreState {
   setTemplatesEnabled: (enabled: boolean) => Promise<void>;
   setTemplatesGroup: (groupUuid: string) => Promise<void>;
 
+  // Recycle Bin Support
+  setRecycleBinEnabled: (enabled: boolean) => Promise<void>;
+  setRecycleBinGroup: (groupUuid: string) => Promise<void>;
+  emptyRecycleBin: () => Promise<boolean>;
+
   // Dirty state
   markClean: () => void;
 }
@@ -172,6 +177,70 @@ function findKdbxGroup(
     if (found) return found;
   }
   return null;
+}
+
+function ensureRecycleBinGroup(db: kdbxweb.Kdbx) {
+  if (!db.meta.recycleBinEnabled) return;
+
+  const root = db.getDefaultGroup();
+  let binGroup: kdbxweb.KdbxGroup | null = null;
+
+  if (
+    db.meta.recycleBinUuid &&
+    db.meta.recycleBinUuid.id &&
+    db.meta.recycleBinUuid.id !== root.uuid?.id
+  ) {
+    binGroup = findKdbxGroup(root, db.meta.recycleBinUuid.id);
+  }
+
+  if (!binGroup) {
+    const existing = root.groups.find(
+      (g) => g.name?.toLowerCase() === "recycle bin"
+    );
+    if (existing) {
+      binGroup = existing;
+      db.meta.recycleBinUuid = existing.uuid;
+    } else {
+      const newGroup = db.createGroup(root, "Recycle Bin");
+      newGroup.icon = 27;
+      binGroup = newGroup;
+      db.meta.recycleBinUuid = newGroup.uuid;
+    }
+  }
+}
+
+function ensureTemplatesGroup(db: kdbxweb.Kdbx): kdbxweb.KdbxGroup | null {
+  const customData = db.meta.customData;
+  const enabled = customData?.get("templatesEnabled")?.value === "true";
+  if (!enabled) return null;
+
+  const root = db.getDefaultGroup();
+  let templatesGroup: kdbxweb.KdbxGroup | null = null;
+
+  if (
+    db.meta.entryTemplatesGroup &&
+    db.meta.entryTemplatesGroup.id &&
+    db.meta.entryTemplatesGroup.id !== root.uuid?.id
+  ) {
+    templatesGroup = findKdbxGroup(root, db.meta.entryTemplatesGroup.id);
+  }
+
+  if (!templatesGroup) {
+    const existing = root.groups.find(
+      (g) => g.name?.toLowerCase() === "templates"
+    );
+    if (existing) {
+      templatesGroup = existing;
+      db.meta.entryTemplatesGroup = existing.uuid;
+    } else {
+      const newGroup = db.createGroup(root, "Templates");
+      newGroup.icon = 20;
+      templatesGroup = newGroup;
+      db.meta.entryTemplatesGroup = newGroup.uuid;
+    }
+  }
+
+  return templatesGroup;
 }
 
 function findKdbxEntry(
@@ -321,6 +390,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
   // ────── Core Actions ──────
 
   openDatabase: (db, filePath) => {
+    ensureRecycleBinGroup(db);
+    const templatesGroup = ensureTemplatesGroup(db);
+    if (templatesGroup) {
+      seedDefaultTemplates(db, templatesGroup);
+    }
     const { meta, rootGroup } = parseDatabase(db);
     set({
       _db: db,
@@ -693,14 +767,21 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const found = findKdbxEntry(root, uuid);
     if (!found) return false;
 
-    const isAlreadyInBin = isInRecycleBin(found.parent, db.meta.recycleBinUuid);
+    const recycleBinEnabled = db.meta.recycleBinEnabled;
+    const recycleBinUuid = db.meta.recycleBinUuid;
+    const isAlreadyInBin = isInRecycleBin(found.parent, recycleBinUuid);
 
-    if (isAlreadyInBin) {
-      db.move(found.entry, null);
+    if (recycleBinEnabled && recycleBinUuid && !isAlreadyInBin) {
+      const recycleBinGroup = findKdbxGroup(root, recycleBinUuid.id);
+      if (recycleBinGroup) {
+        // Store the original parent group UUID in a custom field before moving
+        found.entry.fields.set("PreviousParentGroupUuid", found.parent.uuid.id);
+        db.move(found.entry, recycleBinGroup);
+      } else {
+        db.move(found.entry, null);
+      }
     } else {
-      // Store the original parent group UUID in a custom field before removing
-      found.entry.fields.set("PreviousParentGroupUuid", found.parent.uuid.id);
-      db.remove(found.entry);
+      db.move(found.entry, null);
     }
 
     // Re-parse
@@ -839,15 +920,27 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const group = findKdbxGroup(root, uuid);
     if (!group) return false;
 
-    const isAlreadyInBin = isInRecycleBin(
-      group.parentGroup,
-      db.meta.recycleBinUuid
-    );
+    const recycleBinEnabled = db.meta.recycleBinEnabled;
+    const recycleBinUuid = db.meta.recycleBinUuid;
+    const isAlreadyInBin = isInRecycleBin(group.parentGroup, recycleBinUuid);
 
-    if (isAlreadyInBin) {
-      db.move(group, null);
+    const isRecycleBinSelf =
+      recycleBinUuid && group.uuid?.id === recycleBinUuid.id;
+
+    if (
+      recycleBinEnabled &&
+      recycleBinUuid &&
+      !isAlreadyInBin &&
+      !isRecycleBinSelf
+    ) {
+      const recycleBinGroup = findKdbxGroup(root, recycleBinUuid.id);
+      if (recycleBinGroup) {
+        db.move(group, recycleBinGroup);
+      } else {
+        db.move(group, null);
+      }
     } else {
-      db.remove(group);
+      db.move(group, null);
     }
 
     // Re-parse
@@ -1011,32 +1104,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     });
 
     if (enabled) {
-      let templatesGroupKdbx: kdbxweb.KdbxGroup | null = null;
-      if (db.meta.entryTemplatesGroup) {
-        templatesGroupKdbx = findKdbxGroup(
-          db.getDefaultGroup(),
-          db.meta.entryTemplatesGroup.id
-        );
-      }
-
-      if (!templatesGroupKdbx) {
-        const rootGroupKdbx = db.getDefaultGroup();
-        const existingTemplatesGroup = rootGroupKdbx.groups.find(
-          (g) => g.name?.toLowerCase() === "templates"
-        );
-
-        if (existingTemplatesGroup) {
-          templatesGroupKdbx = existingTemplatesGroup;
-          db.meta.entryTemplatesGroup = templatesGroupKdbx.uuid;
-        } else {
-          // Create the Templates group
-          const newGroup = db.createGroup(rootGroupKdbx, "Templates");
-          newGroup.icon = 20; // Folder / Templates icon index
-          templatesGroupKdbx = newGroup;
-          db.meta.entryTemplatesGroup = newGroup.uuid;
-        }
-      }
-
+      const templatesGroupKdbx = ensureTemplatesGroup(db);
       if (templatesGroupKdbx) {
         seedDefaultTemplates(db, templatesGroupKdbx);
       }
@@ -1051,9 +1119,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const db = state._db;
     if (!db) return;
 
+    const root = db.getDefaultGroup();
+    if (groupUuid === root.uuid?.id) return;
+
     db.meta.entryTemplatesGroup = new kdbxweb.KdbxUuid(groupUuid);
 
-    const root = db.getDefaultGroup();
     const templatesGroupKdbx = findKdbxGroup(root, groupUuid);
     if (templatesGroupKdbx) {
       seedDefaultTemplates(db, templatesGroupKdbx);
@@ -1061,6 +1131,63 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     set({ isDirty: true });
     state.refreshParsedState();
+  },
+
+  // ────── Recycle Bin Support ──────
+
+  setRecycleBinEnabled: async (enabled) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.recycleBinEnabled = enabled;
+
+    if (enabled) {
+      ensureRecycleBinGroup(db);
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  setRecycleBinGroup: async (groupUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    const root = db.getDefaultGroup();
+    if (groupUuid === root.uuid?.id) return;
+
+    db.meta.recycleBinUuid = new kdbxweb.KdbxUuid(groupUuid);
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  emptyRecycleBin: async () => {
+    const state = get();
+    const db = state._db;
+    if (!db || !db.meta.recycleBinUuid) return false;
+
+    const root = db.getDefaultGroup();
+    const binGroup = findKdbxGroup(root, db.meta.recycleBinUuid.id);
+    if (!binGroup) return false;
+
+    // Purge entries inside the recycle bin group
+    const entriesToPurge = [...binGroup.entries];
+    for (const entry of entriesToPurge) {
+      db.move(entry, null);
+    }
+
+    // Purge subgroups inside the recycle bin group
+    const groupsToPurge = [...binGroup.groups];
+    for (const subgroup of groupsToPurge) {
+      db.move(subgroup, null);
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+    return true;
   },
 
   // ────── Dirty State ──────

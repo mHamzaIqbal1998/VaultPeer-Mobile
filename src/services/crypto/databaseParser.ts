@@ -309,6 +309,13 @@ export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
     entryTemplatesEnabled: db.meta?.customData
       ? db.meta.customData.get("templatesEnabled")?.value === "true"
       : false,
+    recycleBinEnabled: !!db.meta?.recycleBinEnabled,
+    recycleBinUuid: (() => {
+      const uuidStr = db.meta?.recycleBinUuid
+        ? uuidToString(db.meta.recycleBinUuid)
+        : undefined;
+      return uuidStr === "AAAAAAAAAAAAAAAAAAAAAA==" ? undefined : uuidStr;
+    })(),
   };
 }
 

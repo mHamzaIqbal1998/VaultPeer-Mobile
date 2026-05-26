@@ -228,3 +228,17 @@ Introduces KeePassDX-style entry templates. Allows users to enable templates in 
   - Upon selecting a template, navigate to `app/entry/edit.tsx` with the template parameters.
 - [x] Update `app/entry/edit.tsx` to read the template entry's fields (Title, Username, Password, URL, Notes, Custom Fields, and Tags) and pre-fill the form fields on mount.
 - [x] Add unit tests in `src/stores/__tests__/templates.test.ts` to verify group creation, default template seeding, metadata sync via `entryTemplatesGroup`, field duplication to new entries, and custom user templates loading.
+
+### Phase 13: Recycle Bin Support
+
+Integrates KeePassDX-style Recycle Bin configuration. Allows users to enable/disable Recycle Bin usage in Database Settings and choose which group acts as the active Recycle Bin. On enabling, if the default "Recycle Bin" group is missing, the application will initialize it automatically.
+
+- [x] Add a database configuration toggle "Enable Recycle Bin" in Database Settings.
+- [x] Expose a "Recycle Bin Group" selector menu in Database Settings allowing users to choose which group acts as the active recycle bin (populated with all database groups dynamically).
+- [x] Update the store configuration logic:
+  - Synchronize choices with `db.meta.recycleBinEnabled` and `db.meta.recycleBinUuid` (converting the UUID back and forth).
+  - When the recycle bin is enabled, verify that a group matches the designated UUID or a group named "Recycle Bin" exists at the root.
+  - If missing, create the "Recycle Bin" group automatically, assign its UUID to `db.meta.recycleBinUuid`, and set the group icon to the standard trash bin icon (Icon 27).
+- [x] Refactor the group and entry deletion logic in `useVaultStore.ts` to verify that deletions respect the configured settings (moving items to the designated Recycle Bin if enabled, or deleting permanently if disabled/already in the bin).
+- [x] Expose an on-demand "Empty Recycle Bin" button under Database Settings that purges all entries and subgroups within the designated bin permanently.
+- [x] Write unit tests verifying Recycle Bin state changes, automatic group creation, moving entries to the bin, permanent deletion, and empty bin actions.

@@ -296,6 +296,9 @@ export default function VaultSettingsScreen() {
     setTemplatesEnabled,
     setTemplatesGroup,
     groupIndex,
+    setRecycleBinEnabled,
+    setRecycleBinGroup,
+    emptyRecycleBin,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -308,12 +311,57 @@ export default function VaultSettingsScreen() {
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showRecycleBinGroupModal, setShowRecycleBinGroupModal] =
+    useState(false);
 
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
     const group = groupIndex.get(storeMeta.entryTemplatesGroup);
     return group ? group.name : "Templates";
   }, [storeMeta, groupIndex]);
+
+  const recycleBinGroupName = useMemo(() => {
+    if (!storeMeta?.recycleBinUuid) return "Recycle Bin";
+    const group = groupIndex.get(storeMeta.recycleBinUuid);
+    return group ? group.name : "Recycle Bin";
+  }, [storeMeta, groupIndex]);
+
+  const handleEmptyRecycleBinPress = useCallback(() => {
+    if (!db || !storeMeta?.recycleBinUuid) return;
+    const binGroup = groupIndex.get(storeMeta.recycleBinUuid);
+    if (!binGroup) return;
+
+    const itemsCount =
+      (binGroup.entries?.length || 0) + (binGroup.groups?.length || 0);
+    if (itemsCount === 0) {
+      Alert.alert(
+        "Recycle Bin Empty",
+        "There are no items in the Recycle Bin to delete."
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Empty Recycle Bin",
+      `Are you sure you want to permanently delete all ${itemsCount} item(s) inside the "${binGroup.name}" group? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Empty Bin",
+          style: "destructive",
+          onPress: async () => {
+            const success = await emptyRecycleBin();
+            if (success) {
+              Alert.alert("Success", "Recycle bin emptied successfully.");
+            } else {
+              Alert.alert("Error", "Failed to empty the recycle bin.");
+            }
+          },
+        },
+      ]
+    );
+  }, [db, storeMeta, groupIndex, emptyRecycleBin]);
+
   const [showKdfModal, setShowKdfModal] = useState(false);
 
   useEffect(() => {
@@ -744,6 +792,72 @@ export default function VaultSettingsScreen() {
               </CyberCard>
             </Animated.View>
 
+            {/* Recycle Bin */}
+            <Animated.View entering={FadeInDown.duration(200).delay(185)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Recycle Bin</Text>
+                </View>
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Enable Recycle Bin</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Move deleted items to a recycle bin instead of deleting
+                      permanently
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      const newEnabled = !storeMeta?.recycleBinEnabled;
+                      await setRecycleBinEnabled(newEnabled);
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        storeMeta?.recycleBinEnabled
+                          ? "toggle"
+                          : "toggle-outline"
+                      }
+                      size={38}
+                      color={
+                        storeMeta?.recycleBinEnabled
+                          ? Colors.accentMint
+                          : Colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+                {storeMeta?.recycleBinEnabled && (
+                  <>
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="folder-open-outline"
+                      title="Recycle Bin Group"
+                      subtitle="Group designated as the active recycle bin"
+                      value={recycleBinGroupName}
+                      onPress={() => setShowRecycleBinGroupModal(true)}
+                    />
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="trash-bin-outline"
+                      iconColor={Colors.statusError}
+                      title="Empty Recycle Bin"
+                      subtitle="Permanently delete all items in the bin"
+                      onPress={handleEmptyRecycleBinPress}
+                      destructive
+                    />
+                  </>
+                )}
+              </CyberCard>
+            </Animated.View>
+
             {/* Database Actions */}
             <Animated.View entering={FadeInDown.duration(200).delay(200)}>
               <CyberCard style={styles.card}>
@@ -978,44 +1092,136 @@ export default function VaultSettingsScreen() {
               style={modalStyles.scrollList}
               showsVerticalScrollIndicator={false}
             >
-              {Array.from(groupIndex.values()).map((group) => {
-                const isSelected =
-                  storeMeta?.entryTemplatesGroup === group.uuid;
-                return (
-                  <Pressable
-                    key={group.uuid}
-                    style={[
-                      modalStyles.groupRow,
-                      isSelected && modalStyles.groupRowSelected,
-                    ]}
-                    onPress={async () => {
-                      await setTemplatesGroup(group.uuid);
-                      setShowGroupModal(false);
-                    }}
-                  >
-                    <Ionicons
-                      name="folder"
-                      size={20}
-                      color={isSelected ? Colors.accentMint : Colors.textMuted}
-                    />
-                    <Text
+              {Array.from(groupIndex.values())
+                .filter((g) => g.parentGroupUuid !== null)
+                .map((group) => {
+                  const isSelected =
+                    storeMeta?.entryTemplatesGroup === group.uuid;
+                  return (
+                    <Pressable
+                      key={group.uuid}
                       style={[
-                        modalStyles.groupName,
-                        isSelected && modalStyles.groupNameSelected,
+                        modalStyles.groupRow,
+                        isSelected && modalStyles.groupRowSelected,
                       ]}
+                      onPress={async () => {
+                        await setTemplatesGroup(group.uuid);
+                        setShowGroupModal(false);
+                      }}
                     >
-                      {group.name}
-                    </Text>
-                    {isSelected && (
                       <Ionicons
-                        name="checkmark"
-                        size={18}
-                        color={Colors.accentMint}
+                        name="folder"
+                        size={20}
+                        color={
+                          isSelected ? Colors.accentMint : Colors.textMuted
+                        }
                       />
-                    )}
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          modalStyles.groupName,
+                          isSelected && modalStyles.groupNameSelected,
+                        ]}
+                      >
+                        {group.name}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={Colors.accentMint}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
+      {/* Recycle Bin Group Selector Modal */}
+      <Modal
+        visible={showRecycleBinGroupModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => setShowRecycleBinGroupModal(false)}
+      >
+        <Animated.View style={modalStyles.overlay}>
+          <Pressable
+            style={modalStyles.overlayPress}
+            onPress={() => setShowRecycleBinGroupModal(false)}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={modalStyles.modalContainer}
+          >
+            <View style={modalStyles.header}>
+              <View style={modalStyles.headerIcon}>
+                <Ionicons
+                  name="trash-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={modalStyles.headerTitle}>
+                Select Recycle Bin Group
+              </Text>
+              <Pressable
+                onPress={() => setShowRecycleBinGroupModal(false)}
+                hitSlop={12}
+                style={modalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={modalStyles.scrollList}
+              showsVerticalScrollIndicator={false}
+            >
+              {Array.from(groupIndex.values())
+                .filter((g) => g.parentGroupUuid !== null)
+                .map((group) => {
+                  const isSelected = storeMeta?.recycleBinUuid === group.uuid;
+                  return (
+                    <Pressable
+                      key={group.uuid}
+                      style={[
+                        modalStyles.groupRow,
+                        isSelected && modalStyles.groupRowSelected,
+                      ]}
+                      onPress={async () => {
+                        await setRecycleBinGroup(group.uuid);
+                        setShowRecycleBinGroupModal(false);
+                      }}
+                    >
+                      <Ionicons
+                        name="folder"
+                        size={20}
+                        color={
+                          isSelected ? Colors.accentMint : Colors.textMuted
+                        }
+                      />
+                      <Text
+                        style={[
+                          modalStyles.groupName,
+                          isSelected && modalStyles.groupNameSelected,
+                        ]}
+                      >
+                        {group.name}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={Colors.accentMint}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
             </ScrollView>
           </Animated.View>
         </Animated.View>

@@ -43,6 +43,10 @@ export interface VaultMeta {
   entryTemplatesGroup?: string;
   /** Whether entry templates are enabled */
   entryTemplatesEnabled?: boolean;
+  /** Whether the recycle bin is enabled */
+  recycleBinEnabled?: boolean;
+  /** UUID of the recycle bin group */
+  recycleBinUuid?: string;
 }
 
 // ────────────────────────────────────────────
