@@ -57,7 +57,7 @@ const TEST_ARGON2_ITERATIONS = 2;
 const TEST_ARGON2_PARALLELISM = 2;
 
 /** AES-KDF benchmark test rounds (small enough to be fast) */
-const AES_KDF_TEST_ROUNDS = 100000;
+const AES_KDF_TEST_ROUNDS = 30000;
 
 // ────────────────────────────────────────────
 // Random test data generators
@@ -99,10 +99,15 @@ async function benchmarkAesKdf(): Promise<KdfBenchmarkResult> {
   const iv = new Uint8Array(16);
   let data = new Uint8Array(testKey);
 
-  const startTime = performance.now();
+  let activeMs = 0;
 
   // Run test rounds
   for (let i = 0; i < AES_KDF_TEST_ROUNDS; i++) {
+    if (i > 0 && i % 5000 === 0) {
+      // Yield to the JS event loop to keep the UI responsive and allow rendering
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const t0 = performance.now();
     const encrypted = await crypto.subtle.encrypt(
       { name: "AES-CBC", iv },
       cryptoKey,
@@ -110,12 +115,11 @@ async function benchmarkAesKdf(): Promise<KdfBenchmarkResult> {
     );
     // Take first 32 bytes of result
     data = new Uint8Array(encrypted).slice(0, 32);
+    activeMs += performance.now() - t0;
   }
 
-  const elapsedMs = performance.now() - startTime;
-
   // Estimate rounds for TARGET_MS
-  const roundsPerMs = AES_KDF_TEST_ROUNDS / elapsedMs;
+  const roundsPerMs = AES_KDF_TEST_ROUNDS / activeMs;
   const estimatedRounds = Math.max(
     MIN_AES_ROUNDS,
     Math.round(roundsPerMs * TARGET_MS)
@@ -123,7 +127,7 @@ async function benchmarkAesKdf(): Promise<KdfBenchmarkResult> {
 
   return {
     kdfType: "AES-KDF",
-    elapsedMs: Math.round(elapsedMs),
+    elapsedMs: Math.round(activeMs),
     recommended: {
       rounds: estimatedRounds,
     },
