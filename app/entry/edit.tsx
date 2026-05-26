@@ -160,8 +160,10 @@ function QrScannerView({
         }}
         onBarcodeScanned={({ data }) => onScan(data)}
         enableTorch={torch}
-      >
-        {/* Semi-transparent overlays */}
+      />
+
+      {/* Semi-transparent overlays — absolute siblings on top of CameraView */}
+      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
         <View style={styles.scannerOverlayTop} />
         <View style={styles.scannerOverlayMiddleRow}>
           <View style={styles.scannerOverlaySide} />
@@ -175,36 +177,36 @@ function QrScannerView({
           <View style={styles.scannerOverlaySide} />
         </View>
         <View style={styles.scannerOverlayBottom} />
+      </View>
 
-        {/* Floating Controls */}
-        <SafeAreaView
-          style={styles.scannerControlsContainer}
-          edges={["top", "bottom"]}
-        >
-          <View style={styles.scannerHeaderRow}>
-            <Pressable style={styles.scannerControlCircle} onPress={onClose}>
-              <Ionicons name="close" size={20} color={Colors.textPrimary} />
-            </Pressable>
-            <Text style={styles.scannerTitle}>Scan QR Code</Text>
-            <Pressable
-              style={styles.scannerControlCircle}
-              onPress={() => setTorch(!torch)}
-            >
-              <Ionicons
-                name={torch ? "flash" : "flash-off"}
-                size={20}
-                color={torch ? Colors.accentMint : Colors.textPrimary}
-              />
-            </Pressable>
-          </View>
+      {/* Floating Controls — absolute siblings on top of CameraView */}
+      <SafeAreaView
+        style={styles.scannerControlsContainer}
+        edges={["top", "bottom"]}
+      >
+        <View style={styles.scannerHeaderRow}>
+          <Pressable style={styles.scannerControlCircle} onPress={onClose}>
+            <Ionicons name="close" size={20} color={Colors.textPrimary} />
+          </Pressable>
+          <Text style={styles.scannerTitle}>Scan QR Code</Text>
+          <Pressable
+            style={styles.scannerControlCircle}
+            onPress={() => setTorch(!torch)}
+          >
+            <Ionicons
+              name={torch ? "flash" : "flash-off"}
+              size={20}
+              color={torch ? Colors.accentMint : Colors.textPrimary}
+            />
+          </Pressable>
+        </View>
 
-          <View style={styles.scannerFooter}>
-            <Text style={styles.scannerHelpText}>
-              Align the QR code inside the frame to scan
-            </Text>
-          </View>
-        </SafeAreaView>
-      </CameraView>
+        <View style={styles.scannerFooter}>
+          <Text style={styles.scannerHelpText}>
+            Align the QR code inside the frame to scan
+          </Text>
+        </View>
+      </SafeAreaView>
     </View>
   );
 }
