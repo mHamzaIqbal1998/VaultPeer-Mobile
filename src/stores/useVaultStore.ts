@@ -16,7 +16,7 @@ import { create } from "zustand";
 import * as kdbxweb from "kdbxweb";
 import { parseDatabase } from "../services/crypto/databaseParser";
 import type { VaultEntry, VaultGroup, VaultMeta } from "../types/kdbx";
-import { base64ToArrayBuffer } from "../services/base64";
+import { base64ToArrayBuffer, arrayBufferToBase64 } from "../services/base64";
 
 // ────────────────────────────────────────────
 // History Entry
@@ -86,6 +86,10 @@ interface VaultStoreState {
   ) => Promise<VaultEntry | null>;
   deleteEntry: (uuid: string) => boolean;
   restoreEntry: (uuid: string) => boolean;
+  getAttachmentData: (
+    entryUuid: string,
+    attachmentName: string
+  ) => Promise<string>;
 
   // Group CRUD
   createGroup: (parentGroupUuid: string, name: string) => VaultGroup | null;
@@ -220,6 +224,43 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     });
   },
 
+  getAttachmentData: async (entryUuid, attachmentName) => {
+    const state = get();
+    const db = state._db;
+    if (!db) throw new Error("Database not loaded");
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) throw new Error("Entry not found");
+
+    const binVal = found.entry.binaries.get(attachmentName);
+    if (!binVal) throw new Error("Attachment not found");
+
+    let rawBin: kdbxweb.KdbxBinary;
+    if (binVal && typeof binVal === "object" && "value" in binVal) {
+      rawBin = (binVal as any).value;
+    } else {
+      rawBin = binVal as kdbxweb.KdbxBinary;
+    }
+
+    if (!rawBin) throw new Error("Attachment is empty");
+
+    let base64Data = "";
+    const anyBin = rawBin as any;
+    if (
+      anyBin instanceof kdbxweb.ProtectedValue ||
+      (typeof anyBin === "object" && "toBase64" in anyBin)
+    ) {
+      base64Data = anyBin.toBase64();
+    } else if (anyBin instanceof ArrayBuffer) {
+      base64Data = arrayBufferToBase64(anyBin);
+    } else if (anyBin instanceof Uint8Array) {
+      base64Data = arrayBufferToBase64(anyBin.buffer as ArrayBuffer);
+    }
+
+    return base64Data;
+  },
+
   closeDatabase: () => {
     const db = get()._db;
     // Clear protected values from memory
@@ -329,6 +370,13 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     );
     newKdbxEntry.fields.set("URL", data.url || "");
     newKdbxEntry.fields.set("Notes", data.notes || "");
+    if (data.otp !== undefined) {
+      if (data.otp) {
+        newKdbxEntry.fields.set("otp", data.otp);
+      } else {
+        newKdbxEntry.fields.delete("otp");
+      }
+    }
 
     if (data.iconId !== undefined) {
       newKdbxEntry.icon = data.iconId;
@@ -366,7 +414,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     // Attachments
     if (data.attachments !== undefined) {
       for (const attachment of data.attachments) {
-        const buffer = base64ToArrayBuffer(attachment.data);
+        const buffer = base64ToArrayBuffer(attachment.data || "");
         const binaryWithHash = await db.binaries.add(buffer);
         newKdbxEntry.binaries.set(attachment.name, binaryWithHash);
       }
@@ -422,6 +470,13 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     if (data.url !== undefined) entry.fields.set("URL", data.url);
     if (data.notes !== undefined) entry.fields.set("Notes", data.notes);
     if (data.iconId !== undefined) entry.icon = data.iconId;
+    if (data.otp !== undefined) {
+      if (data.otp) {
+        entry.fields.set("otp", data.otp);
+      } else {
+        entry.fields.delete("otp");
+      }
+    }
 
     if (data.fields) {
       // Remove old custom fields not in the new set
@@ -431,6 +486,9 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
         "Password",
         "URL",
         "Notes",
+        "otp",
+        "TimeOtp",
+        "totp",
       ]);
       const newKeys = new Set(Object.keys(data.fields));
 
@@ -476,11 +534,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
       // 2. Add or update attachments
       for (const attachment of data.attachments) {
-        // Check if there is an existing attachment with same name and same base64 data
-        const existing = state.entryIndex
-          .get(entry.uuid.id)
-          ?.attachments.find((a) => a.name === attachment.name);
-        if (existing && existing.data === attachment.data) {
+        // If data is not provided, this is an existing unchanged attachment (which wasn't loaded)
+        if (!attachment.data) {
           continue;
         }
 

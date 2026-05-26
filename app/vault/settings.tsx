@@ -10,6 +10,12 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
@@ -23,8 +29,14 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
-import { parseMeta } from "@/src/services/crypto";
+import { parseMeta, applyKdfParams } from "@/src/services/crypto";
+import {
+  getCurrentKdfParams,
+  formatKdfParams,
+} from "@/src/services/crypto/kdfBenchmark";
+import type { KdfTuningParams } from "@/src/services/crypto/kdfBenchmark";
 import { CyberCard } from "@/src/components/CyberCard";
+import { KdfTuningModal } from "@/src/components/KdfTuningModal";
 import {
   isBiometricsSupported,
   isBiometricEnabled,
@@ -32,7 +44,10 @@ import {
   disableBiometric,
 } from "@/src/services/biometricService";
 
-// Helper: parse clean filename
+// ────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────
+
 function getFilenameFromUri(uri?: string): string {
   if (!uri) return "No active file path";
   try {
@@ -49,6 +64,220 @@ function getFilenameFromUri(uri?: string): string {
   }
 }
 
+type SettingsTab = "database" | "app";
+
+// ────────────────────────────────────────────
+// Segmented Tab Control
+// ────────────────────────────────────────────
+
+function SegmentedControl({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab: SettingsTab;
+  onTabChange: (tab: SettingsTab) => void;
+}) {
+  const indicatorX = useSharedValue(activeTab === "database" ? 0 : 1);
+
+  useEffect(() => {
+    indicatorX.value = withSpring(activeTab === "database" ? 0 : 1, {
+      damping: 18,
+      stiffness: 200,
+    });
+  }, [activeTab, indicatorX]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    left: `${indicatorX.value * 50}%` as any,
+  }));
+
+  return (
+    <View style={segStyles.container}>
+      <Animated.View style={[segStyles.indicator, indicatorStyle]} />
+      <Pressable
+        style={segStyles.tab}
+        onPress={() => onTabChange("database")}
+        hitSlop={4}
+      >
+        <Ionicons
+          name="server-outline"
+          size={15}
+          color={
+            activeTab === "database"
+              ? Colors.backgroundPrimary
+              : Colors.textMuted
+          }
+        />
+        <Text
+          style={[
+            segStyles.tabText,
+            activeTab === "database" && segStyles.tabTextActive,
+          ]}
+        >
+          Database
+        </Text>
+      </Pressable>
+      <Pressable
+        style={segStyles.tab}
+        onPress={() => onTabChange("app")}
+        hitSlop={4}
+      >
+        <Ionicons
+          name="phone-portrait-outline"
+          size={15}
+          color={
+            activeTab === "app" ? Colors.backgroundPrimary : Colors.textMuted
+          }
+        />
+        <Text
+          style={[
+            segStyles.tabText,
+            activeTab === "app" && segStyles.tabTextActive,
+          ]}
+        >
+          App
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const segStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radii.md,
+    padding: 3,
+    position: "relative",
+  },
+  indicator: {
+    position: "absolute",
+    top: 3,
+    bottom: 3,
+    width: "50%",
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.sm,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    zIndex: 1,
+  },
+  tabText: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
+  },
+  tabTextActive: {
+    color: Colors.backgroundPrimary,
+  },
+});
+
+// ────────────────────────────────────────────
+// Settings Row Component
+// ────────────────────────────────────────────
+
+function SettingsRow({
+  icon,
+  iconColor,
+  title,
+  subtitle,
+  value,
+  onPress,
+  rightElement,
+  destructive,
+}: {
+  icon: string;
+  iconColor?: string;
+  title: string;
+  subtitle?: string;
+  value?: string;
+  onPress?: () => void;
+  rightElement?: React.ReactNode;
+  destructive?: boolean;
+}) {
+  const content = (
+    <View style={rowStyles.row}>
+      <Ionicons
+        name={icon as any}
+        size={20}
+        color={
+          iconColor || (destructive ? Colors.statusError : Colors.textPrimary)
+        }
+      />
+      <View style={rowStyles.textCol}>
+        <Text
+          style={[
+            rowStyles.title,
+            destructive && { color: Colors.statusError },
+          ]}
+        >
+          {title}
+        </Text>
+        {subtitle && <Text style={rowStyles.subtitle}>{subtitle}</Text>}
+      </View>
+      {value && (
+        <Text style={rowStyles.value} numberOfLines={1}>
+          {value}
+        </Text>
+      )}
+      {rightElement}
+      {onPress && !rightElement && (
+        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+      )}
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+  return content;
+}
+
+const rowStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    minHeight: TouchTarget.min,
+    gap: Spacing.md,
+  },
+  textCol: {
+    flex: 1,
+  },
+  title: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  subtitle: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  value: {
+    fontFamily: Fonts.mono.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.accentMint,
+    maxWidth: 140,
+  },
+});
+
+// ────────────────────────────────────────────
+// Main Settings Screen
+// ────────────────────────────────────────────
+
 export default function VaultSettingsScreen() {
   const router = useRouter();
   const {
@@ -57,9 +286,12 @@ export default function VaultSettingsScreen() {
     filePath: fileUri,
     isDirty,
     markClean,
+    refreshParsedState,
+    meta: storeMeta,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>("database");
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [showBiometricPasswordInput, setShowBiometricPasswordInput] =
@@ -67,6 +299,7 @@ export default function VaultSettingsScreen() {
   const [biometricPassword, setBiometricPassword] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showKdfModal, setShowKdfModal] = useState(false);
 
   useEffect(() => {
     async function checkBiometrics() {
@@ -125,11 +358,25 @@ export default function VaultSettingsScreen() {
   const stats = useMemo(() => {
     if (!db) return null;
     return parseMeta(db);
-  }, [db]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, storeMeta]);
+
+  const kdfInfo = useMemo(() => {
+    if (!db) return null;
+    const header = db.header as unknown as {
+      kdfParameters?: Map<string, unknown>;
+    };
+    return getCurrentKdfParams(header?.kdfParameters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, storeMeta]);
+
+  const kdfParamLabels = useMemo(() => {
+    if (!kdfInfo) return [];
+    return formatKdfParams(kdfInfo.kdfType, kdfInfo);
+  }, [kdfInfo]);
 
   const handleLock = useCallback(() => {
     closeDatabase();
-    // Redirect to home screen (which is index/unlock screen)
     router.replace("/");
   }, [closeDatabase, router]);
 
@@ -171,17 +418,36 @@ export default function VaultSettingsScreen() {
     );
   }, [clearVault, closeDatabase, router]);
 
+  const handleApplyKdfParams = useCallback(
+    (params: KdfTuningParams) => {
+      if (!db) return;
+      applyKdfParams(db, params);
+      refreshParsedState();
+      useVaultStore.setState({ isDirty: true });
+      Alert.alert(
+        "KDF Updated",
+        "New parameters applied. Save the database to persist changes."
+      );
+    },
+    [db, refreshParsedState]
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Vault Settings</Text>
+        <Text style={styles.headerTitle}>Settings</Text>
+      </View>
+
+      {/* Segmented Tab Bar */}
+      <View style={styles.segmentWrapper}>
+        <SegmentedControl activeTab={activeTab} onTabChange={setActiveTab} />
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Save Status Banner */}
+        {/* Unsaved Changes Banner */}
         {isDirty && (
           <CyberCard style={styles.warningCard}>
             <View style={styles.warningHeader}>
@@ -193,8 +459,8 @@ export default function VaultSettingsScreen() {
               <Text style={styles.warningTitle}>Unsaved Changes</Text>
             </View>
             <Text style={styles.warningText}>
-              You have added or modified entries since the last save. Save
-              changes to write to the file.
+              You have modifications since the last save. Save now to write to
+              file.
             </Text>
             <Pressable
               onPress={handleSave}
@@ -224,188 +490,292 @@ export default function VaultSettingsScreen() {
           </CyberCard>
         )}
 
-        {/* Database Meta Statistics */}
-        {stats && (
-          <CyberCard style={styles.card}>
-            <Text style={styles.cardTitle}>Vault Information</Text>
-            <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>Name</Text>
-              <Text style={styles.statsValue}>{stats.name}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>Groups</Text>
-              <Text style={styles.statsValue}>{stats.groupCount}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>Entries</Text>
-              <Text style={styles.statsValue}>{stats.entryCount}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>Encryption Cipher</Text>
-              <Text style={styles.statsValue}>{stats.cipherName}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>Key Derivation (KDF)</Text>
-              <Text style={styles.statsValue}>{stats.kdfName}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statsRow}>
-              <Text style={styles.statsLabel}>File Path</Text>
-              <Text
-                style={styles.statsValueMono}
-                numberOfLines={1}
-                ellipsizeMode="middle"
-              >
-                {getFilenameFromUri(fileUri ?? undefined)}
-              </Text>
-            </View>
-          </CyberCard>
+        {/* ═══════════════ DATABASE TAB ═══════════════ */}
+        {activeTab === "database" && stats && (
+          <>
+            {/* Vault Info */}
+            <Animated.View entering={FadeInDown.duration(200).delay(50)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Vault Information</Text>
+                </View>
+                <SettingsRow
+                  icon="document-text-outline"
+                  title="Name"
+                  value={stats.name}
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="grid-outline"
+                  title="Groups"
+                  value={String(stats.groupCount)}
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="list-outline"
+                  title="Entries"
+                  value={String(stats.entryCount)}
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="folder-outline"
+                  title="File"
+                  value={getFilenameFromUri(fileUri ?? undefined)}
+                />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Security & Encryption */}
+            <Animated.View entering={FadeInDown.duration(200).delay(100)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="shield-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Security & Encryption</Text>
+                </View>
+                <SettingsRow
+                  icon="lock-closed-outline"
+                  title="Cipher"
+                  value={stats.cipherName}
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="key-outline"
+                  title="KDF"
+                  value={stats.kdfName}
+                />
+                <View style={styles.divider} />
+                {kdfParamLabels.map((label, idx) => (
+                  <React.Fragment key={label}>
+                    <SettingsRow
+                      icon="options-outline"
+                      title={label.split(":")[0]?.trim() || ""}
+                      value={label.split(":")[1]?.trim() || ""}
+                    />
+                    {idx < kdfParamLabels.length - 1 && (
+                      <View style={styles.divider} />
+                    )}
+                  </React.Fragment>
+                ))}
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="speedometer-outline"
+                  iconColor={Colors.accentMint}
+                  title="Tune KDF Parameters"
+                  subtitle="Benchmark & adjust security strength"
+                  onPress={() => setShowKdfModal(true)}
+                />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Database Actions */}
+            <Animated.View entering={FadeInDown.duration(200).delay(150)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="construct-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Database Actions</Text>
+                </View>
+                <SettingsRow
+                  icon="lock-closed-outline"
+                  title="Lock Database"
+                  subtitle="Close and encrypt database in memory"
+                  onPress={handleLock}
+                />
+                {hasSavedVault && (
+                  <>
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="trash-outline"
+                      title="Forget Persistence"
+                      subtitle="Clear credentials and key binding"
+                      onPress={handleForget}
+                      destructive
+                    />
+                  </>
+                )}
+              </CyberCard>
+            </Animated.View>
+          </>
         )}
 
-        {/* Actions Card */}
-        <CyberCard style={styles.card}>
-          <Text style={styles.cardTitle}>Security Actions</Text>
-
-          <Pressable
-            onPress={handleLock}
-            style={({ pressed }) => [
-              styles.actionBtn,
-              pressed && styles.actionBtnPressed,
-              styles.lockBtn,
-            ]}
-          >
-            <Ionicons
-              name="lock-closed-outline"
-              size={20}
-              color={Colors.textPrimary}
-            />
-            <View style={styles.actionBtnTextContainer}>
-              <Text style={styles.actionBtnText}>Lock Database</Text>
-              <Text style={styles.actionBtnSub}>
-                Close and encrypt database in memory
-              </Text>
-            </View>
-            <Ionicons
-              name="chevron-forward"
-              size={16}
-              color={Colors.textMuted}
-            />
-          </Pressable>
-
-          {biometricSupported && (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.biometricRow}>
-                <View style={styles.actionBtnTextContainer}>
-                  <Text style={styles.actionBtnText}>Biometric Unlock</Text>
-                  <Text style={styles.actionBtnSub}>
-                    {biometricEnabled
-                      ? "Use Face ID / Fingerprint to unlock"
-                      : "Enable hardware-backed biometric unlock"}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={handleToggleBiometric}
-                  style={styles.switchButton}
-                  hitSlop={8}
-                >
-                  <Ionicons
-                    name={biometricEnabled ? "toggle" : "toggle-outline"}
-                    size={38}
-                    color={
-                      biometricEnabled ? Colors.accentMint : Colors.textMuted
-                    }
-                  />
-                </Pressable>
-              </View>
-
-              {showBiometricPasswordInput && (
-                <View style={styles.confirmPasswordContainer}>
-                  <Text style={styles.confirmLabel}>
-                    Confirm Master Password
-                  </Text>
-                  <View style={styles.confirmInputRow}>
-                    <TextInput
-                      style={styles.confirmInput}
-                      secureTextEntry
-                      value={biometricPassword}
-                      onChangeText={setBiometricPassword}
-                      placeholder="Master Password"
-                      placeholderTextColor={Colors.textDisabled}
-                      autoCapitalize="none"
-                      autoCorrect={false}
+        {/* ═══════════════ APP TAB ═══════════════ */}
+        {activeTab === "app" && (
+          <>
+            {/* Biometric Unlock */}
+            {biometricSupported && (
+              <Animated.View entering={FadeInDown.duration(200).delay(50)}>
+                <CyberCard style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons
+                      name="finger-print-outline"
+                      size={18}
+                      color={Colors.accentMint}
                     />
+                    <Text style={styles.cardTitle}>Biometric Unlock</Text>
+                  </View>
+                  <View style={styles.biometricRow}>
+                    <View style={rowStyles.textCol}>
+                      <Text style={rowStyles.title}>
+                        {biometricEnabled ? "Enabled" : "Disabled"}
+                      </Text>
+                      <Text style={rowStyles.subtitle}>
+                        {biometricEnabled
+                          ? "Use Face ID / Fingerprint to unlock"
+                          : "Enable hardware-backed biometric unlock"}
+                      </Text>
+                    </View>
                     <Pressable
-                      onPress={handleConfirmBiometric}
-                      disabled={verifying}
-                      style={[styles.confirmBtn, verifying && { opacity: 0.6 }]}
+                      onPress={handleToggleBiometric}
+                      style={styles.switchButton}
+                      hitSlop={8}
                     >
-                      {verifying ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={Colors.backgroundPrimary}
-                        />
-                      ) : (
-                        <Text style={styles.confirmBtnText}>Verify</Text>
-                      )}
+                      <Ionicons
+                        name={biometricEnabled ? "toggle" : "toggle-outline"}
+                        size={38}
+                        color={
+                          biometricEnabled
+                            ? Colors.accentMint
+                            : Colors.textMuted
+                        }
+                      />
                     </Pressable>
                   </View>
-                </View>
-              )}
-            </>
-          )}
 
-          {hasSavedVault && (
-            <>
-              <View style={styles.divider} />
-              <Pressable
-                onPress={handleForget}
-                style={({ pressed }) => [
-                  styles.actionBtn,
-                  pressed && styles.actionBtnPressed,
-                ]}
-              >
-                <Ionicons
-                  name="trash-outline"
-                  size={20}
-                  color={Colors.statusError}
-                />
-                <View style={styles.actionBtnTextContainer}>
-                  <Text
-                    style={[
-                      styles.actionBtnText,
-                      { color: Colors.statusError },
-                    ]}
-                  >
-                    Forget Persistence
-                  </Text>
-                  <Text style={styles.actionBtnSub}>
-                    Clear credentials and key binding
-                  </Text>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={16}
-                  color={Colors.textMuted}
-                />
-              </Pressable>
-            </>
-          )}
-        </CyberCard>
+                  {showBiometricPasswordInput && (
+                    <View style={styles.confirmPasswordContainer}>
+                      <Text style={styles.confirmLabel}>
+                        Confirm Master Password
+                      </Text>
+                      <View style={styles.confirmInputRow}>
+                        <TextInput
+                          style={styles.confirmInput}
+                          secureTextEntry
+                          value={biometricPassword}
+                          onChangeText={setBiometricPassword}
+                          placeholder="Master Password"
+                          placeholderTextColor={Colors.textDisabled}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <Pressable
+                          onPress={handleConfirmBiometric}
+                          disabled={verifying}
+                          style={[
+                            styles.confirmBtn,
+                            verifying && { opacity: 0.6 },
+                          ]}
+                        >
+                          {verifying ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={Colors.backgroundPrimary}
+                            />
+                          ) : (
+                            <Text style={styles.confirmBtnText}>Verify</Text>
+                          )}
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </CyberCard>
+              </Animated.View>
+            )}
 
-        {/* App Version Info */}
-        <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>VaultPeerMobile v0.0.1</Text>
-          <Text style={styles.licenseText}>Licensed under Apache 2.0</Text>
-        </View>
+            {/* App Preferences */}
+            <Animated.View entering={FadeInDown.duration(200).delay(100)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="settings-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Preferences</Text>
+                </View>
+                <SettingsRow
+                  icon="timer-outline"
+                  title="Auto-Lock"
+                  subtitle="Lock after 60 seconds of inactivity"
+                  value="60s"
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="clipboard-outline"
+                  title="Clipboard Clear"
+                  subtitle="Auto-clear copied passwords"
+                  value="30s"
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="moon-outline"
+                  title="Theme"
+                  subtitle="Cyber-Sage dark mode"
+                  value="Dark"
+                />
+              </CyberCard>
+            </Animated.View>
+
+            {/* About */}
+            <Animated.View entering={FadeInDown.duration(200).delay(150)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="heart-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>About</Text>
+                </View>
+                <SettingsRow
+                  icon="code-slash-outline"
+                  title="Version"
+                  value="0.0.1"
+                />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="document-outline"
+                  title="License"
+                  value="Apache 2.0"
+                />
+              </CyberCard>
+            </Animated.View>
+          </>
+        )}
+
+        {/* Bottom Spacer */}
+        <View style={{ height: Spacing.huge }} />
       </ScrollView>
+
+      {/* KDF Tuning Modal */}
+      {kdfInfo && stats && (
+        <KdfTuningModal
+          visible={showKdfModal}
+          onClose={() => setShowKdfModal(false)}
+          onApply={handleApplyKdfParams}
+          kdfType={kdfInfo.kdfType}
+          cipherName={stats.cipherName}
+          initialParams={kdfInfo}
+        />
+      )}
     </SafeAreaView>
   );
 }
+
+// ────────────────────────────────────────────
+// Styles
+// ────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -424,47 +794,34 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.subheading,
     color: Colors.textPrimary,
   },
+  segmentWrapper: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
+  },
   scrollContent: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.huge,
-    gap: Spacing.lg,
+    paddingTop: Spacing.md,
+    gap: Spacing.md,
   },
   card: {
     padding: Spacing.lg,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   cardTitle: {
     fontFamily: Fonts.heading.medium,
     fontSize: FontSizes.body,
     color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.xs,
-  },
-  statsLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  statsValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  statsValueMono: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    maxWidth: 200,
   },
   divider: {
     height: 1,
     backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.sm,
+    marginVertical: Spacing.xs,
   },
 
   // Unsaved Warning Card
@@ -511,51 +868,7 @@ const styles = StyleSheet.create({
     color: Colors.backgroundPrimary,
   },
 
-  // Interactive buttons inside cards
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-    minHeight: TouchTarget.min,
-  },
-  actionBtnPressed: {
-    opacity: 0.7,
-  },
-  lockBtn: {
-    // styles specific to lock button if needed
-  },
-  actionBtnTextContainer: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  actionBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  actionBtnSub: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-
-  // Version Footer
-  versionContainer: {
-    alignItems: "center",
-    marginTop: Spacing.xl,
-    gap: Spacing.xxs,
-  },
-  versionText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  licenseText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.textDisabled,
-  },
+  // Biometric
   biometricRow: {
     flexDirection: "row",
     alignItems: "center",

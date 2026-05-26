@@ -90,6 +90,8 @@ export async function nativeArgon2Hash(
       hashLength: request.hashLength,
       parallelism: request.parallelism,
       mode: argon2TypeToMode(request.type),
+      passwordEncoding: "hex",
+      saltEncoding: "hex",
     });
 
     // `rawHash` is a hex-encoded string of the derived key

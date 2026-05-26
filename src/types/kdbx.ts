@@ -48,7 +48,7 @@ export interface VaultAttachment {
   name: string;
   size: number;
   /** Base64 encoded binary data */
-  data: string;
+  data?: string;
 }
 
 /** A single password entry */
@@ -80,6 +80,8 @@ export interface VaultEntry {
   expiryTime?: string;
   /** Entry tags */
   tags: string[];
+  /** Standard OTP uri/field string */
+  otp?: string;
   /** Parent group UUID */
   parentGroupUuid: string;
 }

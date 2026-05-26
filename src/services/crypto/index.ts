@@ -13,6 +13,7 @@ export {
   decryptDatabase,
   encryptDatabase,
   createNewDatabase,
+  applyKdfParams,
 } from "./cryptoEngine";
 
 export {
@@ -25,3 +26,17 @@ export {
 export { nativeArgon2Hash, createKdbxArgon2Impl } from "./argon2Bridge";
 
 export type { Argon2HashRequest } from "./argon2Bridge";
+
+export {
+  runKdfBenchmark,
+  getCurrentKdfParams,
+  validateKdfParams,
+  formatKdfParams,
+  formatMemory,
+} from "./kdfBenchmark";
+
+export type {
+  KdfType,
+  KdfBenchmarkResult,
+  KdfTuningParams,
+} from "./kdfBenchmark";

@@ -22,7 +22,6 @@ import type {
   VaultMeta,
   VaultAttachment,
 } from "@/src/types/kdbx";
-import { arrayBufferToBase64 } from "../base64";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -68,6 +67,9 @@ export function parseEntry(
     "Password",
     "URL",
     "Notes",
+    "otp",
+    "TimeOtp",
+    "totp",
   ]);
   const fields: Record<string, string> = {};
   const secureFields: string[] = [];
@@ -98,20 +100,16 @@ export function parseEntry(
       }
 
       if (rawBin) {
-        let base64Data = "";
         let size = 0;
         const anyBin = rawBin as any;
         if (
           anyBin instanceof ProtectedValue ||
           (typeof anyBin === "object" && "toBase64" in anyBin)
         ) {
-          base64Data = anyBin.toBase64();
           size = anyBin.byteLength ?? 0;
         } else if (anyBin instanceof ArrayBuffer) {
-          base64Data = arrayBufferToBase64(anyBin);
           size = anyBin.byteLength;
         } else if (anyBin instanceof Uint8Array) {
-          base64Data = arrayBufferToBase64(anyBin.buffer);
           size = anyBin.byteLength;
         }
 
@@ -119,7 +117,7 @@ export function parseEntry(
           id: key,
           name: key,
           size,
-          data: base64Data,
+          data: "", // Avoid loading base64 data upfront to prevent UI blocking
         });
       }
     });
@@ -146,6 +144,11 @@ export function parseEntry(
       ? toISOString(entry.times.expiryTime)
       : undefined,
     tags: entry.tags ?? [],
+    otp:
+      getFieldValue(entry, "otp") ||
+      getFieldValue(entry, "TimeOtp") ||
+      getFieldValue(entry, "totp") ||
+      undefined,
     parentGroupUuid,
   };
 }
@@ -282,9 +285,8 @@ function getCipherName(db: Kdbx): string {
 /**
  * Extract high-level metadata from an unlocked Kdbx database.
  */
-export function parseMeta(db: Kdbx): VaultMeta {
-  const root = db.getDefaultGroup();
-  const parsedRoot = parseGroup(root, null);
+export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
+  const parsedRoot = rootGroup || parseGroup(db.getDefaultGroup(), null);
 
   return {
     name: db.meta?.name ?? "Untitled Vault",
@@ -332,7 +334,7 @@ export function parseDatabase(db: Kdbx): {
 } {
   const root = db.getDefaultGroup();
   const rootGroup = parseGroup(root, null);
-  const meta = parseMeta(db);
+  const meta = parseMeta(db, rootGroup);
 
   return { meta, rootGroup };
 }
