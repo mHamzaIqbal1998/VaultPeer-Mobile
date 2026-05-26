@@ -37,6 +37,8 @@ export interface VaultMeta {
   entryCount: number;
   /** Number of top-level groups */
   groupCount: number;
+  /** Compression setting */
+  compression?: "None" | "GZip";
 }
 
 // ────────────────────────────────────────────

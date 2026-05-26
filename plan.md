@@ -193,3 +193,17 @@ Redesigns the settings dashboard into distinct "Database" (stored in KDBX) and "
   - Adds a prominent "Benchmark for 1.0s" button that runs the benchmark in a loading overlay and applies the calibrated parameters.
 - [x] Update the database serialization and update pipeline in the store to write these custom KDF parameters to the KDBX file header map via `db.header.kdfParameters.set()`.
 - [x] Add unit tests in `src/services/crypto/__tests__/kdfBenchmark.test.ts` to verify the benchmarking math and parameter tuning across all algorithms.
+
+### Phase 11: Compression & Database Maintenance Settings
+
+Integrates data compression configuration and on-demand database maintenance features matching KeePassDX, allowing users to configure XML compression algorithms and clean up unlinked binaries or history data.
+
+- [x] Add the database compression option (`db.header.compression`) to Database Settings, allowing users to select between "GZip (Default)" and "None".
+- [x] Implement UI toggles/pickers in the Settings screen to update the database compression field.
+- [x] Create a "Database Maintenance" section under Database Settings in `app/vault/settings.tsx`.
+- [x] Implement a "Clean Up Database" action that:
+  - Invokes `db.cleanup({ binaries: true, history: true })` on the active database instance.
+  - Removes unreferenced attachments/binaries and redundant history entries.
+  - Updates the dirty state of the vault in the store so the user can save the pruned database.
+- [x] Add a confirmation prompt showing a summary before performing the cleanup, and a success alert displaying the result.
+- [x] Write unit tests to verify that changing the compression setting correctly updates the saved file payload format and that manual cleanup successfully purges unlinked binaries.

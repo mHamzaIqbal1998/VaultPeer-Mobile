@@ -288,6 +288,8 @@ export default function VaultSettingsScreen() {
     markClean,
     refreshParsedState,
     meta: storeMeta,
+    cleanupDatabase,
+    runCleanupDatabase,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -432,6 +434,75 @@ export default function VaultSettingsScreen() {
     [db, refreshParsedState]
   );
 
+  const handleToggleCompression = useCallback(() => {
+    if (!db) return;
+    Alert.alert(
+      "Database Compression",
+      "Select XML compression algorithm for database serialization.",
+      [
+        {
+          text: "GZip (Default)",
+          onPress: () => {
+            db.header.compression = 1; // 1 = GZip
+            refreshParsedState();
+            useVaultStore.setState({ isDirty: true });
+          },
+        },
+        {
+          text: "None",
+          onPress: () => {
+            db.header.compression = 0; // 0 = None
+            refreshParsedState();
+            useVaultStore.setState({ isDirty: true });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }, [db, refreshParsedState]);
+
+  const handleCleanupPress = useCallback(() => {
+    if (!db) return;
+    const summary = cleanupDatabase({ binaries: true, history: true });
+    if (!summary) return;
+
+    const { historyToRemove, binariesToRemove } = summary;
+
+    if (historyToRemove === 0 && binariesToRemove === 0) {
+      Alert.alert(
+        "Database Clean",
+        "Your database is already clean! No unreferenced attachments or redundant history entries found."
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Clean Up Database",
+      `This will optimize your database file size.\n\nSummary of items to remove:\n• Unused binaries/attachments: ${binariesToRemove}\n• Redundant history entries: ${historyToRemove}\n\nDo you want to proceed?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clean Up",
+          style: "destructive",
+          onPress: () => {
+            const success = runCleanupDatabase({
+              binaries: true,
+              history: true,
+            });
+            if (success) {
+              Alert.alert(
+                "Cleanup Success",
+                `Successfully cleaned up the database!\n\nRemoved:\n• ${binariesToRemove} unused binaries/attachments\n• ${historyToRemove} redundant history entries.\n\nDon't forget to save your changes.`
+              );
+            } else {
+              Alert.alert("Error", "Failed to perform database cleanup.");
+            }
+          },
+        },
+      ]
+    );
+  }, [db, cleanupDatabase, runCleanupDatabase]);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -573,11 +644,39 @@ export default function VaultSettingsScreen() {
                   subtitle="Benchmark & adjust security strength"
                   onPress={() => setShowKdfModal(true)}
                 />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="archive-outline"
+                  title="Database Compression"
+                  subtitle="Configure XML compression algorithm"
+                  value={stats.compression || "GZip"}
+                  onPress={handleToggleCompression}
+                />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Database Maintenance */}
+            <Animated.View entering={FadeInDown.duration(200).delay(150)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="hammer-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Database Maintenance</Text>
+                </View>
+                <SettingsRow
+                  icon="brush-outline"
+                  title="Clean Up Database"
+                  subtitle="Remove unlinked attachments & clean history entries"
+                  onPress={handleCleanupPress}
+                />
               </CyberCard>
             </Animated.View>
 
             {/* Database Actions */}
-            <Animated.View entering={FadeInDown.duration(200).delay(150)}>
+            <Animated.View entering={FadeInDown.duration(200).delay(200)}>
               <CyberCard style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Ionicons

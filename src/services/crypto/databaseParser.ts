@@ -287,6 +287,8 @@ function getCipherName(db: Kdbx): string {
  */
 export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
   const parsedRoot = rootGroup || parseGroup(db.getDefaultGroup(), null);
+  const comp = (db.header as any)?.compression;
+  const compression = comp === 0 ? "None" : "GZip";
 
   return {
     name: db.meta?.name ?? "Untitled Vault",
@@ -297,6 +299,7 @@ export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
     lastModified: toISOString(db.meta?.settingsChanged ?? new Date()),
     entryCount: countEntries(parsedRoot),
     groupCount: parsedRoot.groups.length,
+    compression,
   };
 }
 

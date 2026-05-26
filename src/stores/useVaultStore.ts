@@ -104,6 +104,18 @@ interface VaultStoreState {
     action: HistoryLogEntry["action"]
   ) => void;
 
+  // Maintenance
+  cleanupDatabase: (options: { binaries?: boolean; history?: boolean }) => {
+    totalHistory: number;
+    historyToRemove: number;
+    totalBinaries: number;
+    binariesToRemove: number;
+  } | null;
+  runCleanupDatabase: (options: {
+    binaries?: boolean;
+    history?: boolean;
+  }) => boolean;
+
   // Dirty state
   markClean: () => void;
 }
@@ -791,6 +803,96 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
         ...state.historyLog,
       ].slice(0, MAX_HISTORY),
     }));
+  },
+
+  // ────── Maintenance ──────
+
+  cleanupDatabase: (options) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return null;
+
+    let totalHistoryEntries = 0;
+    let historyEntriesToRemove = 0;
+    const historyMaxItems =
+      options.history &&
+      typeof db.meta.historyMaxItems === "number" &&
+      db.meta.historyMaxItems >= 0
+        ? db.meta.historyMaxItems
+        : 10;
+
+    const usedBinaries = new Set<string>();
+
+    // Traverse entries
+    const allEntries: kdbxweb.KdbxEntry[] = [];
+    const walkGroup = (group: kdbxweb.KdbxGroup) => {
+      allEntries.push(...(group.entries ?? []));
+      for (const subGroup of group.groups ?? []) {
+        walkGroup(subGroup);
+      }
+    };
+    walkGroup(db.getDefaultGroup());
+
+    for (const entry of allEntries) {
+      totalHistoryEntries += entry.history?.length ?? 0;
+      if (
+        options.history &&
+        entry.history &&
+        entry.history.length > historyMaxItems
+      ) {
+        historyEntriesToRemove += entry.history.length - historyMaxItems;
+      }
+
+      const processBinaries = (e: kdbxweb.KdbxEntry) => {
+        e.binaries.forEach((binVal) => {
+          if (binVal && typeof binVal === "object" && "hash" in binVal) {
+            usedBinaries.add((binVal as any).hash);
+          }
+        });
+      };
+
+      processBinaries(entry);
+      if (entry.history) {
+        const keepStartIndex = options.history
+          ? Math.max(0, entry.history.length - historyMaxItems)
+          : 0;
+        for (let i = keepStartIndex; i < entry.history.length; i++) {
+          processBinaries(entry.history[i]);
+        }
+      }
+    }
+
+    const totalBinaries = db.binaries.getAllWithHashes().length;
+    let binariesToRemove = 0;
+    if (options.binaries) {
+      for (const binary of db.binaries.getAllWithHashes()) {
+        if (!usedBinaries.has(binary.hash)) {
+          binariesToRemove++;
+        }
+      }
+    }
+
+    return {
+      totalHistory: totalHistoryEntries,
+      historyToRemove: historyEntriesToRemove,
+      totalBinaries,
+      binariesToRemove,
+    };
+  },
+
+  runCleanupDatabase: (options) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    db.cleanup({
+      binaries: options.binaries,
+      historyRules: options.history,
+    });
+
+    state.refreshParsedState();
+    set({ isDirty: true });
+    return true;
   },
 
   // ────── Dirty State ──────
