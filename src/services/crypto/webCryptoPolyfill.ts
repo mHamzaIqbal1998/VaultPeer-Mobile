@@ -550,9 +550,12 @@ setupWebCryptoPolyfill();
 // kdbxweb Int64 Polyfill/Patch
 // ────────────────────────────────────────────
 // In KDBX databases edited/merged by some clients (e.g. KeePassDX), date values
-// can be saved with invalid/huge numbers that exceed Number.MAX_SAFE_INTEGER.
+// can be saved with invalid/huge numbers that exceed JS Date's maximum bounds.
+// The maximum safe time value representable by standard JS Date objects corresponds
+// to secondsFrom00 = 8702135596800. Values exceeding this cause Invalid Date and
+// subsequent serialization RangeErrors (e.g. "Date value out of bounds") during saving.
 // This patches kdbxweb's Int64 class getter and static from methods to clamp
-// values to Number.MAX_SAFE_INTEGER instead of throwing a "too large number" error.
+// values to 8702135596800 instead of throwing or producing out-of-bound Date values.
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const kdbxweb = require("kdbxweb");
@@ -566,11 +569,15 @@ try {
       Object.defineProperty(proto, "value", {
         get() {
           if (this.hi >= 0x200000) {
-            return Number.MAX_SAFE_INTEGER;
+            return 8702135596800;
           }
-          return originalValueDescriptor.get
+          const val = originalValueDescriptor.get
             ? originalValueDescriptor.get.call(this)
             : this.lo;
+          if (val > 8702135596800) {
+            return 8702135596800;
+          }
+          return val;
         },
         configurable: true,
         enumerable: true,
@@ -580,8 +587,8 @@ try {
     const originalFrom = kdbxweb.Int64.from;
     if (typeof originalFrom === "function") {
       kdbxweb.Int64.from = function (value: number) {
-        if (value > 0x1fffffffffffff) {
-          return new kdbxweb.Int64(0xffffffff, 0x1fffff);
+        if (value > 8702135596800) {
+          return new kdbxweb.Int64(531855104, 2026); // 8702135596800
         }
         return originalFrom.call(this, value);
       };

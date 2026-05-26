@@ -518,15 +518,15 @@ describe("WebCryptoPolyfill", () => {
       const { Int64 } = require("kdbxweb");
       const largeInt = new Int64(0xffffffff, 0xffffffff);
       expect(() => largeInt.value).not.toThrow();
-      expect(largeInt.value).toBe(Number.MAX_SAFE_INTEGER);
-      expect(largeInt.valueOf()).toBe(Number.MAX_SAFE_INTEGER);
+      expect(largeInt.value).toBe(8702135596800);
+      expect(largeInt.valueOf()).toBe(8702135596800);
     });
 
     it("should clamp Int64.from values larger than MAX_SAFE_INTEGER", () => {
       const { Int64 } = require("kdbxweb");
-      const largeValue = Number.MAX_SAFE_INTEGER + 100;
+      const largeValue = 8702135596800 + 100;
       const clampedInt = Int64.from(largeValue);
-      expect(clampedInt.value).toBe(Number.MAX_SAFE_INTEGER);
+      expect(clampedInt.value).toBe(8702135596800);
     });
   });
 });
