@@ -161,19 +161,35 @@ Enhances the database entries to support the full range of entry attributes prov
 
 Integrates full TOTP (Time-based One-Time Password) support, matching KeePassDX and Google Authenticator. Allows entries to store, generate, and refresh rolling OTP codes, and adds camera scanning support to scan QR codes for quick OTP setup.
 
-- [ ] Install `expo-camera` via expo CLI to enable native QR code scanning.
-- [ ] Implement `src/services/otpService.ts` containing:
+- [x] Install `expo-camera` via expo CLI to enable native QR code scanning.
+- [x] Implement `src/services/otpService.ts` containing:
   - Base32 decoding helper to convert standard secret strings into byte arrays.
   - TOTP generator complying with RFC 6238 using `crypto-js` for HMAC-SHA1.
   - Parser for `otpauth://` URIs to extract secrets, issuers, digits, and periods.
-- [ ] Extend `VaultEntry` in `src/types/kdbx.ts` to include `otp?: string` (to store the `otpauth://` URI).
-- [ ] Update `databaseParser.ts` to identify the `otp` custom field (or standard KeePass `TimeOtp` / `totp` fields) and populate the `otp` property of the parsed entry.
-- [ ] Refactor `useVaultStore.ts` to support writing/saving the `otp` field to the database as a standard KeePass OTP-configured string field.
-- [ ] Update `app/entry/[id].tsx` to render a dedicated, premium OTP display card when an OTP field is present:
+- [x] Extend `VaultEntry` in `src/types/kdbx.ts` to include `otp?: string` (to store the `otpauth://` URI).
+- [x] Update `databaseParser.ts` to identify the `otp` custom field (or standard KeePass `TimeOtp` / `totp` fields) and populate the `otp` property of the parsed entry.
+- [x] Refactor `useVaultStore.ts` to support writing/saving the `otp` field to the database as a standard KeePass OTP-configured string field.
+- [x] Update `app/entry/[id].tsx` to render a dedicated, premium OTP display card when an OTP field is present:
   - Shows the parsed issuer/account label.
   - Renders the active 6-digit rolling code (e.g., `456 789`) with clean spacing.
   - Displays a dynamic circular progress ring or indicator countdown showing the seconds left before rotation.
   - Copy-to-clipboard button for the OTP code.
-- [ ] Build a QR scanner component using `expo-camera` to scan `otpauth://` QR codes.
-- [ ] Integrate the QR scanner and OTP form fields into `app/entry/edit.tsx` (allowing manual typing of secret/URI or camera scanning to auto-populate).
-- [ ] Add comprehensive unit tests in `src/services/__tests__/otpService.test.ts` to validate TOTP calculations against RFC 6238 test vectors.
+- [x] Build a QR scanner component using `expo-camera` to scan `otpauth://` QR codes.
+- [x] Integrate the QR scanner and OTP form fields into `app/entry/edit.tsx` (allowing manual typing of secret/URI or camera scanning to auto-populate).
+- [x] Add comprehensive unit tests in `src/services/__tests__/otpService.test.ts` to validate TOTP calculations against RFC 6238 test vectors.
+
+### Phase 10: KDF Tuning, Benchmark Tool, & Settings Redesign
+
+Redesigns the settings dashboard into distinct "Database" (stored in KDBX) and "App" (stored locally) settings panels matching KeePassDX's architecture. Enhances database security with customizable KDF parameters (rounds, memory, iterations, parallelism) and a native benchmarking utility ("Calculate for 1.0s") to automatically calibrate parameters to the device's hardware.
+
+- [x] Implement a KDF benchmarking service `src/services/crypto/kdfBenchmark.ts` that runs test derivations for AES-KDF and Argon2, calculates elapsed time, and estimates the parameters required to achieve a ~1.0-second delay.
+- [x] Refactor database creation options (`createNewDatabase` in `cryptoEngine.ts`) and store actions to allow overriding raw KDF parameters (AES-KDF rounds, Argon2 memory, iterations, and parallelism).
+- [x] Implement settings routing in `app/vault/settings.tsx` to display a nested/segmented menu using a premium UI design:
+  - **App Settings**: Theme settings, Biometric unlock, lockout persistence, and general clipboard preferences.
+  - **Database Settings**: Database Name, Description, master password changer, and Security/KDF configuration.
+- [x] Build a **Database Security & KDF Tuning** screen/modal under Database Settings:
+  - Displays currently active cipher & KDF settings.
+  - Exposes manual sliders/inputs for iteration rounds, memory size, and thread counts.
+  - Adds a prominent "Benchmark for 1.0s" button that runs the benchmark in a loading overlay and applies the calibrated parameters.
+- [x] Update the database serialization and update pipeline in the store to write these custom KDF parameters to the KDBX file header map via `db.header.kdfParameters.set()`.
+- [x] Add unit tests in `src/services/crypto/__tests__/kdfBenchmark.test.ts` to verify the benchmarking math and parameter tuning across all algorithms.

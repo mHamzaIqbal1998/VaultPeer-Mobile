@@ -122,6 +122,13 @@ export function createNewDatabase(
   options?: {
     kdf?: "Argon2id" | "Argon2d" | "AES-KDF";
     cipher?: "AES-256" | "ChaCha20";
+    /** Raw KDF parameter overrides */
+    kdfParams?: {
+      rounds?: number;
+      memory?: number;
+      iterations?: number;
+      parallelism?: number;
+    };
   }
 ): kdbxweb.Kdbx {
   if (!_initialized) {
@@ -152,6 +159,11 @@ export function createNewDatabase(
     db.setKdf(kdfId);
   }
 
+  // Apply raw KDF parameters if provided
+  if (options?.kdfParams) {
+    applyKdfParams(db, options.kdfParams);
+  }
+
   // Apply custom Cipher overrides
   if (options?.cipher) {
     let cipherId: string;
@@ -172,4 +184,66 @@ export function createNewDatabase(
   }
 
   return db;
+}
+
+/**
+ * Apply raw KDF parameters to an existing database's header.
+ *
+ * This writes directly to `db.header.kdfParameters` using the
+ * standard KeePass parameter keys:
+ * - AES-KDF: "R" (rounds as bigint for kdbxweb Int64)
+ * - Argon2:  "M" (memory in bytes), "I" (iterations), "P" (parallelism)
+ *
+ * @param db      The in-memory Kdbx database
+ * @param params  Raw KDF parameters to set
+ */
+export function applyKdfParams(
+  db: kdbxweb.Kdbx,
+  params: {
+    rounds?: number;
+    memory?: number;
+    iterations?: number;
+    parallelism?: number;
+  }
+): void {
+  const kdfParameters = (
+    db.header as unknown as { kdfParameters?: kdbxweb.VarDictionary }
+  )?.kdfParameters;
+
+  if (!kdfParameters) {
+    console.warn("[CryptoEngine] No kdfParameters map found on header");
+    return;
+  }
+
+  // AES-KDF uses "R" for rounds (stored as UInt64)
+  if (params.rounds !== undefined) {
+    kdfParameters.set(
+      "R",
+      kdbxweb.VarDictionary.ValueType.UInt64,
+      kdbxweb.Int64.from(params.rounds)
+    );
+  }
+
+  // Argon2 uses "M" for memory (in bytes), "I" for iterations, "P" for parallelism
+  if (params.memory !== undefined) {
+    kdfParameters.set(
+      "M",
+      kdbxweb.VarDictionary.ValueType.UInt64,
+      kdbxweb.Int64.from(params.memory * 1024)
+    );
+  }
+  if (params.iterations !== undefined) {
+    kdfParameters.set(
+      "I",
+      kdbxweb.VarDictionary.ValueType.UInt64,
+      kdbxweb.Int64.from(params.iterations)
+    );
+  }
+  if (params.parallelism !== undefined) {
+    kdfParameters.set(
+      "P",
+      kdbxweb.VarDictionary.ValueType.UInt32,
+      params.parallelism
+    );
+  }
 }
