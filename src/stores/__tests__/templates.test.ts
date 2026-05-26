@@ -43,11 +43,15 @@ describe("Vault Entry Templates", () => {
     expect(templatesGroup?.name).toBe("Templates");
 
     // Check seeded default templates
-    expect(templatesGroup?.entries.length).toBe(3);
+    expect(templatesGroup?.entries.length).toBe(7);
     const entryTitles = templatesGroup?.entries.map((e) => e.title);
     expect(entryTitles).toContain("Credit Card");
     expect(entryTitles).toContain("Email Account");
     expect(entryTitles).toContain("Secure Note");
+    expect(entryTitles).toContain("SSH Server");
+    expect(entryTitles).toContain("Wi-Fi Router");
+    expect(entryTitles).toContain("Membership / ID");
+    expect(entryTitles).toContain("Software License");
 
     // Verify fields of seeded "Credit Card"
     const cc = templatesGroup?.entries.find((e) => e.title === "Credit Card");
@@ -57,6 +61,13 @@ describe("Vault Entry Templates", () => {
     expect(cc?.fields["CVV"]).toBe("");
     expect(cc?.fields["Cardholder Name"]).toBe("");
     expect(cc?.secureFields).toContain("CVV");
+
+    // Verify fields of seeded "SSH Server"
+    const ssh = templatesGroup?.entries.find((e) => e.title === "SSH Server");
+    expect(ssh).toBeDefined();
+    expect(ssh?.fields["Port"]).toBe("22");
+    expect(ssh?.username).toBe("root");
+    expect(ssh?.secureFields).toContain("Private Key");
 
     // Disable templates
     await state.setTemplatesEnabled(false);

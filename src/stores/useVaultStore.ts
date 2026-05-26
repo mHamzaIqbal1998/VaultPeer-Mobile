@@ -203,6 +203,102 @@ function isInRecycleBin(
   return false;
 }
 
+function seedDefaultTemplates(db: kdbxweb.Kdbx, group: kdbxweb.KdbxGroup) {
+  const hasCard = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Credit Card"
+  );
+  if (!hasCard) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Credit Card");
+    entry.fields.set("UserName", "");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Cardholder Name", "");
+    entry.fields.set("Card Number", "");
+    entry.fields.set("Expiry Date", "");
+    entry.fields.set("CVV", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("PIN", kdbxweb.ProtectedValue.fromString(""));
+    entry.icon = 62;
+  }
+
+  const hasEmail = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Email Account"
+  );
+  if (!hasEmail) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Email Account");
+    entry.fields.set("UserName", "");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Email Address", "");
+    entry.fields.set("Provider", "");
+    entry.icon = 19;
+  }
+
+  const hasNote = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Secure Note"
+  );
+  if (!hasNote) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Secure Note");
+    entry.fields.set("Notes", "Write your secure note here.");
+    entry.icon = 0;
+  }
+
+  const hasSsh = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "SSH Server"
+  );
+  if (!hasSsh) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "SSH Server");
+    entry.fields.set("UserName", "root");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("URL", "192.168.1.1");
+    entry.fields.set("Port", "22");
+    entry.fields.set("Private Key", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Passphrase", kdbxweb.ProtectedValue.fromString(""));
+    entry.icon = 12;
+  }
+
+  const hasWifi = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Wi-Fi Router"
+  );
+  if (!hasWifi) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Wi-Fi Router");
+    entry.fields.set("UserName", "admin");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("SSID", "MyHomeWiFi");
+    entry.fields.set("WPA Key", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Router IP", "192.168.1.1");
+    entry.icon = 3;
+  }
+
+  const hasIdentity = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Membership / ID"
+  );
+  if (!hasIdentity) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Membership / ID");
+    entry.fields.set("Full Name", "");
+    entry.fields.set("Document Number", "");
+    entry.fields.set("Expiry Date", "");
+    entry.fields.set("Issuing Authority", "");
+    entry.icon = 40;
+  }
+
+  const hasLicense = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Software License"
+  );
+  if (!hasLicense) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Software License");
+    entry.fields.set("UserName", "");
+    entry.fields.set("License Key", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Publisher", "");
+    entry.fields.set("Version", "");
+    entry.icon = 11;
+  }
+}
+
 // ────────────────────────────────────────────
 // Store Creation
 // ────────────────────────────────────────────
@@ -942,44 +1038,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
       }
 
       if (templatesGroupKdbx) {
-        const hasCard = templatesGroupKdbx.entries.some(
-          (e) => e.fields.get("Title")?.toString() === "Credit Card"
-        );
-        if (!hasCard) {
-          const entry = db.createEntry(templatesGroupKdbx);
-          entry.fields.set("Title", "Credit Card");
-          entry.fields.set("UserName", "");
-          entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
-          entry.fields.set("Cardholder Name", "");
-          entry.fields.set("Card Number", "");
-          entry.fields.set("Expiry Date", "");
-          entry.fields.set("CVV", kdbxweb.ProtectedValue.fromString(""));
-          entry.fields.set("PIN", kdbxweb.ProtectedValue.fromString(""));
-          entry.icon = 62;
-        }
-
-        const hasEmail = templatesGroupKdbx.entries.some(
-          (e) => e.fields.get("Title")?.toString() === "Email Account"
-        );
-        if (!hasEmail) {
-          const entry = db.createEntry(templatesGroupKdbx);
-          entry.fields.set("Title", "Email Account");
-          entry.fields.set("UserName", "");
-          entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
-          entry.fields.set("Email Address", "");
-          entry.fields.set("Provider", "");
-          entry.icon = 19;
-        }
-
-        const hasNote = templatesGroupKdbx.entries.some(
-          (e) => e.fields.get("Title")?.toString() === "Secure Note"
-        );
-        if (!hasNote) {
-          const entry = db.createEntry(templatesGroupKdbx);
-          entry.fields.set("Title", "Secure Note");
-          entry.fields.set("Notes", "Write your secure note here.");
-          entry.icon = 0;
-        }
+        seedDefaultTemplates(db, templatesGroupKdbx);
       }
     }
 
@@ -997,44 +1056,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const root = db.getDefaultGroup();
     const templatesGroupKdbx = findKdbxGroup(root, groupUuid);
     if (templatesGroupKdbx) {
-      const hasCard = templatesGroupKdbx.entries.some(
-        (e) => e.fields.get("Title")?.toString() === "Credit Card"
-      );
-      if (!hasCard) {
-        const entry = db.createEntry(templatesGroupKdbx);
-        entry.fields.set("Title", "Credit Card");
-        entry.fields.set("UserName", "");
-        entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
-        entry.fields.set("Cardholder Name", "");
-        entry.fields.set("Card Number", "");
-        entry.fields.set("Expiry Date", "");
-        entry.fields.set("CVV", kdbxweb.ProtectedValue.fromString(""));
-        entry.fields.set("PIN", kdbxweb.ProtectedValue.fromString(""));
-        entry.icon = 62;
-      }
-
-      const hasEmail = templatesGroupKdbx.entries.some(
-        (e) => e.fields.get("Title")?.toString() === "Email Account"
-      );
-      if (!hasEmail) {
-        const entry = db.createEntry(templatesGroupKdbx);
-        entry.fields.set("Title", "Email Account");
-        entry.fields.set("UserName", "");
-        entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
-        entry.fields.set("Email Address", "");
-        entry.fields.set("Provider", "");
-        entry.icon = 19;
-      }
-
-      const hasNote = templatesGroupKdbx.entries.some(
-        (e) => e.fields.get("Title")?.toString() === "Secure Note"
-      );
-      if (!hasNote) {
-        const entry = db.createEntry(templatesGroupKdbx);
-        entry.fields.set("Title", "Secure Note");
-        entry.fields.set("Notes", "Write your secure note here.");
-        entry.icon = 0;
-      }
+      seedDefaultTemplates(db, templatesGroupKdbx);
     }
 
     set({ isDirty: true });

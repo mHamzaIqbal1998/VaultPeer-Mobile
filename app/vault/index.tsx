@@ -142,6 +142,30 @@ const getTemplateCardStyle = (title: string) => {
         bgDim: "rgba(5, 150, 105, 0.12)",
         color: "#10B981",
       };
+    case "ssh server":
+      return {
+        icon: "terminal-outline" as const,
+        bgDim: "rgba(6, 182, 212, 0.12)",
+        color: "#06B6D4",
+      };
+    case "wi-fi router":
+      return {
+        icon: "wifi-outline" as const,
+        bgDim: "rgba(245, 158, 11, 0.12)",
+        color: "#F59E0B",
+      };
+    case "membership / id":
+      return {
+        icon: "person-outline" as const,
+        bgDim: "rgba(236, 72, 153, 0.12)",
+        color: "#EC4899",
+      };
+    case "software license":
+      return {
+        icon: "key-outline" as const,
+        bgDim: "rgba(139, 92, 246, 0.12)",
+        color: "#8B5CF6",
+      };
     default:
       return {
         icon: "shield-outline" as const,
