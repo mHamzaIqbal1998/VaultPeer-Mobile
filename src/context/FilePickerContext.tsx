@@ -21,9 +21,12 @@ import {
 } from "@/src/services/base64";
 import { disableBiometric } from "@/src/services/biometricService";
 
-// ────────────────────────────────────────────
-// Types & Interfaces
-// ────────────────────────────────────────────
+export interface RecentVault {
+  uri: string;
+  bookmark: string | null;
+  name: string;
+  lastOpened: number; // timestamp
+}
 
 interface FilePickerContextType {
   fileUri: string | null;
@@ -31,6 +34,7 @@ interface FilePickerContextType {
   isLoading: boolean;
   error: string | null;
   hasSavedVault: boolean;
+  recentVaults: RecentVault[];
   pickAndOpenVault: (
     password: string
   ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
@@ -49,11 +53,14 @@ interface FilePickerContextType {
   ) => Promise<{ db: kdbxweb.Kdbx; fileUri: string }>;
   clearVault: () => Promise<void>;
   clearError: () => void;
+  selectRecentVault: (uri: string) => Promise<void>;
+  removeRecentVault: (uri: string) => Promise<void>;
 }
 
 // Keys for SecureStore persistence
 const KEY_VAULT_URI = "vault_file_uri";
 const KEY_VAULT_BOOKMARK = "vault_file_bookmark";
+const KEY_RECENT_VAULTS = "recent_vaults";
 
 // ────────────────────────────────────────────
 // Context Creation
@@ -62,6 +69,24 @@ const KEY_VAULT_BOOKMARK = "vault_file_bookmark";
 const FilePickerContext = createContext<FilePickerContextType | undefined>(
   undefined
 );
+
+function getNameFromUri(uri: string): string {
+  try {
+    const decoded = decodeURIComponent(uri);
+    const parts = decoded.split(/[/\\]/);
+    const lastPart = parts[parts.length - 1];
+    let filename = lastPart;
+    if (lastPart.includes(":")) {
+      const subParts = lastPart.split(":");
+      filename = subParts[subParts.length - 1];
+    }
+    filename = filename || "vault.kdbx";
+    return filename.endsWith(".kdbx") ? filename.slice(0, -5) : filename;
+  } catch (e) {
+    console.error("[FilePickerContext] Failed to get name from URI:", e);
+  }
+  return "Vault";
+}
 
 function validateKdbxSignature(arrayBuffer: ArrayBuffer) {
   if (arrayBuffer.byteLength < 8) {
@@ -88,6 +113,7 @@ export function FilePickerProvider({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(false);
+  const [recentVaults, setRecentVaults] = useState<RecentVault[]>([]);
 
   // Restore saved vault path on app launch
   useEffect(() => {
@@ -101,6 +127,11 @@ export function FilePickerProvider({
           setFileUri(savedUri);
           setBookmark(savedBookmark);
           setHasSavedVault(true);
+        }
+
+        const savedRecents = await SecureStore.getItemAsync(KEY_RECENT_VAULTS);
+        if (savedRecents) {
+          setRecentVaults(JSON.parse(savedRecents));
         }
       } catch (err) {
         console.warn("[FilePickerContext] Failed to restore saved vault:", err);
@@ -136,9 +167,6 @@ export function FilePickerProvider({
       // 5. Decrypt KDBX database
       const db = await decryptDatabase(arrayBuffer, password);
 
-      // Disable previous biometric settings since we changed files
-      await disableBiometric();
-
       // 5. If successful, persist file reference
       await SecureStore.setItemAsync(KEY_VAULT_URI, pickResult.uri);
       await SecureStore.setItemAsync(
@@ -149,6 +177,21 @@ export function FilePickerProvider({
       setFileUri(pickResult.uri);
       setBookmark(pickResult.bookmark);
       setHasSavedVault(true);
+
+      // Add to recent vaults
+      const name = getNameFromUri(pickResult.uri);
+      const newRecent: RecentVault = {
+        uri: pickResult.uri,
+        bookmark: pickResult.bookmark || null,
+        name,
+        lastOpened: Date.now(),
+      };
+      setRecentVaults((prev) => {
+        const filtered = prev.filter((v) => v.uri !== pickResult.uri);
+        const updated = [newRecent, ...filtered];
+        SecureStore.setItemAsync(KEY_RECENT_VAULTS, JSON.stringify(updated));
+        return updated;
+      });
 
       return { db, fileUri: pickResult.uri };
     } catch (err) {
@@ -178,8 +221,6 @@ export function FilePickerProvider({
       const arrayBuffer = base64ToArrayBuffer(base64Content);
       validateKdbxSignature(arrayBuffer);
 
-      await disableBiometric();
-
       await SecureStore.setItemAsync(KEY_VAULT_URI, pickResult.uri);
       await SecureStore.setItemAsync(
         KEY_VAULT_BOOKMARK,
@@ -189,6 +230,22 @@ export function FilePickerProvider({
       setFileUri(pickResult.uri);
       setBookmark(pickResult.bookmark);
       setHasSavedVault(true);
+
+      // Add to recent vaults
+      const name = getNameFromUri(pickResult.uri);
+      const newRecent: RecentVault = {
+        uri: pickResult.uri,
+        bookmark: pickResult.bookmark || null,
+        name,
+        lastOpened: Date.now(),
+      };
+      setRecentVaults((prev) => {
+        const filtered = prev.filter((v) => v.uri !== pickResult.uri);
+        const updated = [newRecent, ...filtered];
+        SecureStore.setItemAsync(KEY_RECENT_VAULTS, JSON.stringify(updated));
+        return updated;
+      });
+
       return pickResult.uri;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to select file.";
@@ -232,9 +289,6 @@ export function FilePickerProvider({
         throw new Error("Failed to save new file.");
       }
 
-      // Disable previous biometric settings since we changed files
-      await disableBiometric();
-
       // 5. If successful, persist file reference
       await SecureStore.setItemAsync(KEY_VAULT_URI, saveResult.uri);
       await SecureStore.setItemAsync(
@@ -245,6 +299,20 @@ export function FilePickerProvider({
       setFileUri(saveResult.uri);
       setBookmark(saveResult.bookmark);
       setHasSavedVault(true);
+
+      // Add to recent vaults
+      const newRecent: RecentVault = {
+        uri: saveResult.uri,
+        bookmark: saveResult.bookmark || null,
+        name: name,
+        lastOpened: Date.now(),
+      };
+      setRecentVaults((prev) => {
+        const filtered = prev.filter((v) => v.uri !== saveResult.uri);
+        const updated = [newRecent, ...filtered];
+        SecureStore.setItemAsync(KEY_RECENT_VAULTS, JSON.stringify(updated));
+        return updated;
+      });
 
       return { db, fileUri: saveResult.uri };
     } catch (err) {
@@ -311,6 +379,22 @@ export function FilePickerProvider({
       validateKdbxSignature(arrayBuffer);
 
       const db = await decryptDatabase(arrayBuffer, password);
+
+      // Add/update in recent vaults
+      const name = getNameFromUri(fileUri);
+      const newRecent: RecentVault = {
+        uri: fileUri,
+        bookmark: bookmark || null,
+        name,
+        lastOpened: Date.now(),
+      };
+      setRecentVaults((prev) => {
+        const filtered = prev.filter((v) => v.uri !== fileUri);
+        const updated = [newRecent, ...filtered];
+        SecureStore.setItemAsync(KEY_RECENT_VAULTS, JSON.stringify(updated));
+        return updated;
+      });
+
       return { db, fileUri };
     } catch (err) {
       const msg =
@@ -331,7 +415,6 @@ export function FilePickerProvider({
     setIsLoading(true);
     setError(null);
     try {
-      await disableBiometric();
       await SecureStore.deleteItemAsync(KEY_VAULT_URI);
       await SecureStore.deleteItemAsync(KEY_VAULT_BOOKMARK);
       setFileUri(null);
@@ -341,6 +424,49 @@ export function FilePickerProvider({
       console.warn("[FilePickerContext] Failed to clear vault reference:", err);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  /**
+   * Select a recent vault to make it the active one.
+   */
+  async function selectRecentVault(uri: string): Promise<void> {
+    const vault = recentVaults.find((v) => v.uri === uri);
+    if (!vault) {
+      throw new Error("Vault not found in recent vaults.");
+    }
+    await SecureStore.setItemAsync(KEY_VAULT_URI, vault.uri);
+    await SecureStore.setItemAsync(KEY_VAULT_BOOKMARK, vault.bookmark || "");
+
+    setFileUri(vault.uri);
+    setBookmark(vault.bookmark);
+    setHasSavedVault(true);
+
+    const updated = recentVaults.map((v) =>
+      v.uri === uri ? { ...v, lastOpened: Date.now() } : v
+    );
+    updated.sort((a, b) => b.lastOpened - a.lastOpened);
+    setRecentVaults(updated);
+    await SecureStore.setItemAsync(KEY_RECENT_VAULTS, JSON.stringify(updated));
+  }
+
+  /**
+   * Remove a vault from recent list and clear active vault reference if it matches.
+   */
+  async function removeRecentVault(uri: string): Promise<void> {
+    // Purge biometric data for this URI
+    await disableBiometric(uri);
+
+    const updated = recentVaults.filter((v) => v.uri !== uri);
+    setRecentVaults(updated);
+    await SecureStore.setItemAsync(KEY_RECENT_VAULTS, JSON.stringify(updated));
+
+    if (fileUri === uri) {
+      await SecureStore.deleteItemAsync(KEY_VAULT_URI);
+      await SecureStore.deleteItemAsync(KEY_VAULT_BOOKMARK);
+      setFileUri(null);
+      setBookmark(null);
+      setHasSavedVault(false);
     }
   }
 
@@ -356,6 +482,7 @@ export function FilePickerProvider({
         isLoading,
         error,
         hasSavedVault,
+        recentVaults,
         pickAndOpenVault,
         selectVaultFile,
         createNewVault,
@@ -363,6 +490,8 @@ export function FilePickerProvider({
         loadVault,
         clearVault,
         clearError,
+        selectRecentVault,
+        removeRecentVault,
       }}
     >
       {children}

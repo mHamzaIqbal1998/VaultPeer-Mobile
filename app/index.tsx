@@ -20,6 +20,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -73,11 +74,34 @@ function getFilenameFromUri(uri: string): string {
   }
 }
 
+function formatLastOpened(timestamp: number): string {
+  try {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "Recent";
+  }
+}
+
 // ────────────────────────────────────────────
 // Main Screen Component
 // ────────────────────────────────────────────
 
-type ScreenMode = "select" | "unlock" | "create";
+type ScreenMode = "select" | "unlock" | "create" | "recent";
 
 export default function FileSetupScreen() {
   const router = useRouter();
@@ -86,11 +110,14 @@ export default function FileSetupScreen() {
     isLoading: isFsLoading,
     error: fsError,
     hasSavedVault,
+    recentVaults,
     selectVaultFile,
     createNewVault,
     loadVault,
     clearVault,
     clearError,
+    selectRecentVault,
+    removeRecentVault,
   } = useFilePicker();
   const { openDatabase, closeDatabase } = useVaultStore();
 
@@ -157,14 +184,17 @@ export default function FileSetupScreen() {
     opacity: glowOpacity.value,
   }));
 
-  // Auto-transition to unlock if a vault is saved
+  // Auto-transition depending on active vault or recent vaults list
   useEffect(() => {
-    if (hasSavedVault && !activeDb) {
+    if (activeDb) return;
+    if (fileUri) {
       setMode("unlock");
-    } else if (!hasSavedVault) {
+    } else if (recentVaults.length > 0) {
+      setMode("recent");
+    } else {
       setMode("select");
     }
-  }, [hasSavedVault, activeDb]);
+  }, [fileUri, recentVaults.length, activeDb]);
 
   // Clear file errors and form errors on screen mode transition
   useEffect(() => {
@@ -182,11 +212,12 @@ export default function FileSetupScreen() {
   }, [mode]);
 
   const handleBiometricUnlock = useCallback(async () => {
+    if (!fileUri) return;
     setFormError(null);
     setLocalLoading(true);
     setTimeout(async () => {
       try {
-        const storedPassword = await getStoredPassword();
+        const storedPassword = await getStoredPassword(fileUri);
         if (!storedPassword) {
           setLocalLoading(false);
           return; // User cancelled
@@ -201,12 +232,12 @@ export default function FileSetupScreen() {
         setLocalLoading(false);
       }
     }, 50);
-  }, [loadVault, openDatabase, router]);
+  }, [loadVault, openDatabase, router, fileUri]);
 
   useEffect(() => {
     async function checkBio() {
-      if (hasSavedVault) {
-        const enabled = await isBiometricEnabled();
+      if (hasSavedVault && fileUri) {
+        const enabled = await isBiometricEnabled(fileUri);
         setBioEnabled(enabled);
         if (
           enabled &&
@@ -225,7 +256,7 @@ export default function FileSetupScreen() {
       }
     }
     checkBio();
-  }, [hasSavedVault, mode, activeDb, handleBiometricUnlock]);
+  }, [hasSavedVault, mode, activeDb, fileUri, handleBiometricUnlock]);
 
   // Combined Loading state
   const isLoading = isFsLoading || localLoading;
@@ -320,20 +351,46 @@ export default function FileSetupScreen() {
     setActiveDb(null);
     setDbStats(null);
     setPassword("");
-    if (hasSavedVault) {
+    if (fileUri) {
       setMode("unlock");
+    } else if (recentVaults.length > 0) {
+      setMode("recent");
     } else {
       setMode("select");
     }
   };
 
   const handleForgetVault = async () => {
+    if (!fileUri) return;
+    Alert.alert(
+      "Forget Vault",
+      "Are you sure you want to forget this vault? This will remove it from your recents list and disable biometric unlock.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Forget",
+          style: "destructive",
+          onPress: async () => {
+            await removeRecentVault(fileUri);
+            setActiveDb(null);
+            setDbStats(null);
+            setPassword("");
+            setFormError(null);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleChooseAnother = async () => {
     await clearVault();
-    setActiveDb(null);
-    setDbStats(null);
     setPassword("");
-    setMode("select");
     setFormError(null);
+    if (recentVaults.length > 0) {
+      setMode("recent");
+    } else {
+      setMode("select");
+    }
   };
 
   // ────────────────────────────────────────────
@@ -556,7 +613,7 @@ export default function FileSetupScreen() {
                         <Text style={styles.textButtonText}>Forget Vault</Text>
                       </Pressable>
                       <Pressable
-                        onPress={() => setMode("select")}
+                        onPress={handleChooseAnother}
                         style={styles.textButton}
                       >
                         <Text style={styles.textButtonText}>
@@ -564,6 +621,145 @@ export default function FileSetupScreen() {
                         </Text>
                       </Pressable>
                     </View>
+                  </CyberCard>
+                </Animated.View>
+              )}
+
+              {mode === "recent" && (
+                <Animated.View entering={FadeInDown.duration(300)}>
+                  <CyberCard
+                    style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
+                  >
+                    <View style={styles.cardHeader}>
+                      <Ionicons
+                        name="time"
+                        size={22}
+                        color={Colors.accentMint}
+                      />
+                      <Text style={styles.cardTitle}>Recent Vaults</Text>
+                    </View>
+
+                    <ScrollView
+                      style={styles.recentList}
+                      contentContainerStyle={{ gap: Spacing.md }}
+                    >
+                      {recentVaults.map((vault) => (
+                        <View
+                          key={vault.uri}
+                          style={styles.recentItemContainer}
+                        >
+                          <Pressable
+                            onPress={() => selectRecentVault(vault.uri)}
+                            style={({ pressed }) => [
+                              styles.recentItemPressable,
+                              pressed && styles.recentItemPressed,
+                            ]}
+                          >
+                            <Ionicons
+                              name="file-tray-full-outline"
+                              size={20}
+                              color={Colors.accentMint}
+                              style={styles.recentItemIcon}
+                            />
+                            <View style={styles.recentItemInfo}>
+                              <Text
+                                style={styles.recentItemName}
+                                numberOfLines={1}
+                              >
+                                {vault.name}
+                              </Text>
+                              <Text
+                                style={styles.recentItemMeta}
+                                numberOfLines={1}
+                              >
+                                Last opened:{" "}
+                                {formatLastOpened(vault.lastOpened)}
+                              </Text>
+                            </View>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => {
+                              Alert.alert(
+                                "Forget Vault",
+                                `Are you sure you want to remove "${vault.name}" from your recent list? This will also disable biometric unlock for this vault.`,
+                                [
+                                  { text: "Cancel", style: "cancel" },
+                                  {
+                                    text: "Forget",
+                                    style: "destructive",
+                                    onPress: () => removeRecentVault(vault.uri),
+                                  },
+                                ]
+                              );
+                            }}
+                            style={({ pressed }) => [
+                              styles.recentItemRemoveBtn,
+                              pressed && styles.recentItemRemoveBtnPressed,
+                            ]}
+                            hitSlop={12}
+                          >
+                            <Ionicons
+                              name="trash-outline"
+                              size={18}
+                              color={Colors.statusError}
+                            />
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+
+                    <View style={styles.divider} />
+
+                    <Pressable
+                      onPress={handlePickAndOpen}
+                      disabled={isLoading}
+                      style={({ pressed }) => [
+                        styles.button,
+                        pressed && styles.buttonPressed,
+                        isLoading && styles.buttonDisabled,
+                      ]}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={Colors.backgroundPrimary}
+                        />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="folder-open"
+                            size={16}
+                            color={Colors.backgroundPrimary}
+                            style={styles.buttonIcon}
+                          />
+                          <Text style={styles.buttonText}>
+                            Open Existing Vault
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        setMode("create");
+                        setFormError(null);
+                      }}
+                      style={({ pressed }) => [
+                        styles.buttonSecondary,
+                        pressed && styles.buttonSecondaryPressed,
+                      ]}
+                    >
+                      <Ionicons
+                        name="add-circle"
+                        size={16}
+                        color={Colors.accentMint}
+                        style={styles.buttonIcon}
+                      />
+                      <Text style={styles.buttonSecondaryText}>
+                        Create New Vault
+                      </Text>
+                    </Pressable>
                   </CyberCard>
                 </Animated.View>
               )}
@@ -1278,5 +1474,54 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: Radii.sm,
     backgroundColor: Colors.surfaceElevated,
+  },
+  recentList: {
+    maxHeight: 220,
+    marginBottom: Spacing.md,
+  },
+  recentItemContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    paddingRight: Spacing.sm,
+  },
+  recentItemPressable: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    minHeight: TouchTarget.min,
+  },
+  recentItemPressed: {
+    opacity: 0.7,
+  },
+  recentItemIcon: {
+    marginRight: Spacing.md,
+  },
+  recentItemInfo: {
+    flex: 1,
+  },
+  recentItemName: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  recentItemMeta: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  recentItemRemoveBtn: {
+    width: TouchTarget.min,
+    height: TouchTarget.min,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  recentItemRemoveBtnPressed: {
+    opacity: 0.6,
   },
 });

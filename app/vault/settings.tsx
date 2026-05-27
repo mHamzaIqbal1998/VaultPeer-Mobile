@@ -462,12 +462,12 @@ export default function VaultSettingsScreen() {
   useEffect(() => {
     async function checkBiometrics() {
       const supported = await isBiometricsSupported();
-      const enabled = await isBiometricEnabled();
+      const enabled = await isBiometricEnabled(fileUri || undefined);
       setBiometricSupported(supported);
       setBiometricEnabled(enabled);
     }
     checkBiometrics();
-  }, []);
+  }, [fileUri]);
 
   // Initialize history settings inputs from storeMeta
   useEffect(() => {
@@ -484,7 +484,7 @@ export default function VaultSettingsScreen() {
 
   const handleToggleBiometric = useCallback(async () => {
     if (biometricEnabled) {
-      await disableBiometric();
+      await disableBiometric(fileUri || undefined);
       setBiometricEnabled(false);
       setShowBiometricPasswordInput(false);
       setBiometricPassword("");
@@ -492,7 +492,7 @@ export default function VaultSettingsScreen() {
     } else {
       setShowBiometricPasswordInput(true);
     }
-  }, [biometricEnabled]);
+  }, [biometricEnabled, fileUri]);
 
   const handleConfirmBiometric = useCallback(async () => {
     if (verifying) return;
@@ -505,7 +505,10 @@ export default function VaultSettingsScreen() {
       try {
         const { db: verifiedDb } = await loadVault(biometricPassword);
         if (verifiedDb) {
-          const success = await enableBiometric(biometricPassword);
+          const success = await enableBiometric(
+            biometricPassword,
+            fileUri || undefined
+          );
           if (success) {
             setBiometricEnabled(true);
             setShowBiometricPasswordInput(false);
@@ -524,7 +527,7 @@ export default function VaultSettingsScreen() {
         setVerifying(false);
       }
     }, 50);
-  }, [biometricPassword, loadVault, verifying]);
+  }, [biometricPassword, loadVault, verifying, fileUri]);
 
   const stats = useMemo(() => {
     if (!db) return null;

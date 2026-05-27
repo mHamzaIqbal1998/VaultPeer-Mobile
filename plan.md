@@ -274,3 +274,21 @@ Integrates database history settings matching KeePassDX, allowing users to limit
   - Implement a "Restore" button that copies the snapshot's state back into the active entry's fields, updating the entry and marking the database as dirty.
   - Implement a "Delete" button that splices out a specific snapshot using `entry.removeHistory(index)`.
 - [x] Write unit tests to verify database configuration parsing, snapshot creation, history item deletion, and restore capabilities.
+
+### Phase 16: Multi-File Database Support & File-Specific Biometrics
+
+Enables opening and maintaining a list of multiple database files on the initial setup screen, and allows configuring and executing biometric unlock independently for each listed vault.
+
+- [x] Update `biometricService.ts` to support file-specific keys:
+  - Add an optional `fileUri` parameter to all biometric check, enable, disable, and retrieve functions.
+  - Derivate secure keys using a sanitized suffix from the URI: `vault_biometric_enabled_${sanitizedUri}` and `vault_master_password_${sanitizedUri}`.
+- [x] Extend `FilePickerContext.tsx` to manage a list of recently opened vaults:
+  - Add `RecentVault` type and a `recentVaults` array to the context state, storing bookmarks, names, URIs, and last-opened timestamps.
+  - Automatically add/update entries in the list when picking, creating, or opening a vault file.
+  - Add `selectRecentVault(uri: string)` and `removeRecentVault(uri: string)` methods.
+- [x] Redesign the file setup entry screen in `app/index.tsx` using modern cyber aesthetics:
+  - Display a scrollable list of recently opened files if any exist, showing their filenames, last-opened relative dates, and indicator icon for saved fingerprint.
+  - Tapping a card prompts for the master password (and triggers biometric unlock automatically if enabled for that file).
+  - Provide a "Delete" or "Forget" button on each card to remove the file reference and purge its biometric data from SecureStore.
+  - Include clean actions for "Open Another Database" and "Create New Database" to support adding more vault files.
+- [x] Write unit tests to verify list persistence, file-specific biometric key routing, and multi-vault unlocking flows.
