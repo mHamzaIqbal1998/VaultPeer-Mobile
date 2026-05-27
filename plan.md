@@ -257,3 +257,20 @@ Implements visual password strength metrics during database/file creation and pr
   - Update the dirty state of the vault to trigger file saving on close or on manual save.
   - If biometric unlock is active, call `enableBiometric(newPassword)` to automatically update the master password stored in `SecureStore`.
 - [x] Write unit tests to verify password validation, credentials updates on the Kdbx instance, and SecureStore synchronization.
+
+### Phase 15: Entry History Settings & Restore Operations
+
+Integrates database history settings matching KeePassDX, allowing users to limit entry history items and sizes, view historical snapshots of individual entries, and restore/delete snapshots on-demand.
+
+- [x] Update the `VaultMeta` type definition in `src/types/kdbx.ts` and the `parseMeta` service in `src/services/crypto/databaseParser.ts` to extract `historyMaxItems` and `historyMaxSize`.
+- [x] Add history configuration inputs in Database Settings (`app/vault/settings.tsx`):
+  - "Max History Items" number input mapping to `db.meta.historyMaxItems`.
+  - "Max History Size" number input mapping to `db.meta.historyMaxSize` (displaying in MB/KB and converting to bytes).
+- [x] Add a "History" tab or section to the Entry details screen:
+  - Fetch and render the history array (`entry.history`) from the selected entry.
+  - Sort snapshots chronologically and show modification timestamps.
+- [x] Implement historical preview and restoration features:
+  - Add a collapsible preview for each history item displaying its saved fields, custom fields, and password.
+  - Implement a "Restore" button that copies the snapshot's state back into the active entry's fields, updating the entry and marking the database as dirty.
+  - Implement a "Delete" button that splices out a specific snapshot using `entry.removeHistory(index)`.
+- [x] Write unit tests to verify database configuration parsing, snapshot creation, history item deletion, and restore capabilities.

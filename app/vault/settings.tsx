@@ -302,6 +302,8 @@ export default function VaultSettingsScreen() {
     setRecycleBinGroup,
     emptyRecycleBin,
     changeMasterPassword,
+    setHistoryMaxItems,
+    setHistoryMaxSize,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -327,6 +329,10 @@ export default function VaultSettingsScreen() {
     null
   );
   const [changingPassword, setChangingPassword] = useState(false);
+  const [historyMaxItemsInput, setHistoryMaxItemsInput] = useState("");
+  const [historyMaxSizeInput, setHistoryMaxSizeInput] = useState("");
+  const [historySettingsInitialized, setHistorySettingsInitialized] =
+    useState(false);
 
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
@@ -462,6 +468,19 @@ export default function VaultSettingsScreen() {
     }
     checkBiometrics();
   }, []);
+
+  // Initialize history settings inputs from storeMeta
+  useEffect(() => {
+    if (storeMeta && !historySettingsInitialized) {
+      setHistoryMaxItemsInput(String(storeMeta.historyMaxItems ?? 10));
+      const sizeInMB =
+        Math.round(
+          ((storeMeta.historyMaxSize ?? 6 * 1024 * 1024) / (1024 * 1024)) * 10
+        ) / 10;
+      setHistoryMaxSizeInput(String(sizeInMB));
+      setHistorySettingsInitialized(true);
+    }
+  }, [storeMeta, historySettingsInitialized]);
 
   const handleToggleBiometric = useCallback(async () => {
     if (biometricEnabled) {
@@ -830,6 +849,82 @@ export default function VaultSettingsScreen() {
                   subtitle="Remove unlinked attachments & clean history entries"
                   onPress={handleCleanupPress}
                 />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Entry History Settings */}
+            <Animated.View entering={FadeInDown.duration(200).delay(160)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="time-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Entry History</Text>
+                </View>
+                <Text style={styles.historyDesc}>
+                  Configure how many historical snapshots are retained per
+                  entry.
+                </Text>
+                <View style={styles.historyInputRow}>
+                  <View style={styles.historyInputGroup}>
+                    <Text style={styles.historyInputLabel}>Max Items</Text>
+                    <View style={styles.historyInputContainer}>
+                      <TextInput
+                        style={styles.historyInput}
+                        value={historyMaxItemsInput}
+                        onChangeText={setHistoryMaxItemsInput}
+                        onBlur={() => {
+                          const parsed = parseInt(historyMaxItemsInput, 10);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            setHistoryMaxItems(parsed);
+                          } else {
+                            setHistoryMaxItemsInput(
+                              String(storeMeta?.historyMaxItems ?? 10)
+                            );
+                          }
+                        }}
+                        keyboardType="number-pad"
+                        placeholderTextColor={Colors.textDisabled}
+                        placeholder="10"
+                        maxLength={4}
+                      />
+                    </View>
+                    <Text style={styles.historyInputHint}>per entry</Text>
+                  </View>
+                  <View style={styles.historyInputGroup}>
+                    <Text style={styles.historyInputLabel}>Max Size</Text>
+                    <View style={styles.historyInputContainer}>
+                      <TextInput
+                        style={styles.historyInput}
+                        value={historyMaxSizeInput}
+                        onChangeText={setHistoryMaxSizeInput}
+                        onBlur={() => {
+                          const parsed = parseFloat(historyMaxSizeInput);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            const bytes = Math.round(parsed * 1024 * 1024);
+                            setHistoryMaxSize(bytes);
+                          } else {
+                            const currentMB =
+                              Math.round(
+                                ((storeMeta?.historyMaxSize ??
+                                  6 * 1024 * 1024) /
+                                  (1024 * 1024)) *
+                                  10
+                              ) / 10;
+                            setHistoryMaxSizeInput(String(currentMB));
+                          }
+                        }}
+                        keyboardType="decimal-pad"
+                        placeholderTextColor={Colors.textDisabled}
+                        placeholder="6"
+                        maxLength={6}
+                      />
+                    </View>
+                    <Text style={styles.historyInputHint}>MB total</Text>
+                  </View>
+                </View>
               </CyberCard>
             </Animated.View>
 
@@ -1821,6 +1916,54 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: Radii.sm,
     backgroundColor: Colors.surfaceElevated,
+  },
+
+  // History Settings
+  historyDesc: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    lineHeight: 18,
+    marginBottom: Spacing.md,
+  },
+  historyInputRow: {
+    flexDirection: "row",
+    gap: Spacing.lg,
+  },
+  historyInputGroup: {
+    flex: 1,
+    alignItems: "center",
+  },
+  historyInputLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  historyInputContainer: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    width: "100%",
+    overflow: "hidden",
+  },
+  historyInput: {
+    color: Colors.textPrimary,
+    fontFamily: Fonts.mono.regular,
+    fontSize: FontSizes.body,
+    textAlign: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    minHeight: TouchTarget.min,
+  },
+  historyInputHint: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.micro,
+    color: Colors.textMuted,
+    marginTop: Spacing.xxs,
   },
 });
 

@@ -15,7 +15,12 @@
 import { create } from "zustand";
 import * as kdbxweb from "kdbxweb";
 import { parseDatabase } from "../services/crypto/databaseParser";
-import type { VaultEntry, VaultGroup, VaultMeta } from "../types/kdbx";
+import type {
+  VaultEntry,
+  VaultGroup,
+  VaultMeta,
+  VaultHistorySnapshot,
+} from "../types/kdbx";
 import { base64ToArrayBuffer, arrayBufferToBase64 } from "../services/base64";
 import { createCredentials } from "../services/crypto";
 import {
@@ -132,6 +137,18 @@ interface VaultStoreState {
 
   // Credentials / Master Password
   changeMasterPassword: (newPassword: string) => Promise<boolean>;
+
+  // Entry History
+  getEntryHistory: (entryUuid: string) => VaultHistorySnapshot[];
+  restoreHistorySnapshot: (
+    entryUuid: string,
+    snapshotIndex: number
+  ) => Promise<VaultEntry | null>;
+  deleteHistorySnapshot: (entryUuid: string, snapshotIndex: number) => boolean;
+
+  // History Settings
+  setHistoryMaxItems: (value: number) => void;
+  setHistoryMaxSize: (value: number) => void;
 
   // Dirty state
   markClean: () => void;
@@ -1225,6 +1242,219 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
       console.error("[VaultStore] Error changing master password:", e);
       return false;
     }
+  },
+
+  // ────── Entry History ──────
+
+  getEntryHistory: (entryUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return [];
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) return [];
+
+    const { entry } = found;
+    const history = entry.history ?? [];
+
+    return history.map((histEntry, index) => {
+      // Extract custom fields (exclude standard KeePass fields)
+      const standardFields = new Set([
+        "Title",
+        "UserName",
+        "Password",
+        "URL",
+        "Notes",
+        "otp",
+        "TimeOtp",
+        "totp",
+      ]);
+      const fields: Record<string, string> = {};
+      const secureFields: string[] = [];
+
+      histEntry.fields.forEach((value, key) => {
+        if (!standardFields.has(key)) {
+          const isSecure =
+            typeof value === "object" && value !== null && "getText" in value;
+          if (isSecure) {
+            secureFields.push(key);
+          }
+          fields[key] =
+            typeof value === "string"
+              ? value
+              : typeof value === "object" && "getText" in value
+                ? (value as { getText(): string }).getText()
+                : String(value);
+        }
+      });
+
+      const getVal = (field: string): string => {
+        const val = histEntry.fields.get(field);
+        if (!val) return "";
+        if (typeof val === "string") return val;
+        if (typeof val === "object" && "getText" in val) {
+          return (val as { getText(): string }).getText();
+        }
+        return String(val);
+      };
+
+      return {
+        index,
+        title: getVal("Title"),
+        username: getVal("UserName"),
+        password: getVal("Password"),
+        url: getVal("URL"),
+        notes: getVal("Notes"),
+        fields,
+        secureFields,
+        tags: histEntry.tags ?? [],
+        modifiedAt: histEntry.times?.lastModTime
+          ? histEntry.times.lastModTime.toISOString()
+          : new Date(0).toISOString(),
+        iconId: histEntry.icon ?? 0,
+        otp: getVal("otp") || getVal("TimeOtp") || getVal("totp") || undefined,
+      } satisfies VaultHistorySnapshot;
+    });
+  },
+
+  restoreHistorySnapshot: async (entryUuid, snapshotIndex) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return null;
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) return null;
+
+    const { entry } = found;
+    const history = entry.history ?? [];
+    if (snapshotIndex < 0 || snapshotIndex >= history.length) return null;
+
+    const snapshot = history[snapshotIndex];
+
+    // Push current state to history before restoring
+    entry.pushHistory();
+
+    // Restore fields from snapshot
+    const standardFields = new Set([
+      "Title",
+      "UserName",
+      "Password",
+      "URL",
+      "Notes",
+      "otp",
+      "TimeOtp",
+      "totp",
+    ]);
+
+    // Copy standard fields
+    for (const field of ["Title", "UserName", "Password", "URL", "Notes"]) {
+      const val = snapshot.fields.get(field);
+      if (val !== undefined) {
+        entry.fields.set(field, val);
+      }
+    }
+
+    // Handle OTP
+    const otpVal =
+      snapshot.fields.get("otp") ||
+      snapshot.fields.get("TimeOtp") ||
+      snapshot.fields.get("totp");
+    if (otpVal) {
+      entry.fields.set("otp", otpVal);
+    } else {
+      entry.fields.delete("otp");
+    }
+
+    // Remove non-standard fields from current entry that aren't in snapshot
+    const snapshotCustomKeys = new Set<string>();
+    snapshot.fields.forEach((_val, key) => {
+      if (!standardFields.has(key)) {
+        snapshotCustomKeys.add(key);
+      }
+    });
+
+    entry.fields.forEach((_val, key) => {
+      if (!standardFields.has(key) && !snapshotCustomKeys.has(key)) {
+        entry.fields.delete(key);
+      }
+    });
+
+    // Restore custom fields from snapshot
+    snapshot.fields.forEach((val, key) => {
+      if (!standardFields.has(key)) {
+        entry.fields.set(key, val);
+      }
+    });
+
+    // Restore icon and tags
+    entry.icon = snapshot.icon ?? 0;
+    entry.tags = [...(snapshot.tags ?? [])];
+
+    // Update modification time
+    entry.times.lastModTime = new Date();
+
+    // Re-parse state
+    const { meta, rootGroup } = parseDatabase(db);
+    const entryIndex = buildEntryIndex(rootGroup);
+    const groupIndex = buildGroupIndex(rootGroup);
+
+    const updatedEntry = entryIndex.get(entryUuid) ?? null;
+
+    set({
+      meta,
+      rootGroup,
+      entryIndex,
+      groupIndex,
+      isDirty: true,
+    });
+
+    return updatedEntry;
+  },
+
+  deleteHistorySnapshot: (entryUuid, snapshotIndex) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) return false;
+
+    const { entry } = found;
+    const history = entry.history ?? [];
+    if (snapshotIndex < 0 || snapshotIndex >= history.length) return false;
+
+    entry.removeHistory(snapshotIndex);
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+    return true;
+  },
+
+  // ────── History Settings ──────
+
+  setHistoryMaxItems: (value) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.historyMaxItems = value;
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  setHistoryMaxSize: (value) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.historyMaxSize = value;
+
+    set({ isDirty: true });
+    state.refreshParsedState();
   },
 
   // ────── Dirty State ──────

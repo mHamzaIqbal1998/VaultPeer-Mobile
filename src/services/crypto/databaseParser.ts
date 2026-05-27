@@ -316,6 +316,14 @@ export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
         : undefined;
       return uuidStr === "AAAAAAAAAAAAAAAAAAAAAA==" ? undefined : uuidStr;
     })(),
+    historyMaxItems:
+      typeof db.meta?.historyMaxItems === "number"
+        ? db.meta.historyMaxItems
+        : 10,
+    historyMaxSize:
+      typeof db.meta?.historyMaxSize === "number"
+        ? db.meta.historyMaxSize
+        : 6 * 1024 * 1024,
   };
 }
 
