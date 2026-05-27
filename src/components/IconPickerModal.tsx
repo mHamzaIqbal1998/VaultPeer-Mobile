@@ -9,7 +9,7 @@
  * icon IDs defined by the KDBX specification.
  */
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -28,7 +28,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -194,6 +194,8 @@ function IconCell({
   isSelected: boolean;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const iconName = getKdbxIconName(iconId);
   const label = ICON_LABELS[iconId] ?? `Icon ${iconId}`;
 
@@ -207,7 +209,7 @@ function IconCell({
       <Ionicons
         name={iconName}
         size={22}
-        color={isSelected ? Colors.accentMint : Colors.textSecondary}
+        color={isSelected ? colors.accentMint : colors.textSecondary}
       />
       <Text
         style={[
@@ -223,7 +225,7 @@ function IconCell({
           <Ionicons
             name="checkmark"
             size={10}
-            color={Colors.backgroundPrimary}
+            color={colors.backgroundPrimary}
           />
         </View>
       )}
@@ -237,6 +239,8 @@ export function IconPickerModal({
   onSelect,
   onClose,
 }: IconPickerModalProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [localSelected, setLocalSelected] = useState(selectedIconId);
   const [active, setActive] = useState(false);
   const translateY = useSharedValue(600);
@@ -327,7 +331,7 @@ export function IconPickerModal({
               style={styles.sheetCloseBtn}
               hitSlop={8}
             >
-              <Ionicons name="close" size={22} color={Colors.textMuted} />
+              <Ionicons name="close" size={22} color={colors.textMuted} />
             </Pressable>
             <Text style={styles.sheetTitle}>Choose Icon</Text>
             <Pressable
@@ -345,7 +349,7 @@ export function IconPickerModal({
               <Ionicons
                 name={getKdbxIconName(localSelected)}
                 size={28}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </View>
             <View style={styles.previewInfo}>
@@ -387,182 +391,183 @@ export function IconPickerModal({
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    justifyContent: "flex-end",
-    alignItems: "stretch",
-    backgroundColor: "transparent",
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.overlay,
-  },
-  sheet: {
-    width: "100%",
-    maxHeight: "85%",
-    backgroundColor: Colors.surfaceCard,
-    borderTopLeftRadius: Radii.xl,
-    borderTopRightRadius: Radii.xl,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 16,
-    paddingBottom: Spacing.xxl, // Stable safe bottom spacing, avoids Android modal layout shifts
-  },
-  sheetBottomFill: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: -200,
-    height: 200,
-    backgroundColor: Colors.surfaceCard,
-  },
-  handleContainer: {
-    alignItems: "center",
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xs,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.borderSageActive,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  sheetCloseBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sheetTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  sheetConfirmBtn: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-  },
-  sheetConfirmText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      justifyContent: "flex-end",
+      alignItems: "stretch",
+      backgroundColor: "transparent",
+    },
+    backdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: colors.overlay,
+    },
+    sheet: {
+      width: "100%",
+      maxHeight: "85%",
+      backgroundColor: colors.surfaceCard,
+      borderTopLeftRadius: Radii.xl,
+      borderTopRightRadius: Radii.xl,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 10,
+      elevation: 16,
+      paddingBottom: Spacing.xxl, // Stable safe bottom spacing, avoids Android modal layout shifts
+    },
+    sheetBottomFill: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: -200,
+      height: 200,
+      backgroundColor: colors.surfaceCard,
+    },
+    handleContainer: {
+      alignItems: "center",
+      paddingTop: Spacing.sm,
+      paddingBottom: Spacing.xs,
+    },
+    handle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.borderSageActive,
+    },
+    sheetHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    sheetCloseBtn: {
+      width: 36,
+      height: 36,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sheetTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    sheetConfirmBtn: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+    },
+    sheetConfirmText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
 
-  // Preview
-  previewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  previewCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.accentMintDim,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: Colors.accentMint,
-  },
-  previewInfo: {
-    marginLeft: Spacing.lg,
-  },
-  previewLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  previewName: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-    marginTop: 2,
-  },
+    // Preview
+    previewRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.lg,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    previewCircle: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: colors.accentMintDim,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 2,
+      borderColor: colors.accentMint,
+    },
+    previewInfo: {
+      marginLeft: Spacing.lg,
+    },
+    previewLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    previewName: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      marginTop: 2,
+    },
 
-  // Scroll
-  scrollContent: {
-    paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.huge,
-  },
+    // Scroll
+    scrollContent: {
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.lg,
+      paddingBottom: Spacing.huge,
+    },
 
-  // Categories
-  categorySection: {
-    marginBottom: Spacing.xl,
-  },
-  categoryTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: Spacing.md,
-  },
-  iconGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-  },
+    // Categories
+    categorySection: {
+      marginBottom: Spacing.xl,
+    },
+    categoryTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+      marginBottom: Spacing.md,
+    },
+    iconGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Spacing.sm,
+    },
 
-  // Icon Cell
-  iconCell: {
-    width: 72,
-    height: 72,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    position: "relative",
-  },
-  iconCellSelected: {
-    borderColor: Colors.accentMint,
-    borderWidth: 1.5,
-    backgroundColor: Colors.accentMintDim,
-  },
-  iconCellLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: 9,
-    color: Colors.textMuted,
-    textAlign: "center",
-    maxWidth: 60,
-  },
-  iconCellLabelSelected: {
-    color: Colors.accentMint,
-    fontFamily: Fonts.heading.medium,
-  },
+    // Icon Cell
+    iconCell: {
+      width: 72,
+      height: 72,
+      borderRadius: Radii.md,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      position: "relative",
+    },
+    iconCellSelected: {
+      borderColor: colors.accentMint,
+      borderWidth: 1.5,
+      backgroundColor: colors.accentMintDim,
+    },
+    iconCellLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: 9,
+      color: colors.textMuted,
+      textAlign: "center",
+      maxWidth: 60,
+    },
+    iconCellLabelSelected: {
+      color: colors.accentMint,
+      fontFamily: Fonts.heading.medium,
+    },
 
-  // Selected badge
-  selectedBadge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.accentMint,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+    // Selected badge
+    selectedBadge: {
+      position: "absolute",
+      top: -4,
+      right: -4,
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: colors.accentMint,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });

@@ -12,7 +12,7 @@
 import { CyberCard } from "@/src/components/CyberCard";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import {
-  Colors,
+  useThemeColors,
   FontSizes,
   Fonts,
   LineHeights,
@@ -29,7 +29,7 @@ import type { VaultAttachment, VaultHistorySnapshot } from "@/src/types/kdbx";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useMemo, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -70,6 +70,8 @@ function FieldRow({
   isMono?: boolean;
   onCopy?: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [revealed, setRevealed] = useState(!isMasked);
 
   if (!value) return null;
@@ -80,7 +82,7 @@ function FieldRow({
     <Animated.View entering={FadeInDown.duration(200)} style={styles.fieldRow}>
       <View style={styles.fieldHeader}>
         <View style={styles.fieldLabelRow}>
-          <Ionicons name={iconName} size={16} color={Colors.textMuted} />
+          <Ionicons name={iconName} size={16} color={colors.textMuted} />
           <Text style={styles.fieldLabel}>{label}</Text>
         </View>
         <View style={styles.fieldActions}>
@@ -94,7 +96,7 @@ function FieldRow({
               <Ionicons
                 name={revealed ? "eye-off-outline" : "eye-outline"}
                 size={18}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
             </Pressable>
           )}
@@ -108,7 +110,7 @@ function FieldRow({
               <Ionicons
                 name="copy-outline"
                 size={18}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </Pressable>
           )}
@@ -140,6 +142,8 @@ function OtpCard({
   entryUsername: string;
   onCopy: (text: string, label: string) => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [code, setCode] = useState("");
   const [timeLeft, setTimeLeft] = useState(30);
   const [progress, setProgress] = useState(1);
@@ -200,7 +204,7 @@ function OtpCard({
             <Ionicons
               name="shield-checkmark-outline"
               size={20}
-              color={Colors.accentMint}
+              color={colors.accentMint}
             />
             <View style={{ marginLeft: Spacing.sm }}>
               <Text style={styles.otpIssuer}>{params.issuer}</Text>
@@ -213,7 +217,7 @@ function OtpCard({
             hitSlop={8}
             accessibilityLabel="Copy OTP code"
           >
-            <Ionicons name="copy-outline" size={18} color={Colors.accentMint} />
+            <Ionicons name="copy-outline" size={18} color={colors.accentMint} />
           </Pressable>
         </View>
 
@@ -227,14 +231,14 @@ function OtpCard({
               style={[
                 styles.otpProgressBarFill,
                 { width: `${progress * 100}%` },
-                progress < 0.2 && { backgroundColor: Colors.statusError },
+                progress < 0.2 && { backgroundColor: colors.statusError },
               ]}
             />
           </View>
           <Text
             style={[
               styles.otpCountdownText,
-              progress < 0.2 && { color: Colors.statusError },
+              progress < 0.2 && { color: colors.statusError },
             ]}
           >
             {timeLeft}s
@@ -250,6 +254,8 @@ function OtpCard({
 // ────────────────────────────────────────────
 
 export default function EntryDetailScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
@@ -422,7 +428,7 @@ export default function EntryDetailScreen() {
           <Ionicons
             name="alert-circle-outline"
             size={48}
-            color={Colors.textDisabled}
+            color={colors.textDisabled}
           />
           <Text style={styles.emptyText}>Entry not found</Text>
           <Pressable onPress={() => router.back()} style={styles.backLink}>
@@ -451,7 +457,7 @@ export default function EntryDetailScreen() {
           hitSlop={8}
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={Colors.accentMint} />
+          <Ionicons name="chevron-back" size={24} color={colors.accentMint} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {entry?.title || "Entry Detail"}
@@ -469,12 +475,12 @@ export default function EntryDetailScreen() {
               accessibilityLabel="Restore entry"
             >
               {restoring ? (
-                <ActivityIndicator size="small" color={Colors.accentMint} />
+                <ActivityIndicator size="small" color={colors.accentMint} />
               ) : (
                 <Ionicons
                   name="arrow-undo-outline"
                   size={22}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               )}
             </Pressable>
@@ -492,7 +498,7 @@ export default function EntryDetailScreen() {
               <Ionicons
                 name="create-outline"
                 size={22}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </Pressable>
           )}
@@ -507,12 +513,12 @@ export default function EntryDetailScreen() {
             accessibilityLabel="Delete entry"
           >
             {deleting ? (
-              <ActivityIndicator size="small" color={Colors.statusError} />
+              <ActivityIndicator size="small" color={colors.statusError} />
             ) : (
               <Ionicons
                 name="trash-outline"
                 size={22}
-                color={Colors.statusError}
+                color={colors.statusError}
               />
             )}
           </Pressable>
@@ -533,7 +539,7 @@ export default function EntryDetailScreen() {
             }}
           >
             <View style={styles.titleIconContainer}>
-              <Ionicons name={iconName} size={28} color={Colors.accentMint} />
+              <Ionicons name={iconName} size={28} color={colors.accentMint} />
             </View>
             <Text style={styles.entryTitle}>{entry.title || "Untitled"}</Text>
             {entry.expires && (
@@ -543,7 +549,7 @@ export default function EntryDetailScreen() {
                     <Ionicons
                       name="warning"
                       size={12}
-                      color={Colors.statusError}
+                      color={colors.statusError}
                     />
                     <Text style={styles.expiryBadgeTextExpired}>EXPIRED</Text>
                   </View>
@@ -552,7 +558,7 @@ export default function EntryDetailScreen() {
                     <Ionicons
                       name="time"
                       size={12}
-                      color={Colors.statusWarning}
+                      color={colors.statusWarning}
                     />
                     <Text style={styles.expiryBadgeText}>
                       Expires:{" "}
@@ -644,7 +650,7 @@ export default function EntryDetailScreen() {
                   <Ionicons
                     name="document-attach-outline"
                     size={20}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
                     <Text style={styles.attachmentName} numberOfLines={1}>
@@ -662,12 +668,12 @@ export default function EntryDetailScreen() {
                   hitSlop={8}
                 >
                   {exporting === attachment.name ? (
-                    <ActivityIndicator size="small" color={Colors.accentMint} />
+                    <ActivityIndicator size="small" color={colors.accentMint} />
                   ) : (
                     <Ionicons
                       name="download-outline"
                       size={20}
-                      color={Colors.accentMint}
+                      color={colors.accentMint}
                     />
                   )}
                 </Pressable>
@@ -694,7 +700,7 @@ export default function EntryDetailScreen() {
               <Ionicons
                 name="time-outline"
                 size={14}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
               <Text style={styles.historySectionTitle}>Entry History</Text>
             </View>
@@ -702,7 +708,7 @@ export default function EntryDetailScreen() {
               <Ionicons
                 name={showHistory ? "chevron-up" : "chevron-down"}
                 size={18}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
             </View>
           </Pressable>
@@ -714,7 +720,7 @@ export default function EntryDetailScreen() {
                   <Ionicons
                     name="document-outline"
                     size={28}
-                    color={Colors.textDisabled}
+                    color={colors.textDisabled}
                   />
                   <Text style={styles.historyEmptyText}>
                     No history snapshots available
@@ -749,7 +755,7 @@ export default function EntryDetailScreen() {
                               name="git-commit-outline"
                               size={16}
                               color={
-                                isActive ? Colors.accentMint : Colors.textMuted
+                                isActive ? colors.accentMint : colors.textMuted
                               }
                             />
                             <View style={{ flex: 1, marginLeft: Spacing.sm }}>
@@ -768,7 +774,7 @@ export default function EntryDetailScreen() {
                           <Ionicons
                             name={isExpanded ? "chevron-up" : "chevron-down"}
                             size={16}
-                            color={Colors.textMuted}
+                            color={colors.textMuted}
                           />
                         </Pressable>
 
@@ -855,7 +861,7 @@ export default function EntryDetailScreen() {
                                       <Ionicons
                                         name="pricetag-outline"
                                         size={16}
-                                        color={Colors.textMuted}
+                                        color={colors.textMuted}
                                       />
                                       <Text style={styles.fieldLabel}>
                                         Tags
@@ -944,14 +950,14 @@ export default function EntryDetailScreen() {
                                     {restoringSnapshot ? (
                                       <ActivityIndicator
                                         size="small"
-                                        color={Colors.backgroundPrimary}
+                                        color={colors.backgroundPrimary}
                                       />
                                     ) : (
                                       <>
                                         <Ionicons
                                           name="refresh-outline"
                                           size={14}
-                                          color={Colors.backgroundPrimary}
+                                          color={colors.backgroundPrimary}
                                         />
                                         <Text
                                           style={styles.historyRestoreBtnText}
@@ -1009,7 +1015,7 @@ export default function EntryDetailScreen() {
                                     <Ionicons
                                       name="trash-outline"
                                       size={14}
-                                      color={Colors.statusError}
+                                      color={colors.statusError}
                                     />
                                     <Text style={styles.historyDeleteBtnText}>
                                       Delete
@@ -1062,489 +1068,490 @@ export default function EntryDetailScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  backButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  headerActions: {
-    flexDirection: "row",
-    gap: Spacing.xs,
-  },
-  headerActionBtn: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // Header
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    backButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    headerActions: {
+      flexDirection: "row",
+      gap: Spacing.xs,
+    },
+    headerActionBtn: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // Scroll
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.huge,
-  },
+    // Scroll
+    scrollContent: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.xl,
+      paddingBottom: Spacing.huge,
+    },
 
-  // Title Card
-  titleCard: {
-    alignItems: "center",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.xxl,
-    marginBottom: Spacing.lg,
-    ...Shadows.card,
-  },
-  titleIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.accentMintDim,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.md,
-  },
-  entryTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.heading,
-    color: Colors.textPrimary,
-    textAlign: "center",
-  },
-  tagsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.xs,
-    marginTop: Spacing.md,
-    justifyContent: "center",
-  },
-  tag: {
-    backgroundColor: Colors.accentMintDim,
-    borderRadius: Radii.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-  },
-  tagText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.accentMint,
-  },
+    // Title Card
+    titleCard: {
+      alignItems: "center",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.xxl,
+      marginBottom: Spacing.lg,
+      ...Shadows.card,
+    },
+    titleIconContainer: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accentMintDim,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: Spacing.md,
+    },
+    entryTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.heading,
+      color: colors.textPrimary,
+      textAlign: "center",
+    },
+    tagsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Spacing.xs,
+      marginTop: Spacing.md,
+      justifyContent: "center",
+    },
+    tag: {
+      backgroundColor: colors.accentMintDim,
+      borderRadius: Radii.full,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+    },
+    tagText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.accentMint,
+    },
 
-  // Fields Card
-  fieldsCard: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-    ...Shadows.card,
-  },
-  sectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    marginBottom: Spacing.md,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  historySectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
+    // Fields Card
+    fieldsCard: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+      ...Shadows.card,
+    },
+    sectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      marginBottom: Spacing.md,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    historySectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
 
-  // Field Row
-  fieldRow: {
-    marginBottom: Spacing.lg,
-  },
-  fieldHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.xs,
-  },
-  fieldLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-  },
-  fieldLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  fieldActions: {
-    flexDirection: "row",
-    gap: Spacing.xs,
-  },
-  fieldAction: {
-    minWidth: 36,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: Radii.sm,
-  },
-  fieldValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    lineHeight: LineHeights.body,
-    color: Colors.textPrimary,
-  },
-  fieldValueMono: {
-    fontFamily: Fonts.mono.regular,
-    letterSpacing: 1,
-  },
-  fieldValueMasked: {
-    color: Colors.textDisabled,
-    letterSpacing: 3,
-  },
+    // Field Row
+    fieldRow: {
+      marginBottom: Spacing.lg,
+    },
+    fieldHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.xs,
+    },
+    fieldLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+    },
+    fieldLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    fieldActions: {
+      flexDirection: "row",
+      gap: Spacing.xs,
+    },
+    fieldAction: {
+      minWidth: 36,
+      minHeight: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+    },
+    fieldValue: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      lineHeight: LineHeights.body,
+      color: colors.textPrimary,
+    },
+    fieldValueMono: {
+      fontFamily: Fonts.mono.regular,
+      letterSpacing: 1,
+    },
+    fieldValueMasked: {
+      color: colors.textDisabled,
+      letterSpacing: 3,
+    },
 
-  // Meta Card
-  metaCard: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  metaLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  metaValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-  },
-  metaDivider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.sm,
-  },
-  uuidText: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.micro,
-    maxWidth: 180,
-  },
+    // Meta Card
+    metaCard: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    metaRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    metaLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    metaValue: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+    },
+    metaDivider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.sm,
+    },
+    uuidText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.micro,
+      maxWidth: 180,
+    },
 
-  // Empty State
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.md,
-  },
-  emptyText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textMuted,
-  },
-  backLink: {
-    marginTop: Spacing.md,
-    padding: Spacing.sm,
-  },
-  backLinkText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.accentMint,
-  },
+    // Empty State
+    emptyState: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.md,
+    },
+    emptyText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textMuted,
+    },
+    backLink: {
+      marginTop: Spacing.md,
+      padding: Spacing.sm,
+    },
+    backLinkText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.accentMint,
+    },
 
-  // Expiry badge
-  expiryBadgeRow: {
-    marginTop: Spacing.xs,
-  },
-  expiryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.statusWarningDim,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: Radii.sm,
-    gap: Spacing.xs,
-  },
-  expiryBadgeExpired: {
-    backgroundColor: Colors.statusErrorDim,
-  },
-  expiryBadgeText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.statusWarning,
-  },
-  expiryBadgeTextExpired: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.caption,
-    color: Colors.statusError,
-    letterSpacing: 0.5,
-  },
+    // Expiry badge
+    expiryBadgeRow: {
+      marginTop: Spacing.xs,
+    },
+    expiryBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.statusWarningDim,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 4,
+      borderRadius: Radii.sm,
+      gap: Spacing.xs,
+    },
+    expiryBadgeExpired: {
+      backgroundColor: colors.statusErrorDim,
+    },
+    expiryBadgeText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.statusWarning,
+    },
+    expiryBadgeTextExpired: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+      letterSpacing: 0.5,
+    },
 
-  // Attachments
-  attachmentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  attachmentInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  attachmentName: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  attachmentSize: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  attachmentExportBtn: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // Attachments
+    attachmentRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    attachmentInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    attachmentName: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    attachmentSize: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    attachmentExportBtn: {
+      minWidth: 44,
+      minHeight: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // OTP Card
-  otpCard: {
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  otpHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  otpInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  otpIssuer: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  otpLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  otpCopyBtn: {
-    minWidth: 36,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.accentMintDim,
-  },
-  otpCodeContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginVertical: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
-  otpCode: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: 32,
-    color: Colors.accentMint,
-    letterSpacing: 2,
-  },
-  otpProgressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  otpProgressBarBg: {
-    flex: 1,
-    height: 4,
-    backgroundColor: Colors.borderSage,
-    borderRadius: Radii.full,
-    overflow: "hidden",
-  },
-  otpProgressBarFill: {
-    height: "100%",
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.full,
-  },
-  otpCountdownText: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    minWidth: 24,
-    textAlign: "right",
-  },
+    // OTP Card
+    otpCard: {
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    otpHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.md,
+    },
+    otpInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    otpIssuer: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    otpLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    otpCopyBtn: {
+      minWidth: 36,
+      minHeight: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+      backgroundColor: colors.accentMintDim,
+    },
+    otpCodeContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+      marginVertical: Spacing.sm,
+      paddingVertical: Spacing.xs,
+    },
+    otpCode: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: 32,
+      color: colors.accentMint,
+      letterSpacing: 2,
+    },
+    otpProgressRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginTop: Spacing.sm,
+    },
+    otpProgressBarBg: {
+      flex: 1,
+      height: 4,
+      backgroundColor: colors.borderSage,
+      borderRadius: Radii.full,
+      overflow: "hidden",
+    },
+    otpProgressBarFill: {
+      height: "100%",
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.full,
+    },
+    otpCountdownText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+      minWidth: 24,
+      textAlign: "right",
+    },
 
-  // Entry History
-  historyToggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  historyBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  historyEmpty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.xxl,
-    gap: Spacing.sm,
-  },
-  historyEmptyText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textDisabled,
-  },
-  historyItem: {
-    marginTop: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    overflow: "hidden",
-  },
-  historyItemHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  historyItemHeaderExpanded: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  historyItemInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginRight: Spacing.sm,
-  },
-  historyItemTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  historyItemDate: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  historyPreview: {
-    padding: Spacing.md,
-    backgroundColor: Colors.surfaceCard,
-  },
-  historyEmptyFieldsText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textAlign: "center",
-    paddingVertical: Spacing.md,
-    fontStyle: "italic",
-  },
-  historyFieldRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.xxs,
-  },
-  historyFieldLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  historyFieldValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-    flex: 1,
-    textAlign: "right",
-    marginLeft: Spacing.md,
-  },
-  historyFieldMono: {
-    fontFamily: Fonts.mono.regular,
-    letterSpacing: 2,
-  },
-  historyActions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderSage,
-  },
-  historyActionBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radii.md,
-    minHeight: 36,
-  },
-  historyRestoreBtn: {
-    backgroundColor: Colors.accentMint,
-    ...Shadows.glow,
-  },
-  historyRestoreBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.caption,
-    color: Colors.backgroundPrimary,
-  },
-  historyDeleteBtn: {
-    backgroundColor: Colors.statusErrorDim,
-    borderWidth: 1,
-    borderColor: Colors.statusError,
-  },
-  historyDeleteBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.statusError,
-  },
-});
+    // Entry History
+    historyToggleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    historyBadgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+    },
+    historyEmpty: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: Spacing.xxl,
+      gap: Spacing.sm,
+    },
+    historyEmptyText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textDisabled,
+    },
+    historyItem: {
+      marginTop: Spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      overflow: "hidden",
+    },
+    historyItemHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.md,
+      backgroundColor: colors.surfaceElevated,
+    },
+    historyItemHeaderExpanded: {
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    historyItemInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      marginRight: Spacing.sm,
+    },
+    historyItemTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    historyItemDate: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    historyPreview: {
+      padding: Spacing.md,
+      backgroundColor: colors.surfaceCard,
+    },
+    historyEmptyFieldsText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textAlign: "center",
+      paddingVertical: Spacing.md,
+      fontStyle: "italic",
+    },
+    historyFieldRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: Spacing.xxs,
+    },
+    historyFieldLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    historyFieldValue: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+      flex: 1,
+      textAlign: "right",
+      marginLeft: Spacing.md,
+    },
+    historyFieldMono: {
+      fontFamily: Fonts.mono.regular,
+      letterSpacing: 2,
+    },
+    historyActions: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      marginTop: Spacing.sm,
+      paddingTop: Spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSage,
+    },
+    historyActionBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radii.md,
+      minHeight: 36,
+    },
+    historyRestoreBtn: {
+      backgroundColor: colors.accentMint,
+      ...Shadows.glow,
+    },
+    historyRestoreBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.caption,
+      color: colors.backgroundPrimary,
+    },
+    historyDeleteBtn: {
+      backgroundColor: colors.statusErrorDim,
+      borderWidth: 1,
+      borderColor: colors.statusError,
+    },
+    historyDeleteBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+    },
+  });

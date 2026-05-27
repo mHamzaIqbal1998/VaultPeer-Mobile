@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -35,6 +35,8 @@ function AnimatedStrengthBar({
   active: boolean;
   color: string;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const scaleY = useSharedValue(active ? 1 : 0.4);
   const opacity = useSharedValue(active ? 1 : 0.25);
 
@@ -46,7 +48,7 @@ function AnimatedStrengthBar({
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scaleY: scaleY.value }],
     opacity: opacity.value,
-    backgroundColor: active ? color : Colors.surfaceElevated,
+    backgroundColor: active ? color : colors.surfaceElevated,
   }));
 
   return <Animated.View style={[styles.strengthBar, animatedStyle]} />;
@@ -67,6 +69,8 @@ function OptionPill({
   onPress: () => void;
   iconName: React.ComponentProps<typeof Ionicons>["name"];
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <Pressable
       onPress={onPress}
@@ -78,7 +82,7 @@ function OptionPill({
       <Ionicons
         name={iconName}
         size={16}
-        color={active ? Colors.backgroundPrimary : Colors.textMuted}
+        color={active ? colors.backgroundPrimary : colors.textMuted}
       />
       <Text style={[styles.pillText, active && styles.pillTextActive]}>
         {label}
@@ -92,6 +96,8 @@ function OptionPill({
 // ────────────────────────────────────────────
 
 export default function PasswordGeneratorScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [length, setLength] = useState(16);
   const [useUppercase, setUseUppercase] = useState(true);
   const [useLowercase, setUseLowercase] = useState(true);
@@ -187,7 +193,7 @@ export default function PasswordGeneratorScreen() {
               hitSlop={8}
               accessibilityLabel="Regenerate password"
             >
-              <Ionicons name="refresh" size={22} color={Colors.textPrimary} />
+              <Ionicons name="refresh" size={22} color={colors.textPrimary} />
             </Pressable>
 
             <Pressable
@@ -203,7 +209,7 @@ export default function PasswordGeneratorScreen() {
               <Ionicons
                 name={copied ? "checkmark-circle" : "copy-outline"}
                 size={18}
-                color={Colors.backgroundPrimary}
+                color={colors.backgroundPrimary}
               />
               <Text style={styles.copyBtnText}>
                 {copied ? "Copied" : "Copy"}
@@ -247,7 +253,7 @@ export default function PasswordGeneratorScreen() {
               hitSlop={8}
               accessibilityLabel="Decrease length by 1"
             >
-              <Ionicons name="remove" size={20} color={Colors.textPrimary} />
+              <Ionicons name="remove" size={20} color={colors.textPrimary} />
             </Pressable>
 
             <View style={styles.lengthDisplay}>
@@ -264,7 +270,7 @@ export default function PasswordGeneratorScreen() {
               hitSlop={8}
               accessibilityLabel="Increase length by 1"
             >
-              <Ionicons name="add" size={20} color={Colors.textPrimary} />
+              <Ionicons name="add" size={20} color={colors.textPrimary} />
             </Pressable>
           </View>
 
@@ -336,229 +342,230 @@ export default function PasswordGeneratorScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
-  header: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.huge,
-    gap: Spacing.lg,
-  },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
+    header: {
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+      alignItems: "center",
+    },
+    headerTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    scrollContent: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.xl,
+      paddingBottom: Spacing.huge,
+      gap: Spacing.lg,
+    },
 
-  // Output Card
-  outputCard: {
-    gap: Spacing.md,
-    alignItems: "center",
-  },
-  passwordText: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: 22,
-    color: Colors.accentMint,
-    textAlign: "center",
-    letterSpacing: 0.5,
-    marginVertical: Spacing.sm,
-    lineHeight: 32,
-  },
-  passwordTextSmall: {
-    fontSize: FontSizes.body,
-    lineHeight: 22,
-  },
-  outputActions: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    width: "100%",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: Spacing.xs,
-  },
-  actionBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  actionBtnPressed: {
-    backgroundColor: Colors.borderSage,
-    transform: [{ scale: 0.95 }],
-  },
-  copyBtn: {
-    flex: 1,
-    height: TouchTarget.min,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMint,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    ...Shadows.glow,
-  },
-  copyBtnDisabled: {
-    opacity: 0.5,
-  },
-  copyBtnPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  copyBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
+    // Output Card
+    outputCard: {
+      gap: Spacing.md,
+      alignItems: "center",
+    },
+    passwordText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: 22,
+      color: colors.accentMint,
+      textAlign: "center",
+      letterSpacing: 0.5,
+      marginVertical: Spacing.sm,
+      lineHeight: 32,
+    },
+    passwordTextSmall: {
+      fontSize: FontSizes.body,
+      lineHeight: 22,
+    },
+    outputActions: {
+      flexDirection: "row",
+      gap: Spacing.md,
+      width: "100%",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: Spacing.xs,
+    },
+    actionBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      borderRadius: Radii.md,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    actionBtnPressed: {
+      backgroundColor: colors.borderSage,
+      transform: [{ scale: 0.95 }],
+    },
+    copyBtn: {
+      flex: 1,
+      height: TouchTarget.min,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMint,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      ...Shadows.glow,
+    },
+    copyBtnDisabled: {
+      opacity: 0.5,
+    },
+    copyBtnPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    copyBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
 
-  // Strength Card
-  strengthCard: {
-    paddingVertical: Spacing.md,
-  },
-  strengthHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  strengthLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  strengthValue: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-  },
-  strengthBarContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    height: 6,
-  },
-  strengthBar: {
-    flex: 1,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-  },
+    // Strength Card
+    strengthCard: {
+      paddingVertical: Spacing.md,
+    },
+    strengthHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.sm,
+    },
+    strengthLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    strengthValue: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+    },
+    strengthBarContainer: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      height: 6,
+    },
+    strengthBar: {
+      flex: 1,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+    },
 
-  // Options Card
-  optionsCard: {
-    gap: Spacing.md,
-  },
-  sectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  lengthPickerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    padding: Spacing.xs,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  lengthBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    borderRadius: Radii.sm,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceCard,
-  },
-  lengthBtnPressed: {
-    backgroundColor: Colors.surfaceElevated,
-  },
-  lengthDisplay: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lengthText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.heading,
-    color: Colors.textPrimary,
-  },
-  lengthSub: {
-    fontFamily: Fonts.body.regular,
-    fontSize: 10,
-    color: Colors.textMuted,
-    marginTop: -2,
-  },
-  quickLengthContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  quickLengthBtn: {
-    flex: 1,
-    height: TouchTarget.min,
-    borderRadius: Radii.sm,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  quickLengthBtnActive: {
-    borderColor: Colors.accentMint,
-    backgroundColor: Colors.accentMintDim,
-  },
-  quickLengthText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  quickLengthTextActive: {
-    fontFamily: Fonts.heading.medium,
-    color: Colors.accentMint,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.xs,
-  },
-  pillsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-  },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radii.full,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    minHeight: TouchTarget.min,
-  },
-  pillActive: {
-    backgroundColor: Colors.accentMint,
-    borderColor: Colors.accentMint,
-  },
-  pillText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  pillTextActive: {
-    fontFamily: Fonts.heading.medium,
-    color: Colors.backgroundPrimary,
-  },
-});
+    // Options Card
+    optionsCard: {
+      gap: Spacing.md,
+    },
+    sectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    lengthPickerContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      padding: Spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    lengthBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      borderRadius: Radii.sm,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.surfaceCard,
+    },
+    lengthBtnPressed: {
+      backgroundColor: colors.surfaceElevated,
+    },
+    lengthDisplay: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    lengthText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.heading,
+      color: colors.textPrimary,
+    },
+    lengthSub: {
+      fontFamily: Fonts.body.regular,
+      fontSize: 10,
+      color: colors.textMuted,
+      marginTop: -2,
+    },
+    quickLengthContainer: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+    },
+    quickLengthBtn: {
+      flex: 1,
+      height: TouchTarget.min,
+      borderRadius: Radii.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    quickLengthBtnActive: {
+      borderColor: colors.accentMint,
+      backgroundColor: colors.accentMintDim,
+    },
+    quickLengthText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    quickLengthTextActive: {
+      fontFamily: Fonts.heading.medium,
+      color: colors.accentMint,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.xs,
+    },
+    pillsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Spacing.sm,
+    },
+    pill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radii.full,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      minHeight: TouchTarget.min,
+    },
+    pillActive: {
+      backgroundColor: colors.accentMint,
+      borderColor: colors.accentMint,
+    },
+    pillText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    pillTextActive: {
+      fontFamily: Fonts.heading.medium,
+      color: colors.backgroundPrimary,
+    },
+  });

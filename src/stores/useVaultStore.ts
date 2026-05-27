@@ -27,6 +27,7 @@ import {
   isBiometricEnabled,
   enableBiometric,
 } from "../services/biometricService";
+import * as SecureStore from "expo-secure-store";
 
 // ────────────────────────────────────────────
 // History Entry
@@ -149,6 +150,16 @@ interface VaultStoreState {
   // History Settings
   setHistoryMaxItems: (value: number) => void;
   setHistoryMaxSize: (value: number) => void;
+
+  // App Settings
+  theme: "dark" | "light";
+  autoLockTimeout: number; // in milliseconds
+  clipboardClearTime: number; // in milliseconds
+
+  setTheme: (theme: "dark" | "light") => Promise<void>;
+  setAutoLockTimeout: (timeout: number) => Promise<void>;
+  setClipboardClearTime: (timeout: number) => Promise<void>;
+  loadAppSettings: () => Promise<void>;
 
   // Dirty state
   markClean: () => void;
@@ -411,6 +422,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
   historyLog: [],
   filePath: null,
   isDirty: false,
+
+  // App Settings default values
+  theme: "dark",
+  autoLockTimeout: 60000, // 60 seconds
+  clipboardClearTime: 30000, // 30 seconds
 
   // ────── Core Actions ──────
 
@@ -1457,6 +1473,73 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     set({ isDirty: true });
     state.refreshParsedState();
+  },
+
+  // ────── App Settings Actions ──────
+
+  setTheme: async (theme) => {
+    try {
+      await SecureStore.setItemAsync("vault_app_theme", theme);
+      set({ theme });
+    } catch (e) {
+      console.error("[VaultStore] Failed to save theme settings:", e);
+    }
+  },
+
+  setAutoLockTimeout: async (timeout) => {
+    try {
+      await SecureStore.setItemAsync(
+        "vault_app_auto_lock_timeout",
+        String(timeout)
+      );
+      set({ autoLockTimeout: timeout });
+    } catch (e) {
+      console.error("[VaultStore] Failed to save auto-lock settings:", e);
+    }
+  },
+
+  setClipboardClearTime: async (timeout) => {
+    try {
+      await SecureStore.setItemAsync(
+        "vault_app_clipboard_clear_time",
+        String(timeout)
+      );
+      set({ clipboardClearTime: timeout });
+    } catch (e) {
+      console.error("[VaultStore] Failed to save clipboard settings:", e);
+    }
+  },
+
+  loadAppSettings: async () => {
+    try {
+      const storedTheme = await SecureStore.getItemAsync("vault_app_theme");
+      const storedAutoLock = await SecureStore.getItemAsync(
+        "vault_app_auto_lock_timeout"
+      );
+      const storedClipboard = await SecureStore.getItemAsync(
+        "vault_app_clipboard_clear_time"
+      );
+
+      const updates: Partial<VaultStoreState> = {};
+      if (storedTheme === "light" || storedTheme === "dark") {
+        updates.theme = storedTheme;
+      }
+      if (storedAutoLock) {
+        const val = parseInt(storedAutoLock, 10);
+        if (!isNaN(val)) {
+          updates.autoLockTimeout = val;
+        }
+      }
+      if (storedClipboard) {
+        const val = parseInt(storedClipboard, 10);
+        if (!isNaN(val)) {
+          updates.clipboardClearTime = val;
+        }
+      }
+      set(updates);
+    } catch (e) {
+      console.error("[VaultStore] Failed to load app settings:", e);
+    }
   },
 
   // ────── Dirty State ──────

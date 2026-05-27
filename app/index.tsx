@@ -8,7 +8,13 @@
  * 4. Displaying parsed vault statistics.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { useRouter } from "expo-router";
 import {
   View,
@@ -34,7 +40,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as kdbxweb from "kdbxweb";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   LineHeights,
@@ -104,6 +110,8 @@ function formatLastOpened(timestamp: number): string {
 type ScreenMode = "select" | "unlock" | "create" | "recent";
 
 export default function FileSetupScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const {
     fileUri,
@@ -401,7 +409,7 @@ export default function FileSetupScreen() {
     <View style={styles.headerContainer}>
       <View style={styles.shieldContainer}>
         <Animated.View style={[styles.shieldGlow, glowStyle]} />
-        <Ionicons name="shield-checkmark" size={38} color={Colors.accentMint} />
+        <Ionicons name="shield-checkmark" size={38} color={colors.accentMint} />
       </View>
       <Text style={styles.title}>VaultPeer</Text>
       <Text style={styles.subtitle}>Secure, In-place KeePass Vaults</Text>
@@ -423,7 +431,7 @@ export default function FileSetupScreen() {
               <Ionicons
                 name="alert-circle"
                 size={20}
-                color={Colors.statusError}
+                color={colors.statusError}
               />
               <Text style={styles.errorText}>{currentError}</Text>
             </Animated.View>
@@ -441,11 +449,11 @@ export default function FileSetupScreen() {
                   minHeight: 180,
                 }}
               >
-                <ActivityIndicator size="large" color={Colors.accentMint} />
+                <ActivityIndicator size="large" color={colors.accentMint} />
                 <Text
                   style={[
                     styles.cardTitle,
-                    { marginTop: Spacing.lg, color: Colors.textSecondary },
+                    { marginTop: Spacing.lg, color: colors.textSecondary },
                   ]}
                 >
                   Opening Vault...
@@ -461,7 +469,7 @@ export default function FileSetupScreen() {
                   <Ionicons
                     name="lock-open"
                     size={22}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Vault Decrypted</Text>
                 </View>
@@ -497,7 +505,7 @@ export default function FileSetupScreen() {
                   <Ionicons
                     name="lock-closed"
                     size={16}
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                     style={styles.buttonIcon}
                   />
                   <Text style={styles.buttonText}>Lock Vault</Text>
@@ -516,7 +524,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="file-tray-full"
                         size={22}
-                        color={Colors.accentMint}
+                        color={colors.accentMint}
                       />
                       <Text style={styles.cardTitle}>Unlock Vault</Text>
                     </View>
@@ -531,7 +539,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="key"
                         size={18}
-                        color={Colors.textMuted}
+                        color={colors.textMuted}
                         style={styles.inputIcon}
                       />
                       <TextInput
@@ -540,7 +548,7 @@ export default function FileSetupScreen() {
                         value={password}
                         onChangeText={setPassword}
                         placeholder="Master Password"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         editable={!isLoading}
                       />
                       <Pressable
@@ -551,7 +559,7 @@ export default function FileSetupScreen() {
                         <Ionicons
                           name={showPassword ? "eye-off" : "eye"}
                           size={20}
-                          color={Colors.textMuted}
+                          color={colors.textMuted}
                         />
                       </Pressable>
                     </View>
@@ -570,14 +578,14 @@ export default function FileSetupScreen() {
                         {isLoading ? (
                           <ActivityIndicator
                             size="small"
-                            color={Colors.backgroundPrimary}
+                            color={colors.backgroundPrimary}
                           />
                         ) : (
                           <>
                             <Ionicons
                               name="lock-open"
                               size={16}
-                              color={Colors.backgroundPrimary}
+                              color={colors.backgroundPrimary}
                               style={styles.buttonIcon}
                             />
                             <Text style={styles.buttonText}>Unlock Vault</Text>
@@ -599,7 +607,7 @@ export default function FileSetupScreen() {
                           <Ionicons
                             name="finger-print"
                             size={24}
-                            color={Colors.accentMint}
+                            color={colors.accentMint}
                           />
                         </Pressable>
                       )}
@@ -634,7 +642,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="time"
                         size={22}
-                        color={Colors.accentMint}
+                        color={colors.accentMint}
                       />
                       <Text style={styles.cardTitle}>Recent Vaults</Text>
                     </View>
@@ -658,7 +666,7 @@ export default function FileSetupScreen() {
                             <Ionicons
                               name="file-tray-full-outline"
                               size={20}
-                              color={Colors.accentMint}
+                              color={colors.accentMint}
                               style={styles.recentItemIcon}
                             />
                             <View style={styles.recentItemInfo}>
@@ -702,7 +710,7 @@ export default function FileSetupScreen() {
                             <Ionicons
                               name="trash-outline"
                               size={18}
-                              color={Colors.statusError}
+                              color={colors.statusError}
                             />
                           </Pressable>
                         </View>
@@ -723,14 +731,14 @@ export default function FileSetupScreen() {
                       {isLoading ? (
                         <ActivityIndicator
                           size="small"
-                          color={Colors.backgroundPrimary}
+                          color={colors.backgroundPrimary}
                         />
                       ) : (
                         <>
                           <Ionicons
                             name="folder-open"
                             size={16}
-                            color={Colors.backgroundPrimary}
+                            color={colors.backgroundPrimary}
                             style={styles.buttonIcon}
                           />
                           <Text style={styles.buttonText}>
@@ -753,7 +761,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="add-circle"
                         size={16}
-                        color={Colors.accentMint}
+                        color={colors.accentMint}
                         style={styles.buttonIcon}
                       />
                       <Text style={styles.buttonSecondaryText}>
@@ -786,14 +794,14 @@ export default function FileSetupScreen() {
                       {isLoading ? (
                         <ActivityIndicator
                           size="small"
-                          color={Colors.backgroundPrimary}
+                          color={colors.backgroundPrimary}
                         />
                       ) : (
                         <>
                           <Ionicons
                             name="folder-open"
                             size={16}
-                            color={Colors.backgroundPrimary}
+                            color={colors.backgroundPrimary}
                             style={styles.buttonIcon}
                           />
                           <Text style={styles.buttonText}>
@@ -816,7 +824,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="add-circle"
                         size={16}
-                        color={Colors.accentMint}
+                        color={colors.accentMint}
                         style={styles.buttonIcon}
                       />
                       <Text style={styles.buttonSecondaryText}>
@@ -836,7 +844,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="add-circle"
                         size={22}
-                        color={Colors.accentMint}
+                        color={colors.accentMint}
                       />
                       <Text style={styles.cardTitle}>Create KeePass Vault</Text>
                     </View>
@@ -845,7 +853,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="document-text"
                         size={18}
-                        color={Colors.textMuted}
+                        color={colors.textMuted}
                         style={styles.inputIcon}
                       />
                       <TextInput
@@ -853,7 +861,7 @@ export default function FileSetupScreen() {
                         value={newVaultName}
                         onChangeText={setNewVaultName}
                         placeholder="Database Name"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         editable={!isLoading}
                       />
                     </View>
@@ -862,7 +870,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="key"
                         size={18}
-                        color={Colors.textMuted}
+                        color={colors.textMuted}
                         style={styles.inputIcon}
                       />
                       <TextInput
@@ -871,7 +879,7 @@ export default function FileSetupScreen() {
                         value={newPassword}
                         onChangeText={setNewPassword}
                         placeholder="Master Password"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         editable={!isLoading}
                       />
                       <Pressable
@@ -882,7 +890,7 @@ export default function FileSetupScreen() {
                         <Ionicons
                           name={showNewPassword ? "eye-off" : "eye"}
                           size={20}
-                          color={Colors.textMuted}
+                          color={colors.textMuted}
                         />
                       </Pressable>
                     </View>
@@ -917,7 +925,7 @@ export default function FileSetupScreen() {
                                   active
                                     ? { backgroundColor: strength.color }
                                     : {
-                                        backgroundColor: Colors.surfaceElevated,
+                                        backgroundColor: colors.surfaceElevated,
                                       },
                                 ]}
                               />
@@ -931,7 +939,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name="checkmark-circle"
                         size={18}
-                        color={Colors.textMuted}
+                        color={colors.textMuted}
                         style={styles.inputIcon}
                       />
                       <TextInput
@@ -940,7 +948,7 @@ export default function FileSetupScreen() {
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         placeholder="Confirm Master Password"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         editable={!isLoading}
                       />
                     </View>
@@ -954,7 +962,7 @@ export default function FileSetupScreen() {
                         <Ionicons
                           name="options-outline"
                           size={18}
-                          color={Colors.textMuted}
+                          color={colors.textMuted}
                           style={styles.inputIcon}
                         />
                         <Text style={styles.advancedHeaderTitle}>
@@ -964,7 +972,7 @@ export default function FileSetupScreen() {
                       <Ionicons
                         name={showAdvanced ? "chevron-up" : "chevron-down"}
                         size={18}
-                        color={Colors.textMuted}
+                        color={colors.textMuted}
                       />
                     </Pressable>
 
@@ -1048,14 +1056,14 @@ export default function FileSetupScreen() {
                       {isLoading ? (
                         <ActivityIndicator
                           size="small"
-                          color={Colors.backgroundPrimary}
+                          color={colors.backgroundPrimary}
                         />
                       ) : (
                         <>
                           <Ionicons
                             name="save"
                             size={16}
-                            color={Colors.backgroundPrimary}
+                            color={colors.backgroundPrimary}
                             style={styles.buttonIcon}
                           />
                           <Text style={styles.buttonText}>
@@ -1088,7 +1096,7 @@ export default function FileSetupScreen() {
             <Ionicons
               name="lock-closed"
               size={14}
-              color={Colors.textDisabled}
+              color={colors.textDisabled}
             />
             <Text style={styles.infoBoxText}>
               In-place file editing uses Android SAF / iOS Security Bookmarks.
@@ -1106,422 +1114,423 @@ export default function FileSetupScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.xxxl,
-    paddingBottom: Spacing.huge,
-  },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
+    keyboardView: {
+      flex: 1,
+    },
+    scrollContent: {
+      flexGrow: 1,
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.xxxl,
+      paddingBottom: Spacing.huge,
+    },
 
-  // Header
-  headerContainer: {
-    alignItems: "center",
-    marginBottom: Spacing.xxxl,
-  },
-  shieldContainer: {
-    width: 76,
-    height: 76,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.lg,
-  },
-  shieldGlow: {
-    position: "absolute",
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: Colors.accentMintDim,
-    borderWidth: 1.5,
-    borderColor: "rgba(52, 211, 153, 0.3)",
-    ...Platform.select<any>({
-      ios: Shadows.glow,
-      android: {},
-    }),
-  },
-  title: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.title,
-    lineHeight: LineHeights.title,
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    lineHeight: LineHeights.bodySmall,
-    color: Colors.textMuted,
-    marginTop: Spacing.xs,
-  },
+    // Header
+    headerContainer: {
+      alignItems: "center",
+      marginBottom: Spacing.xxxl,
+    },
+    shieldContainer: {
+      width: 76,
+      height: 76,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: Spacing.lg,
+    },
+    shieldGlow: {
+      position: "absolute",
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      backgroundColor: colors.accentMintDim,
+      borderWidth: 1.5,
+      borderColor: "rgba(52, 211, 153, 0.3)",
+      ...Platform.select<any>({
+        ios: Shadows.glow,
+        android: {},
+      }),
+    },
+    title: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.title,
+      lineHeight: LineHeights.title,
+      color: colors.textPrimary,
+      letterSpacing: -0.5,
+    },
+    subtitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      lineHeight: LineHeights.bodySmall,
+      color: colors.textMuted,
+      marginTop: Spacing.xs,
+    },
 
-  // Cards
-  card: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-    ...Shadows.card,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  cardTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  infoLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    lineHeight: LineHeights.bodySmall,
-    color: Colors.textMuted,
-    marginBottom: Spacing.lg,
-    textAlign: "center",
-  },
-  filenameLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    marginBottom: Spacing.lg,
-  },
-  filename: {
-    fontFamily: Fonts.mono.regular,
-    color: Colors.accentMint,
-  },
+    // Cards
+    card: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.xl,
+      marginBottom: Spacing.xl,
+      ...Shadows.card,
+    },
+    cardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.lg,
+    },
+    cardTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    infoLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      lineHeight: LineHeights.bodySmall,
+      color: colors.textMuted,
+      marginBottom: Spacing.lg,
+      textAlign: "center",
+    },
+    filenameLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      marginBottom: Spacing.lg,
+    },
+    filename: {
+      fontFamily: Fonts.mono.regular,
+      color: colors.accentMint,
+    },
 
-  // Error Card
-  errorCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.statusErrorDim,
-    borderWidth: 1,
-    borderColor: Colors.statusError,
-    borderRadius: Radii.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  errorText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
+    // Error Card
+    errorCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.statusErrorDim,
+      borderWidth: 1,
+      borderColor: colors.statusError,
+      borderRadius: Radii.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.xl,
+      gap: Spacing.sm,
+    },
+    errorText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+      flex: 1,
+    },
 
-  // Form Fields
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.lg,
-    minHeight: TouchTarget.min,
-  },
-  inputIcon: {
-    marginRight: Spacing.sm,
-  },
-  input: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    paddingVertical: Spacing.sm,
-  },
-  eyeButton: {
-    padding: Spacing.xs,
-    justifyContent: "center",
-    alignItems: "center",
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-  },
+    // Form Fields
+    inputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      marginBottom: Spacing.lg,
+      minHeight: TouchTarget.min,
+    },
+    inputIcon: {
+      marginRight: Spacing.sm,
+    },
+    input: {
+      flex: 1,
+      color: colors.textPrimary,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      paddingVertical: Spacing.sm,
+    },
+    eyeButton: {
+      padding: Spacing.xs,
+      justifyContent: "center",
+      alignItems: "center",
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+    },
 
-  // Buttons
-  button: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: TouchTarget.min,
-    paddingVertical: Spacing.md,
-    marginTop: Spacing.xs,
-    ...Shadows.glow,
-  },
-  buttonPressed: {
-    backgroundColor: "#2BC48A",
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonIcon: {
-    marginRight: Spacing.xs,
-  },
-  buttonText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.backgroundPrimary,
-    letterSpacing: 0.5,
-  },
-  buttonSecondary: {
-    backgroundColor: Colors.transparent,
-    borderWidth: 1,
-    borderColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: TouchTarget.min,
-    paddingVertical: Spacing.md,
-    marginTop: Spacing.md,
-  },
-  buttonSecondaryPressed: {
-    backgroundColor: Colors.accentMintDim,
-  },
-  buttonSecondaryText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.accentMint,
-    letterSpacing: 0.5,
-  },
-  lockButton: {
-    backgroundColor: Colors.accentMint,
-  },
-  textButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
-    minHeight: TouchTarget.min,
-  },
-  textButtonText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  rowButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: Spacing.sm,
-  },
+    // Buttons
+    button: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: TouchTarget.min,
+      paddingVertical: Spacing.md,
+      marginTop: Spacing.xs,
+      ...Shadows.glow,
+    },
+    buttonPressed: {
+      backgroundColor: "#2BC48A",
+    },
+    buttonDisabled: {
+      opacity: 0.5,
+    },
+    buttonIcon: {
+      marginRight: Spacing.xs,
+    },
+    buttonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.backgroundPrimary,
+      letterSpacing: 0.5,
+    },
+    buttonSecondary: {
+      backgroundColor: colors.transparent,
+      borderWidth: 1,
+      borderColor: colors.accentMint,
+      borderRadius: Radii.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: TouchTarget.min,
+      paddingVertical: Spacing.md,
+      marginTop: Spacing.md,
+    },
+    buttonSecondaryPressed: {
+      backgroundColor: colors.accentMintDim,
+    },
+    buttonSecondaryText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.accentMint,
+      letterSpacing: 0.5,
+    },
+    lockButton: {
+      backgroundColor: colors.accentMint,
+    },
+    textButton: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: Spacing.sm,
+      marginTop: Spacing.sm,
+      minHeight: TouchTarget.min,
+    },
+    textButtonText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    rowButtons: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: Spacing.sm,
+    },
 
-  // Divider
-  divider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.md,
-  },
+    // Divider
+    divider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.md,
+    },
 
-  // Statistics
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statsLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  statsValue: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
+    // Statistics
+    statsRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    statsLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    statsValue: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
 
-  // Info Box
-  infoBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-  },
-  infoBoxText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    lineHeight: LineHeights.caption,
-    color: Colors.textDisabled,
-    flex: 1,
-  },
-  buttonRow: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginTop: Spacing.xs,
-    alignItems: "center",
-  },
-  bioButton: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.accentMint,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: Colors.transparent,
-  },
-  bioButtonPressed: {
-    backgroundColor: Colors.accentMintDim,
-  },
-  bioButtonDisabled: {
-    opacity: 0.5,
-  },
-  advancedHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-    marginBottom: Spacing.md,
-    marginTop: Spacing.xs,
-  },
-  advancedHeaderLabelContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  advancedHeaderTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-  },
-  advancedContent: {
-    paddingBottom: Spacing.md,
-    gap: Spacing.md,
-  },
-  optionSection: {
-    gap: Spacing.xs,
-  },
-  optionLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  segmentedControl: {
-    flexDirection: "row",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: 2,
-    gap: 2,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: Spacing.xs + 2,
-    borderRadius: Radii.sm,
-    justifyContent: "center",
-    alignItems: "center",
-    minHeight: 32,
-  },
-  segmentBtnActive: {
-    backgroundColor: Colors.accentMintDim,
-  },
-  segmentBtnText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textAlign: "center",
-  },
-  segmentBtnTextActive: {
-    fontFamily: Fonts.heading.semiBold,
-    color: Colors.accentMint,
-    textAlign: "center",
-  },
-  strengthContainer: {
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.md,
-    backgroundColor: Colors.surfaceCard,
-    padding: Spacing.md,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  strengthHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  strengthLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  strengthValue: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-  },
-  strengthBarContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    height: 6,
-  },
-  strengthBar: {
-    flex: 1,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  recentList: {
-    maxHeight: 220,
-    marginBottom: Spacing.md,
-  },
-  recentItemContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    paddingRight: Spacing.sm,
-  },
-  recentItemPressable: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    minHeight: TouchTarget.min,
-  },
-  recentItemPressed: {
-    opacity: 0.7,
-  },
-  recentItemIcon: {
-    marginRight: Spacing.md,
-  },
-  recentItemInfo: {
-    flex: 1,
-  },
-  recentItemName: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  recentItemMeta: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  recentItemRemoveBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  recentItemRemoveBtnPressed: {
-    opacity: 0.6,
-  },
-});
+    // Info Box
+    infoBox: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+    },
+    infoBoxText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      lineHeight: LineHeights.caption,
+      color: colors.textDisabled,
+      flex: 1,
+    },
+    buttonRow: {
+      flexDirection: "row",
+      gap: Spacing.md,
+      marginTop: Spacing.xs,
+      alignItems: "center",
+    },
+    bioButton: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.accentMint,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.transparent,
+    },
+    bioButtonPressed: {
+      backgroundColor: colors.accentMintDim,
+    },
+    bioButtonDisabled: {
+      opacity: 0.5,
+    },
+    advancedHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: Spacing.sm,
+      marginBottom: Spacing.md,
+      marginTop: Spacing.xs,
+    },
+    advancedHeaderLabelContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    advancedHeaderTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+    },
+    advancedContent: {
+      paddingBottom: Spacing.md,
+      gap: Spacing.md,
+    },
+    optionSection: {
+      gap: Spacing.xs,
+    },
+    optionLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    segmentedControl: {
+      flexDirection: "row",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: 2,
+      gap: 2,
+    },
+    segmentBtn: {
+      flex: 1,
+      paddingVertical: Spacing.xs + 2,
+      borderRadius: Radii.sm,
+      justifyContent: "center",
+      alignItems: "center",
+      minHeight: 32,
+    },
+    segmentBtnActive: {
+      backgroundColor: colors.accentMintDim,
+    },
+    segmentBtnText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+    segmentBtnTextActive: {
+      fontFamily: Fonts.heading.semiBold,
+      color: colors.accentMint,
+      textAlign: "center",
+    },
+    strengthContainer: {
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.md,
+      backgroundColor: colors.surfaceCard,
+      padding: Spacing.md,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    strengthHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.sm,
+    },
+    strengthLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    strengthValue: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+    },
+    strengthBarContainer: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      height: 6,
+    },
+    strengthBar: {
+      flex: 1,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+    },
+    recentList: {
+      maxHeight: 220,
+      marginBottom: Spacing.md,
+    },
+    recentItemContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      paddingRight: Spacing.sm,
+    },
+    recentItemPressable: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      padding: Spacing.md,
+      minHeight: TouchTarget.min,
+    },
+    recentItemPressed: {
+      opacity: 0.7,
+    },
+    recentItemIcon: {
+      marginRight: Spacing.md,
+    },
+    recentItemInfo: {
+      flex: 1,
+    },
+    recentItemName: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    recentItemMeta: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    recentItemRemoveBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    recentItemRemoveBtnPressed: {
+      opacity: 0.6,
+    },
+  });

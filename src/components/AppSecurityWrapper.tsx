@@ -8,15 +8,14 @@ interface AppSecurityWrapperProps {
 
 // Security constants
 const GRACE_PERIOD_MS = 30000; // 30 seconds grace period for background/inactive states
-const INACTIVITY_TIMEOUT_MS = 60000; // 60 seconds of user touch inactivity
 
 /**
  * Global wrapper to enforce application security:
  * 1. Purges the database from memory if the app goes to the background.
- * 2. Auto-locks/purges the database after 60 seconds of user touch inactivity.
+ * 2. Auto-locks/purges the database after user touch inactivity.
  */
 export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
-  const { closeDatabase, _db: db } = useVaultStore();
+  const { closeDatabase, _db: db, autoLockTimeout } = useVaultStore();
   const inactivityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -37,12 +36,12 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
       clearTimeout(inactivityTimeoutRef.current);
     }
     if (db) {
-      // Auto-lock after 60 seconds of inactivity
+      // Auto-lock after configured time of inactivity
       inactivityTimeoutRef.current = setTimeout(() => {
         lockDatabase();
-      }, INACTIVITY_TIMEOUT_MS);
+      }, autoLockTimeout);
     }
-  }, [db, lockDatabase]);
+  }, [db, lockDatabase, autoLockTimeout]);
 
   // AppState background/inactive listener
   useEffect(() => {

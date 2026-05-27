@@ -27,7 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -54,6 +54,8 @@ function GroupRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const entryCount = group.entries.length;
   const subgroupCount = group.groups.length;
 
@@ -69,7 +71,7 @@ function GroupRow({
         <Ionicons
           name={GROUP_DEFAULT_ICON}
           size={22}
-          color={Colors.accentMint}
+          color={colors.accentMint}
         />
       </View>
       <View style={styles.rowContent}>
@@ -85,7 +87,7 @@ function GroupRow({
           {subgroupCount === 0 && entryCount === 0 && "Empty"}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={Colors.textDisabled} />
+      <Ionicons name="chevron-forward" size={18} color={colors.textDisabled} />
     </Pressable>
   );
 }
@@ -97,6 +99,8 @@ function EntryRow({
   entry: VaultEntry;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const iconName = getKdbxIconName(entry.iconId);
 
   return (
@@ -107,7 +111,7 @@ function EntryRow({
       accessibilityLabel={`View entry ${entry.title}`}
     >
       <View style={styles.rowIconContainer}>
-        <Ionicons name={iconName} size={20} color={Colors.textMuted} />
+        <Ionicons name={iconName} size={20} color={colors.textMuted} />
       </View>
       <View style={styles.rowContent}>
         <Text style={styles.entryTitle} numberOfLines={1}>
@@ -117,12 +121,12 @@ function EntryRow({
           {entry.username || "No username"}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={16} color={Colors.textDisabled} />
+      <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
     </Pressable>
   );
 }
 
-const getTemplateCardStyle = (title: string) => {
+const getTemplateCardStyle = (title: string, colors: any) => {
   switch (title.toLowerCase()) {
     case "credit card":
       return {
@@ -170,7 +174,7 @@ const getTemplateCardStyle = (title: string) => {
       return {
         icon: "shield-outline" as const,
         bgDim: "rgba(52, 211, 153, 0.12)",
-        color: Colors.accentMint,
+        color: colors.accentMint,
       };
   }
 };
@@ -181,6 +185,12 @@ const getTemplateCardStyle = (title: string) => {
 
 export default function VaultBrowserScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const templateModalStyles = useMemo(
+    () => createTemplateModalStyles(colors),
+    [colors]
+  );
   const { saveVault } = useFilePicker();
 
   const rootGroup = useVaultStore((state) => state.rootGroup);
@@ -477,7 +487,7 @@ export default function VaultBrowserScreen() {
           <Ionicons
             name="alert-circle-outline"
             size={48}
-            color={Colors.textDisabled}
+            color={colors.textDisabled}
           />
           <Text style={styles.emptyText}>No vault loaded</Text>
         </View>
@@ -500,7 +510,7 @@ export default function VaultBrowserScreen() {
               <Ionicons
                 name="chevron-back"
                 size={24}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </Pressable>
           )}
@@ -530,12 +540,12 @@ export default function VaultBrowserScreen() {
                 accessibilityLabel="Save changes"
               >
                 {saving ? (
-                  <ActivityIndicator size="small" color={Colors.accentMint} />
+                  <ActivityIndicator size="small" color={colors.accentMint} />
                 ) : (
                   <Ionicons
                     name="save-outline"
                     size={22}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                 )}
               </Pressable>
@@ -553,7 +563,7 @@ export default function VaultBrowserScreen() {
             <Ionicons
               name={showSearch ? "close" : "search"}
               size={22}
-              color={Colors.textPrimary}
+              color={colors.textPrimary}
             />
           </Pressable>
           {canModifyCurrentGroup && (
@@ -566,7 +576,7 @@ export default function VaultBrowserScreen() {
               <Ionicons
                 name="ellipsis-vertical"
                 size={22}
-                color={Colors.textPrimary}
+                color={colors.textPrimary}
               />
             </Pressable>
           )}
@@ -584,14 +594,14 @@ export default function VaultBrowserScreen() {
             style={styles.breadcrumbItem}
             hitSlop={4}
           >
-            <Ionicons name="home-outline" size={14} color={Colors.textMuted} />
+            <Ionicons name="home-outline" size={14} color={colors.textMuted} />
           </Pressable>
           {breadcrumbLabels.slice(0, -1).map((crumb, i) => (
             <React.Fragment key={`${crumb.uuid}-${i}`}>
               <Ionicons
                 name="chevron-forward"
                 size={12}
-                color={Colors.textDisabled}
+                color={colors.textDisabled}
               />
               <Pressable
                 onPress={() => {
@@ -620,7 +630,7 @@ export default function VaultBrowserScreen() {
           <Ionicons
             name="chevron-forward"
             size={12}
-            color={Colors.textDisabled}
+            color={colors.textDisabled}
           />
           <Text style={styles.breadcrumbActive} numberOfLines={1}>
             {breadcrumbLabels[breadcrumbLabels.length - 1]?.name}
@@ -638,7 +648,7 @@ export default function VaultBrowserScreen() {
           <Ionicons
             name="search"
             size={18}
-            color={Colors.textMuted}
+            color={colors.textMuted}
             style={styles.searchIcon}
           />
           <TextInput
@@ -646,7 +656,7 @@ export default function VaultBrowserScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search entries..."
-            placeholderTextColor={Colors.textDisabled}
+            placeholderTextColor={colors.textDisabled}
             autoFocus
             returnKeyType="search"
             autoCapitalize="none"
@@ -661,7 +671,7 @@ export default function VaultBrowserScreen() {
               <Ionicons
                 name="close-circle"
                 size={18}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
             </Pressable>
           )}
@@ -690,7 +700,7 @@ export default function VaultBrowserScreen() {
             <Ionicons
               name={isSearching ? "search-outline" : "folder-open-outline"}
               size={40}
-              color={Colors.textDisabled}
+              color={colors.textDisabled}
             />
             <Text style={styles.emptyText}>
               {isSearching ? "No matching entries" : "This group is empty"}
@@ -716,7 +726,7 @@ export default function VaultBrowserScreen() {
             value={renameGroupName}
             onChangeText={setRenameGroupName}
             placeholder="Rename group..."
-            placeholderTextColor={Colors.textDisabled}
+            placeholderTextColor={colors.textDisabled}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleRenameGroup}
@@ -726,7 +736,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupConfirm}
             hitSlop={4}
           >
-            <Ionicons name="checkmark" size={22} color={Colors.accentMint} />
+            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -737,7 +747,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupCancel}
             hitSlop={4}
           >
-            <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <Ionicons name="close" size={22} color={colors.textMuted} />
           </Pressable>
         </Animated.View>
       )}
@@ -754,7 +764,7 @@ export default function VaultBrowserScreen() {
             value={newGroupName}
             onChangeText={setNewGroupName}
             placeholder="New group name..."
-            placeholderTextColor={Colors.textDisabled}
+            placeholderTextColor={colors.textDisabled}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleCreateGroup}
@@ -764,7 +774,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupConfirm}
             hitSlop={4}
           >
-            <Ionicons name="checkmark" size={22} color={Colors.accentMint} />
+            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -774,7 +784,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupCancel}
             hitSlop={4}
           >
-            <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <Ionicons name="close" size={22} color={colors.textMuted} />
           </Pressable>
         </Animated.View>
       )}
@@ -799,7 +809,7 @@ export default function VaultBrowserScreen() {
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityLabel="Add entry or group"
           >
-            <Ionicons name="add" size={28} color={Colors.backgroundPrimary} />
+            <Ionicons name="add" size={28} color={colors.backgroundPrimary} />
           </Pressable>
         </View>
       )}
@@ -826,7 +836,7 @@ export default function VaultBrowserScreen() {
                 <Ionicons
                   name="copy-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={templateModalStyles.headerTitle}>
@@ -837,7 +847,7 @@ export default function VaultBrowserScreen() {
                 hitSlop={12}
                 style={templateModalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -865,7 +875,7 @@ export default function VaultBrowserScreen() {
                   <Ionicons
                     name="add-outline"
                     size={24}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </View>
                 <Text style={templateModalStyles.cardTitle}>Blank Entry</Text>
@@ -879,7 +889,7 @@ export default function VaultBrowserScreen() {
 
               {/* Dynamic Templates */}
               {templateEntries.map((entry) => {
-                const styleInfo = getTemplateCardStyle(entry.title);
+                const styleInfo = getTemplateCardStyle(entry.title, colors);
                 const customKeys = Object.keys(entry.fields).filter(
                   (k) =>
                     !["Title", "UserName", "Password", "URL", "Notes"].includes(
@@ -946,359 +956,363 @@ export default function VaultBrowserScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    gap: Spacing.xs,
-  },
-  backButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    flex: 1,
-  },
-  headerTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.heading,
-    color: Colors.textPrimary,
-    flexShrink: 1,
-  },
-  dirtyBadge: {
-    backgroundColor: Colors.statusWarningDim,
-    borderRadius: Radii.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-  },
-  dirtyBadgeText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.statusWarning,
-  },
-  headerRight: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  iconButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // Header
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    headerLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      gap: Spacing.xs,
+    },
+    backButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    headerTitleContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      flex: 1,
+    },
+    headerTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.heading,
+      color: colors.textPrimary,
+      flexShrink: 1,
+    },
+    dirtyBadge: {
+      backgroundColor: colors.statusWarningDim,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+    },
+    dirtyBadgeText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.statusWarning,
+    },
+    headerRight: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+    },
+    iconButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // Breadcrumbs
-  breadcrumbBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    gap: 4,
-    backgroundColor: Colors.surfaceCard,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  breadcrumbItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-  },
-  breadcrumbText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    maxWidth: 80,
-  },
-  breadcrumbActive: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    maxWidth: 120,
-  },
+    // Breadcrumbs
+    breadcrumbBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+      gap: 4,
+      backgroundColor: colors.surfaceCard,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    breadcrumbItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 2,
+      paddingHorizontal: 4,
+    },
+    breadcrumbText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      maxWidth: 80,
+    },
+    breadcrumbActive: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+      maxWidth: 120,
+    },
 
-  // Search
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: Spacing.lg,
-    marginVertical: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    minHeight: TouchTarget.min,
-  },
-  searchIcon: {
-    marginRight: Spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.sm,
-  },
-  clearButton: {
-    padding: Spacing.xs,
-  },
-  searchMeta: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs,
-  },
-  searchMetaText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
+    // Search
+    searchContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginHorizontal: Spacing.lg,
+      marginVertical: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      minHeight: TouchTarget.min,
+    },
+    searchIcon: {
+      marginRight: Spacing.sm,
+    },
+    searchInput: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      paddingVertical: Spacing.sm,
+    },
+    clearButton: {
+      padding: Spacing.xs,
+    },
+    searchMeta: {
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.xs,
+    },
+    searchMetaText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
 
-  // List
-  listContent: {
-    paddingBottom: 100,
-  },
+    // List
+    listContent: {
+      paddingBottom: 100,
+    },
 
-  // Group Row
-  groupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    minHeight: 56,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  rowPressed: {
-    backgroundColor: Colors.surfaceElevated,
-  },
-  rowIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.accentMintDim,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.md,
-  },
-  rowContent: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  groupName: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  groupMeta: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
+    // Group Row
+    groupRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.lg,
+      minHeight: 56,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    rowPressed: {
+      backgroundColor: colors.surfaceElevated,
+    },
+    rowIconContainer: {
+      width: 36,
+      height: 36,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.accentMintDim,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: Spacing.md,
+    },
+    rowContent: {
+      flex: 1,
+      justifyContent: "center",
+    },
+    groupName: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    groupMeta: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
 
-  // Entry Row
-  entryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    minHeight: 56,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.borderSage,
-  },
-  entryTitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  entryUsername: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
+    // Entry Row
+    entryRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.lg,
+      minHeight: 56,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.borderSage,
+    },
+    entryTitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    entryUsername: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
 
-  // Empty State
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: Spacing.huge,
-    gap: Spacing.md,
-  },
-  emptyText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textMuted,
-  },
-  emptyHint: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textDisabled,
-  },
+    // Empty State
+    emptyState: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingTop: Spacing.huge,
+      gap: Spacing.md,
+    },
+    emptyText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textMuted,
+    },
+    emptyHint: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textDisabled,
+    },
 
-  // New Group Input
-  newGroupBar: {
-    position: "absolute",
-    bottom: 96,
-    left: Spacing.lg,
-    right: Spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceCard,
-    borderWidth: 1,
-    borderColor: Colors.borderSageActive,
-    borderRadius: Radii.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    ...Shadows.elevated,
-  },
-  newGroupInput: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.xs,
-  },
-  newGroupConfirm: {
-    padding: Spacing.sm,
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  newGroupCancel: {
-    padding: Spacing.sm,
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // New Group Input
+    newGroupBar: {
+      position: "absolute",
+      bottom: 96,
+      left: Spacing.lg,
+      right: Spacing.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceCard,
+      borderWidth: 1,
+      borderColor: colors.borderSageActive,
+      borderRadius: Radii.lg,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      ...Shadows.elevated,
+    },
+    newGroupInput: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      paddingVertical: Spacing.xs,
+    },
+    newGroupConfirm: {
+      padding: Spacing.sm,
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    newGroupCancel: {
+      padding: Spacing.sm,
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // FAB
-  fabContainer: {
-    position: "absolute",
-    bottom: Spacing.xxl,
-    right: Spacing.xl,
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.accentMint,
-    alignItems: "center",
-    justifyContent: "center",
-    ...Shadows.glow,
-  },
-  fabPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.95 }],
-  },
-});
+    // FAB
+    fabContainer: {
+      position: "absolute",
+      bottom: Spacing.xxl,
+      right: Spacing.xl,
+    },
+    fab: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accentMint,
+      alignItems: "center",
+      justifyContent: "center",
+      ...Shadows.glow,
+    },
+    fabPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.95 }],
+    },
+  });
+}
 
-const templateModalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: Colors.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  overlayPress: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContainer: {
-    width: "92%",
-    maxWidth: 440,
-    maxHeight: "80%",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    ...Shadows.elevated,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  headerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMintDim,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: Spacing.md,
-    paddingBottom: Spacing.md,
-  },
-  card: {
-    width: "47%",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.md,
-    marginBottom: Spacing.xs,
-    alignItems: "flex-start",
-  },
-  cardIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: Radii.md,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  cardTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xxs,
-  },
-  cardSubtitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    lineHeight: 16,
-  },
-});
+function createTemplateModalStyles(colors: any) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    overlayPress: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    modalContainer: {
+      width: "92%",
+      maxWidth: 440,
+      maxHeight: "80%",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      ...Shadows.elevated,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.lg,
+    },
+    headerIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    closeBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    gridContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      gap: Spacing.md,
+      paddingBottom: Spacing.md,
+    },
+    card: {
+      width: "47%",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.md,
+      marginBottom: Spacing.xs,
+      alignItems: "flex-start",
+    },
+    cardIconContainer: {
+      width: 44,
+      height: 44,
+      borderRadius: Radii.md,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: Spacing.md,
+    },
+    cardTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+      marginBottom: Spacing.xxs,
+    },
+    cardSubtitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      lineHeight: 16,
+    },
+  });
+}

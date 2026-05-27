@@ -22,7 +22,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -69,6 +69,22 @@ function getFilenameFromUri(uri?: string): string {
   }
 }
 
+// ────────────────────────────────────────────
+// Format Helpers
+// ────────────────────────────────────────────
+
+function formatAutoLock(ms: number) {
+  if (ms === 0) return "Never";
+  if (ms < 60000) return `${ms / 1000}s`;
+  return `${ms / 60000}m`;
+}
+
+function formatClipboard(ms: number) {
+  if (ms === 0) return "Never";
+  if (ms < 60000) return `${ms / 1000}s`;
+  return `${ms / 60000}m`;
+}
+
 type SettingsTab = "database" | "app";
 
 // ────────────────────────────────────────────
@@ -82,6 +98,8 @@ function SegmentedControl({
   activeTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
 }) {
+  const colors = useThemeColors();
+  const segStyles = useMemo(() => createSegStyles(colors), [colors]);
   const indicatorX = useSharedValue(activeTab === "database" ? 0 : 1);
 
   useEffect(() => {
@@ -108,8 +126,8 @@ function SegmentedControl({
           size={15}
           color={
             activeTab === "database"
-              ? Colors.backgroundPrimary
-              : Colors.textMuted
+              ? colors.backgroundPrimary
+              : colors.textMuted
           }
         />
         <Text
@@ -130,7 +148,7 @@ function SegmentedControl({
           name="phone-portrait-outline"
           size={15}
           color={
-            activeTab === "app" ? Colors.backgroundPrimary : Colors.textMuted
+            activeTab === "app" ? colors.backgroundPrimary : colors.textMuted
           }
         />
         <Text
@@ -146,40 +164,42 @@ function SegmentedControl({
   );
 }
 
-const segStyles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    padding: 3,
-    position: "relative",
-  },
-  indicator: {
-    position: "absolute",
-    top: 3,
-    bottom: 3,
-    width: "50%",
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.sm,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    zIndex: 1,
-  },
-  tabText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  tabTextActive: {
-    color: Colors.backgroundPrimary,
-  },
-});
+function createSegStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: "row",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      padding: 3,
+      position: "relative",
+    },
+    indicator: {
+      position: "absolute",
+      top: 3,
+      bottom: 3,
+      width: "50%",
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.sm,
+    },
+    tab: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.sm,
+      zIndex: 1,
+    },
+    tabText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    tabTextActive: {
+      color: colors.backgroundPrimary,
+    },
+  });
+}
 
 // ────────────────────────────────────────────
 // Settings Row Component
@@ -204,20 +224,23 @@ function SettingsRow({
   rightElement?: React.ReactNode;
   destructive?: boolean;
 }) {
+  const colors = useThemeColors();
+  const rowStyles = useMemo(() => createRowStyles(colors), [colors]);
+
   const content = (
     <View style={rowStyles.row}>
       <Ionicons
         name={icon as any}
         size={20}
         color={
-          iconColor || (destructive ? Colors.statusError : Colors.textPrimary)
+          iconColor || (destructive ? colors.statusError : colors.textPrimary)
         }
       />
       <View style={rowStyles.textCol}>
         <Text
           style={[
             rowStyles.title,
-            destructive && { color: Colors.statusError },
+            destructive && { color: colors.statusError },
           ]}
         >
           {title}
@@ -231,7 +254,7 @@ function SettingsRow({
       )}
       {rightElement}
       {onPress && !rightElement && (
-        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
       )}
     </View>
   );
@@ -249,35 +272,37 @@ function SettingsRow({
   return content;
 }
 
-const rowStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-    minHeight: TouchTarget.min,
-    gap: Spacing.md,
-  },
-  textCol: {
-    flex: 1,
-  },
-  title: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  value: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    maxWidth: 140,
-  },
-});
+function createRowStyles(colors: any) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.sm,
+      minHeight: TouchTarget.min,
+      gap: Spacing.md,
+    },
+    textCol: {
+      flex: 1,
+    },
+    title: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    subtitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    value: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+      maxWidth: 140,
+    },
+  });
+}
 
 // ────────────────────────────────────────────
 // Main Settings Screen
@@ -285,6 +310,11 @@ const rowStyles = StyleSheet.create({
 
 export default function VaultSettingsScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const modalStyles = useMemo(() => createModalStyles(colors), [colors]);
+  const prefStyles = useMemo(() => createPrefStyles(colors), [colors]);
+  const rowStyles = useMemo(() => createRowStyles(colors), [colors]);
   const {
     closeDatabase,
     _db: db,
@@ -304,6 +334,12 @@ export default function VaultSettingsScreen() {
     changeMasterPassword,
     setHistoryMaxItems,
     setHistoryMaxSize,
+    theme,
+    setTheme,
+    autoLockTimeout,
+    setAutoLockTimeout,
+    clipboardClearTime,
+    setClipboardClearTime,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -458,6 +494,38 @@ export default function VaultSettingsScreen() {
   };
 
   const [showKdfModal, setShowKdfModal] = useState(false);
+
+  const handleAutoLockPress = useCallback(() => {
+    Alert.alert(
+      "Auto-Lock Timeout",
+      "Select inactivity duration before the database is locked.",
+      [
+        { text: "15 Seconds", onPress: () => setAutoLockTimeout(15000) },
+        { text: "30 Seconds", onPress: () => setAutoLockTimeout(30000) },
+        { text: "1 Minute", onPress: () => setAutoLockTimeout(60000) },
+        { text: "2 Minutes", onPress: () => setAutoLockTimeout(120000) },
+        { text: "5 Minutes", onPress: () => setAutoLockTimeout(300000) },
+        { text: "Never", onPress: () => setAutoLockTimeout(0) },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }, [setAutoLockTimeout]);
+
+  const handleClipboardPress = useCallback(() => {
+    Alert.alert(
+      "Clipboard Clear",
+      "Select delay before sensitive clipboard items are cleared.",
+      [
+        { text: "10 Seconds", onPress: () => setClipboardClearTime(10000) },
+        { text: "20 Seconds", onPress: () => setClipboardClearTime(20000) },
+        { text: "30 Seconds", onPress: () => setClipboardClearTime(30000) },
+        { text: "1 Minute", onPress: () => setClipboardClearTime(60000) },
+        { text: "2 Minutes", onPress: () => setClipboardClearTime(120000) },
+        { text: "Never", onPress: () => setClipboardClearTime(0) },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }, [setClipboardClearTime]);
 
   useEffect(() => {
     async function checkBiometrics() {
@@ -697,7 +765,7 @@ export default function VaultSettingsScreen() {
               <Ionicons
                 name="warning-outline"
                 size={20}
-                color={Colors.statusWarning}
+                color={colors.statusWarning}
               />
               <Text style={styles.warningTitle}>Unsaved Changes</Text>
             </View>
@@ -717,14 +785,14 @@ export default function VaultSettingsScreen() {
               {saving ? (
                 <ActivityIndicator
                   size="small"
-                  color={Colors.backgroundPrimary}
+                  color={colors.backgroundPrimary}
                 />
               ) : (
                 <>
                   <Ionicons
                     name="save-outline"
                     size={16}
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                   />
                   <Text style={styles.saveBtnText}>Save Changes</Text>
                 </>
@@ -743,7 +811,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="information-circle-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Vault Information</Text>
                 </View>
@@ -780,7 +848,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="shield-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Security & Encryption</Text>
                 </View>
@@ -811,7 +879,7 @@ export default function VaultSettingsScreen() {
                 <View style={styles.divider} />
                 <SettingsRow
                   icon="key-outline"
-                  iconColor={Colors.accentMint}
+                  iconColor={colors.accentMint}
                   title="Change Master Password"
                   subtitle="Modify database master passphrase"
                   onPress={() => setShowChangePasswordModal(true)}
@@ -819,7 +887,7 @@ export default function VaultSettingsScreen() {
                 <View style={styles.divider} />
                 <SettingsRow
                   icon="speedometer-outline"
-                  iconColor={Colors.accentMint}
+                  iconColor={colors.accentMint}
                   title="Tune KDF Parameters"
                   subtitle="Benchmark & adjust security strength"
                   onPress={() => setShowKdfModal(true)}
@@ -842,7 +910,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="hammer-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Database Maintenance</Text>
                 </View>
@@ -862,7 +930,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="time-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Entry History</Text>
                 </View>
@@ -889,7 +957,7 @@ export default function VaultSettingsScreen() {
                           }
                         }}
                         keyboardType="number-pad"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         placeholder="10"
                         maxLength={4}
                       />
@@ -920,7 +988,7 @@ export default function VaultSettingsScreen() {
                           }
                         }}
                         keyboardType="decimal-pad"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         placeholder="6"
                         maxLength={6}
                       />
@@ -938,7 +1006,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="copy-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Entry Templates</Text>
                 </View>
@@ -966,8 +1034,8 @@ export default function VaultSettingsScreen() {
                       size={38}
                       color={
                         storeMeta?.entryTemplatesEnabled
-                          ? Colors.accentMint
-                          : Colors.textMuted
+                          ? colors.accentMint
+                          : colors.textMuted
                       }
                     />
                   </Pressable>
@@ -994,7 +1062,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="trash-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Recycle Bin</Text>
                 </View>
@@ -1023,8 +1091,8 @@ export default function VaultSettingsScreen() {
                       size={38}
                       color={
                         storeMeta?.recycleBinEnabled
-                          ? Colors.accentMint
-                          : Colors.textMuted
+                          ? colors.accentMint
+                          : colors.textMuted
                       }
                     />
                   </Pressable>
@@ -1042,7 +1110,7 @@ export default function VaultSettingsScreen() {
                     <View style={styles.divider} />
                     <SettingsRow
                       icon="trash-bin-outline"
-                      iconColor={Colors.statusError}
+                      iconColor={colors.statusError}
                       title="Empty Recycle Bin"
                       subtitle="Permanently delete all items in the bin"
                       onPress={handleEmptyRecycleBinPress}
@@ -1060,7 +1128,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="construct-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Database Actions</Text>
                 </View>
@@ -1098,7 +1166,7 @@ export default function VaultSettingsScreen() {
                     <Ionicons
                       name="finger-print-outline"
                       size={18}
-                      color={Colors.accentMint}
+                      color={colors.accentMint}
                     />
                     <Text style={styles.cardTitle}>Biometric Unlock</Text>
                   </View>
@@ -1123,8 +1191,8 @@ export default function VaultSettingsScreen() {
                         size={38}
                         color={
                           biometricEnabled
-                            ? Colors.accentMint
-                            : Colors.textMuted
+                            ? colors.accentMint
+                            : colors.textMuted
                         }
                       />
                     </Pressable>
@@ -1142,7 +1210,7 @@ export default function VaultSettingsScreen() {
                           value={biometricPassword}
                           onChangeText={setBiometricPassword}
                           placeholder="Master Password"
-                          placeholderTextColor={Colors.textDisabled}
+                          placeholderTextColor={colors.textDisabled}
                           autoCapitalize="none"
                           autoCorrect={false}
                         />
@@ -1157,7 +1225,7 @@ export default function VaultSettingsScreen() {
                           {verifying ? (
                             <ActivityIndicator
                               size="small"
-                              color={Colors.backgroundPrimary}
+                              color={colors.backgroundPrimary}
                             />
                           ) : (
                             <Text style={styles.confirmBtnText}>Verify</Text>
@@ -1177,29 +1245,75 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="settings-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Preferences</Text>
                 </View>
+
+                {/* Theme Selector */}
+                <View style={prefStyles.themeRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Theme</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Select application color palette
+                    </Text>
+                  </View>
+                  <View style={prefStyles.segmentedContainer}>
+                    <Pressable
+                      style={[
+                        prefStyles.segmentButton,
+                        theme === "dark" && prefStyles.segmentButtonActive,
+                      ]}
+                      onPress={() => setTheme("dark")}
+                    >
+                      <Text
+                        style={[
+                          prefStyles.segmentText,
+                          theme === "dark" && prefStyles.segmentTextActive,
+                        ]}
+                      >
+                        Dark
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        prefStyles.segmentButton,
+                        theme === "light" && prefStyles.segmentButtonActive,
+                      ]}
+                      onPress={() => setTheme("light")}
+                    >
+                      <Text
+                        style={[
+                          prefStyles.segmentText,
+                          theme === "light" && prefStyles.segmentTextActive,
+                        ]}
+                      >
+                        Light
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Auto Lock */}
                 <SettingsRow
                   icon="timer-outline"
                   title="Auto-Lock"
-                  subtitle="Lock after 60 seconds of inactivity"
-                  value="60s"
+                  subtitle="Inactivity duration before locking"
+                  value={formatAutoLock(autoLockTimeout)}
+                  onPress={handleAutoLockPress}
                 />
+
                 <View style={styles.divider} />
+
+                {/* Clipboard Clear */}
                 <SettingsRow
                   icon="clipboard-outline"
                   title="Clipboard Clear"
-                  subtitle="Auto-clear copied passwords"
-                  value="30s"
-                />
-                <View style={styles.divider} />
-                <SettingsRow
-                  icon="moon-outline"
-                  title="Theme"
-                  subtitle="Cyber-Sage dark mode"
-                  value="Dark"
+                  subtitle="Delay before clearing clipboard"
+                  value={formatClipboard(clipboardClearTime)}
+                  onPress={handleClipboardPress}
                 />
               </CyberCard>
             </Animated.View>
@@ -1211,7 +1325,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="heart-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>About</Text>
                 </View>
@@ -1286,7 +1400,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="key-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={modalStyles.headerTitle}>
@@ -1306,7 +1420,7 @@ export default function VaultSettingsScreen() {
                 hitSlop={12}
                 style={modalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -1319,7 +1433,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="alert-circle"
                     size={16}
-                    color={Colors.statusError}
+                    color={colors.statusError}
                   />
                   <Text style={styles.errorText}>{changePasswordError}</Text>
                 </View>
@@ -1331,7 +1445,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="lock-closed"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -1340,7 +1454,7 @@ export default function VaultSettingsScreen() {
                   value={currentPassword}
                   onChangeText={setCurrentPassword}
                   placeholder="Enter current password"
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   editable={!changingPassword}
                 />
                 <Pressable
@@ -1351,7 +1465,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name={showCurrentPassword ? "eye-off" : "eye"}
                     size={20}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
@@ -1362,7 +1476,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="key"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -1371,7 +1485,7 @@ export default function VaultSettingsScreen() {
                   value={newPassword}
                   onChangeText={setNewPassword}
                   placeholder="Enter new password"
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   editable={!changingPassword}
                 />
                 <Pressable
@@ -1382,7 +1496,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name={showNewPassword ? "eye-off" : "eye"}
                     size={20}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
@@ -1416,7 +1530,7 @@ export default function VaultSettingsScreen() {
                             styles.strengthBar,
                             active
                               ? { backgroundColor: strength.color }
-                              : { backgroundColor: Colors.surfaceElevated },
+                              : { backgroundColor: colors.surfaceElevated },
                           ]}
                         />
                       );
@@ -1431,7 +1545,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="checkmark-circle"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -1440,7 +1554,7 @@ export default function VaultSettingsScreen() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Confirm new password"
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   editable={!changingPassword}
                 />
                 <Pressable
@@ -1451,7 +1565,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name={showConfirmPassword ? "eye-off" : "eye"}
                     size={20}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
@@ -1468,7 +1582,7 @@ export default function VaultSettingsScreen() {
                 {changingPassword ? (
                   <ActivityIndicator
                     size="small"
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                   />
                 ) : (
                   <Text style={styles.submitButtonText}>
@@ -1504,7 +1618,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="folder-open-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={modalStyles.headerTitle}>Select Template Group</Text>
@@ -1513,7 +1627,7 @@ export default function VaultSettingsScreen() {
                 hitSlop={12}
                 style={modalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -1542,7 +1656,7 @@ export default function VaultSettingsScreen() {
                         name="folder"
                         size={20}
                         color={
-                          isSelected ? Colors.accentMint : Colors.textMuted
+                          isSelected ? colors.accentMint : colors.textMuted
                         }
                       />
                       <Text
@@ -1557,7 +1671,7 @@ export default function VaultSettingsScreen() {
                         <Ionicons
                           name="checkmark"
                           size={18}
-                          color={Colors.accentMint}
+                          color={colors.accentMint}
                         />
                       )}
                     </Pressable>
@@ -1591,7 +1705,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="trash-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={modalStyles.headerTitle}>
@@ -1602,7 +1716,7 @@ export default function VaultSettingsScreen() {
                 hitSlop={12}
                 style={modalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -1630,7 +1744,7 @@ export default function VaultSettingsScreen() {
                         name="folder"
                         size={20}
                         color={
-                          isSelected ? Colors.accentMint : Colors.textMuted
+                          isSelected ? colors.accentMint : colors.textMuted
                         }
                       />
                       <Text
@@ -1645,7 +1759,7 @@ export default function VaultSettingsScreen() {
                         <Ionicons
                           name="checkmark"
                           size={18}
-                          color={Colors.accentMint}
+                          color={colors.accentMint}
                         />
                       )}
                     </Pressable>
@@ -1663,383 +1777,423 @@ export default function VaultSettingsScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
-  header: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  segmentWrapper: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.xs,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    gap: Spacing.md,
-  },
-  card: {
-    padding: Spacing.lg,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  cardTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.xs,
-  },
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
+    header: {
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+      alignItems: "center",
+    },
+    headerTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    segmentWrapper: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.md,
+      paddingBottom: Spacing.xs,
+    },
+    scrollContent: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.md,
+      gap: Spacing.md,
+    },
+    card: {
+      padding: Spacing.lg,
+    },
+    cardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    cardTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.xs,
+    },
 
-  // Unsaved Warning Card
-  warningCard: {
-    borderColor: Colors.statusWarning,
-    backgroundColor: Colors.statusWarningDim,
-    padding: Spacing.lg,
-  },
-  warningHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
-  },
-  warningTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.statusWarning,
-  },
-  warningText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: Spacing.md,
-  },
-  saveBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    height: TouchTarget.min,
-    ...Shadows.glow,
-  },
-  saveBtnPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  saveBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
+    // Unsaved Warning Card
+    warningCard: {
+      borderColor: colors.statusWarning,
+      backgroundColor: colors.statusWarningDim,
+      padding: Spacing.lg,
+    },
+    warningHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+    warningTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.statusWarning,
+    },
+    warningText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+      lineHeight: 20,
+      marginBottom: Spacing.md,
+    },
+    saveBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      ...Shadows.glow,
+    },
+    saveBtnPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    saveBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
 
-  // Biometric
-  biometricRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.xs,
-  },
-  switchButton: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: Spacing.xs,
-    minHeight: TouchTarget.min,
-    minWidth: TouchTarget.min,
-  },
-  confirmPasswordContainer: {
-    marginTop: Spacing.sm,
-    padding: Spacing.md,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  confirmLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  confirmInputRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    alignItems: "center",
-  },
-  confirmInput: {
-    flex: 1,
-    height: 40,
-    backgroundColor: Colors.backgroundPrimary,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.sm,
-    color: Colors.textPrimary,
-    paddingHorizontal: Spacing.sm,
-    fontFamily: Fonts.mono.regular,
-  },
-  confirmBtn: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.sm,
-    paddingHorizontal: Spacing.md,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  confirmBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    backgroundColor: Colors.statusErrorDim,
-    borderColor: Colors.statusError,
-    borderWidth: 1,
-    borderRadius: Radii.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  errorText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.statusError,
-    flex: 1,
-  },
-  inputLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.lg,
-    minHeight: TouchTarget.min,
-  },
-  inputIcon: {
-    marginRight: Spacing.sm,
-  },
-  input: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    paddingVertical: Spacing.sm,
-  },
-  eyeButton: {
-    padding: Spacing.xs,
-    justifyContent: "center",
-    alignItems: "center",
-    minWidth: TouchTarget.min,
-  },
-  submitButton: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: Spacing.md,
-    ...Shadows.glow,
-  },
-  submitButtonPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.backgroundPrimary,
-  },
-  strengthContainer: {
-    marginTop: -Spacing.xs,
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.surfaceCard,
-    padding: Spacing.md,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  strengthHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  strengthLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  strengthValue: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-  },
-  strengthBarContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    height: 6,
-  },
-  strengthBar: {
-    flex: 1,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-  },
+    // Biometric
+    biometricRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.xs,
+    },
+    switchButton: {
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: Spacing.xs,
+      minHeight: TouchTarget.min,
+      minWidth: TouchTarget.min,
+    },
+    confirmPasswordContainer: {
+      marginTop: Spacing.sm,
+      padding: Spacing.md,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    confirmLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textPrimary,
+      marginBottom: Spacing.xs,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    confirmInputRow: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      alignItems: "center",
+    },
+    confirmInput: {
+      flex: 1,
+      height: 40,
+      backgroundColor: colors.backgroundPrimary,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.sm,
+      color: colors.textPrimary,
+      paddingHorizontal: Spacing.sm,
+      fontFamily: Fonts.mono.regular,
+    },
+    confirmBtn: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.md,
+      height: 40,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    confirmBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    errorContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+      backgroundColor: colors.statusErrorDim,
+      borderColor: colors.statusError,
+      borderWidth: 1,
+      borderRadius: Radii.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+    },
+    errorText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+      flex: 1,
+    },
+    inputLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      marginBottom: Spacing.xs,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    inputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      marginBottom: Spacing.lg,
+      minHeight: TouchTarget.min,
+    },
+    inputIcon: {
+      marginRight: Spacing.sm,
+    },
+    input: {
+      flex: 1,
+      color: colors.textPrimary,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      paddingVertical: Spacing.sm,
+    },
+    eyeButton: {
+      padding: Spacing.xs,
+      justifyContent: "center",
+      alignItems: "center",
+      minWidth: TouchTarget.min,
+    },
+    submitButton: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: Spacing.md,
+      ...Shadows.glow,
+    },
+    submitButtonPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    submitButtonDisabled: {
+      opacity: 0.5,
+    },
+    submitButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.backgroundPrimary,
+    },
+    strengthContainer: {
+      marginTop: -Spacing.xs,
+      marginBottom: Spacing.lg,
+      backgroundColor: colors.surfaceCard,
+      padding: Spacing.md,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    strengthHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.sm,
+    },
+    strengthLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    strengthValue: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+    },
+    strengthBarContainer: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      height: 6,
+    },
+    strengthBar: {
+      flex: 1,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+    },
 
-  // History Settings
-  historyDesc: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    lineHeight: 18,
-    marginBottom: Spacing.md,
-  },
-  historyInputRow: {
-    flexDirection: "row",
-    gap: Spacing.lg,
-  },
-  historyInputGroup: {
-    flex: 1,
-    alignItems: "center",
-  },
-  historyInputLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  historyInputContainer: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    width: "100%",
-    overflow: "hidden",
-  },
-  historyInput: {
-    color: Colors.textPrimary,
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.body,
-    textAlign: "center",
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    minHeight: TouchTarget.min,
-  },
-  historyInputHint: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.textMuted,
-    marginTop: Spacing.xxs,
-  },
-});
+    // History Settings
+    historyDesc: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      lineHeight: 18,
+      marginBottom: Spacing.md,
+    },
+    historyInputRow: {
+      flexDirection: "row",
+      gap: Spacing.lg,
+    },
+    historyInputGroup: {
+      flex: 1,
+      alignItems: "center",
+    },
+    historyInputLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      marginBottom: Spacing.xs,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    historyInputContainer: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      width: "100%",
+      overflow: "hidden",
+    },
+    historyInput: {
+      color: colors.textPrimary,
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.body,
+      textAlign: "center",
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      minHeight: TouchTarget.min,
+    },
+    historyInputHint: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.textMuted,
+      marginTop: Spacing.xxs,
+    },
+  });
+}
 
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: Colors.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  overlayPress: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContainer: {
-    width: "90%",
-    maxWidth: 400,
-    maxHeight: "70%",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    ...Shadows.elevated,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  headerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMintDim,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  scrollList: {
-    maxHeight: 350,
-  },
-  groupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radii.md,
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
-  },
-  groupRowSelected: {
-    backgroundColor: Colors.accentMintDim,
-  },
-  groupName: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-  },
-  groupNameSelected: {
-    fontFamily: Fonts.heading.medium,
-    color: Colors.accentMint,
-  },
-});
+function createModalStyles(colors: any) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    overlayPress: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    modalContainer: {
+      width: "90%",
+      maxWidth: 400,
+      maxHeight: "70%",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      ...Shadows.elevated,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    headerIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    closeBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    scrollList: {
+      maxHeight: 350,
+    },
+    groupRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.md,
+      borderRadius: Radii.md,
+      gap: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+    groupRowSelected: {
+      backgroundColor: colors.accentMintDim,
+    },
+    groupName: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+    },
+    groupNameSelected: {
+      fontFamily: Fonts.heading.medium,
+      color: colors.accentMint,
+    },
+  });
+}
+
+function createPrefStyles(colors: any) {
+  return StyleSheet.create({
+    themeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.xs,
+    },
+    segmentedContainer: {
+      flexDirection: "row",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      padding: 3,
+      width: 140,
+    },
+    segmentButton: {
+      flex: 1,
+      paddingVertical: 6,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+    },
+    segmentButtonActive: {
+      backgroundColor: colors.accentMint,
+    },
+    segmentText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    segmentTextActive: {
+      color: colors.backgroundPrimary,
+    },
+  });
+}

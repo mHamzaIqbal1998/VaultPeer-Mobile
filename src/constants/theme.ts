@@ -9,7 +9,9 @@
 // Color Palette
 // ────────────────────────────────────────────
 
-export const Colors = {
+import { useVaultStore } from "../stores/useVaultStore";
+
+export const DarkColors = {
   /** Near-black emerald slate — primary background */
   backgroundPrimary: "#0B0F0E",
 
@@ -67,6 +69,76 @@ export const Colors = {
   /** Overlay for modals / sheets */
   overlay: "rgba(0, 0, 0, 0.6)",
 } as const;
+
+export const LightColors = {
+  /** Crisp light sage/mint background */
+  backgroundPrimary: "#F0F4F2",
+
+  /** Clean white card surfaces */
+  surfaceCard: "#FFFFFF",
+
+  /** Slightly elevated surface — for nested elements */
+  surfaceElevated: "#F8FAFB",
+
+  /** Muted light sage border */
+  borderSage: "#D0DBD6",
+
+  /** Active/hover border — slightly brighter sage */
+  borderSageActive: "#A8BFB5",
+
+  /** Rich mint green for light mode readability */
+  accentMint: "#059669",
+
+  /** Dimmed mint — for subtle active states */
+  accentMintDim: "rgba(5, 150, 105, 0.1)",
+
+  /** Deep dark green-black for high contrast headings */
+  textPrimary: "#061A13",
+
+  /** Slate-800 for readable body text */
+  textSecondary: "#1E293B",
+
+  /** Slate-500 for labels, captions, timestamps */
+  textMuted: "#64748B",
+
+  /** Slate-400 for disabled / placeholder states */
+  textDisabled: "#94A3B8",
+
+  /** Readable red for error alerts */
+  statusError: "#DC2626",
+
+  /** Error background tint */
+  statusErrorDim: "rgba(220, 38, 38, 0.08)",
+
+  /** Standard green for strength / integrity indicators */
+  statusSuccess: "#16A34A",
+
+  /** Success background tint */
+  statusSuccessDim: "rgba(22, 163, 74, 0.08)",
+
+  /** Warning amber */
+  statusWarning: "#D97706",
+
+  /** Warning background tint */
+  statusWarningDim: "rgba(217, 119, 6, 0.08)",
+
+  /** Pure transparent */
+  transparent: "transparent",
+
+  /** Softer overlay for modals / sheets */
+  overlay: "rgba(0, 0, 0, 0.4)",
+} as const;
+
+export const Colors = DarkColors;
+
+export function useThemeColors() {
+  const theme = useVaultStore((state) => state.theme);
+  const colors = theme === "light" ? LightColors : DarkColors;
+  return {
+    ...colors,
+    theme,
+  };
+}
 
 // ────────────────────────────────────────────
 // Typography
@@ -146,28 +218,40 @@ export const Radii = {
 // ────────────────────────────────────────────
 
 export const Shadows = {
-  card: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
+  get card() {
+    const theme = useVaultStore.getState().theme;
+    const isLight = theme === "light";
+    return {
+      shadowColor: isLight ? "rgba(6, 26, 19, 0.08)" : "#000000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: isLight ? 0.06 : 0.25,
+      shadowRadius: isLight ? 12 : 6,
+      elevation: isLight ? 2 : 4,
+    };
   },
-  elevated: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
+  get elevated() {
+    const theme = useVaultStore.getState().theme;
+    const isLight = theme === "light";
+    return {
+      shadowColor: isLight ? "rgba(6, 26, 19, 0.12)" : "#000000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: isLight ? 0.08 : 0.3,
+      shadowRadius: isLight ? 16 : 10,
+      elevation: isLight ? 4 : 8,
+    };
   },
-  glow: {
-    shadowColor: Colors.accentMint,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 6,
+  get glow() {
+    const theme = useVaultStore.getState().theme;
+    const isLight = theme === "light";
+    return {
+      shadowColor: isLight ? "#059669" : "#34D399",
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: isLight ? 0.2 : 0.4,
+      shadowRadius: 12,
+      elevation: 6,
+    };
   },
-} as const;
+};
 
 // ────────────────────────────────────────────
 // Animation Timings

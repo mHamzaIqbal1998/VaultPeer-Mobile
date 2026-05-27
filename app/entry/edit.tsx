@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -74,11 +74,13 @@ function FormField({
   mono?: boolean;
   rightElement?: React.ReactNode;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [showSecret, setShowSecret] = useState(false);
   return (
     <View style={styles.formField}>
       <View style={styles.formLabelRow}>
-        <Ionicons name={iconName} size={14} color={Colors.textMuted} />
+        <Ionicons name={iconName} size={14} color={colors.textMuted} />
         <Text style={styles.formLabel}>{label}</Text>
       </View>
       <View style={styles.formInputContainer}>
@@ -91,7 +93,7 @@ function FormField({
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={Colors.textDisabled}
+          placeholderTextColor={colors.textDisabled}
           secureTextEntry={secureTextEntry && !showSecret}
           multiline={multiline}
           numberOfLines={multiline ? 4 : 1}
@@ -108,7 +110,7 @@ function FormField({
             <Ionicons
               name={showSecret ? "eye-off-outline" : "eye-outline"}
               size={18}
-              color={Colors.textMuted}
+              color={colors.textMuted}
             />
           </Pressable>
         )}
@@ -125,13 +127,15 @@ function QrScannerView({
   onScan: (data: string) => void;
   onClose: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
 
   if (!permission) {
     return (
       <View style={styles.scannerOverlayContainer}>
-        <ActivityIndicator size="large" color={Colors.accentMint} />
+        <ActivityIndicator size="large" color={colors.accentMint} />
       </View>
     );
   }
@@ -139,7 +143,7 @@ function QrScannerView({
   if (!permission.granted) {
     return (
       <View style={styles.scannerOverlayContainer}>
-        <Ionicons name="camera-outline" size={48} color={Colors.textMuted} />
+        <Ionicons name="camera-outline" size={48} color={colors.textMuted} />
         <Text style={styles.scannerPermissionText}>
           We need your permission to show the camera
         </Text>
@@ -147,7 +151,7 @@ function QrScannerView({
           <Text style={styles.permissionBtnText}>Grant Permission</Text>
         </Pressable>
         <Pressable style={styles.scannerCloseBtnTop} onPress={onClose}>
-          <Ionicons name="close" size={24} color={Colors.textPrimary} />
+          <Ionicons name="close" size={24} color={colors.textPrimary} />
         </Pressable>
       </View>
     );
@@ -188,7 +192,7 @@ function QrScannerView({
       >
         <View style={styles.scannerHeaderRow}>
           <Pressable style={styles.scannerControlCircle} onPress={onClose}>
-            <Ionicons name="close" size={20} color={Colors.textPrimary} />
+            <Ionicons name="close" size={20} color={colors.textPrimary} />
           </Pressable>
           <Text style={styles.scannerTitle}>Scan QR Code</Text>
           <Pressable
@@ -198,7 +202,7 @@ function QrScannerView({
             <Ionicons
               name={torch ? "flash" : "flash-off"}
               size={20}
-              color={torch ? Colors.accentMint : Colors.textPrimary}
+              color={torch ? colors.accentMint : colors.textPrimary}
             />
           </Pressable>
         </View>
@@ -214,6 +218,8 @@ function QrScannerView({
 }
 
 export default function EntryEditScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { entryId, groupId, templateEntryId } = useLocalSearchParams<{
     entryId?: string;
     groupId?: string;
@@ -595,7 +601,7 @@ export default function EntryEditScreen() {
           <Ionicons
             name="close"
             size={24}
-            color={saving ? Colors.textDisabled : Colors.textMuted}
+            color={saving ? colors.textDisabled : colors.textMuted}
           />
         </Pressable>
         <Text style={styles.headerTitle}>
@@ -608,7 +614,7 @@ export default function EntryEditScreen() {
           hitSlop={8}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={Colors.backgroundPrimary} />
+            <ActivityIndicator size="small" color={colors.backgroundPrimary} />
           ) : (
             <Text style={styles.saveButtonText}>Save</Text>
           )}
@@ -635,7 +641,7 @@ export default function EntryEditScreen() {
                   <Ionicons
                     name={getKdbxIconName(iconId)}
                     size={24}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                 </View>
                 <View style={styles.iconPickerInfo}>
@@ -645,7 +651,7 @@ export default function EntryEditScreen() {
                 <Ionicons
                   name="chevron-forward"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                 />
               </Pressable>
 
@@ -702,7 +708,7 @@ export default function EntryEditScreen() {
                       name="sparkles-outline"
                       size={18}
                       color={
-                        showGenerator ? Colors.accentMint : Colors.textMuted
+                        showGenerator ? colors.accentMint : colors.textMuted
                       }
                     />
                   </Pressable>
@@ -732,7 +738,7 @@ export default function EntryEditScreen() {
                             styles.strengthBar,
                             active
                               ? { backgroundColor: strength.color }
-                              : { backgroundColor: Colors.surfaceElevated },
+                              : { backgroundColor: colors.surfaceElevated },
                           ]}
                         />
                       );
@@ -757,7 +763,7 @@ export default function EntryEditScreen() {
                       <Ionicons
                         name="refresh"
                         size={14}
-                        color={Colors.accentMint}
+                        color={colors.accentMint}
                       />
                       <Text style={styles.regenerateBtnText}>Regenerate</Text>
                     </Pressable>
@@ -782,7 +788,7 @@ export default function EntryEditScreen() {
                         <Ionicons
                           name="remove"
                           size={14}
-                          color={Colors.textPrimary}
+                          color={colors.textPrimary}
                         />
                       </Pressable>
                       <Pressable
@@ -798,7 +804,7 @@ export default function EntryEditScreen() {
                         <Ionicons
                           name="add"
                           size={14}
-                          color={Colors.textPrimary}
+                          color={colors.textPrimary}
                         />
                       </Pressable>
                     </View>
@@ -932,7 +938,7 @@ export default function EntryEditScreen() {
                     <Ionicons
                       name="qr-code-outline"
                       size={18}
-                      color={Colors.accentMint}
+                      color={colors.accentMint}
                     />
                   </Pressable>
                 }
@@ -964,7 +970,7 @@ export default function EntryEditScreen() {
                       <Ionicons
                         name="close-circle"
                         size={14}
-                        color={Colors.statusError}
+                        color={colors.statusError}
                       />
                     </Pressable>
                   </View>
@@ -976,7 +982,7 @@ export default function EntryEditScreen() {
                   value={newTagInput}
                   onChangeText={setNewTagInput}
                   placeholder="New tag..."
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -993,7 +999,7 @@ export default function EntryEditScreen() {
                   <Ionicons
                     name="add"
                     size={20}
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                   />
                 </Pressable>
               </View>
@@ -1016,7 +1022,7 @@ export default function EntryEditScreen() {
                         );
                       }}
                       placeholder="Field Name"
-                      placeholderTextColor={Colors.textDisabled}
+                      placeholderTextColor={colors.textDisabled}
                       autoCapitalize="none"
                     />
                     <TextInput
@@ -1030,7 +1036,7 @@ export default function EntryEditScreen() {
                         );
                       }}
                       placeholder="Field Value"
-                      placeholderTextColor={Colors.textDisabled}
+                      placeholderTextColor={colors.textDisabled}
                       secureTextEntry={field.isSecure}
                       autoCapitalize="none"
                     />
@@ -1055,7 +1061,7 @@ export default function EntryEditScreen() {
                         }
                         size={18}
                         color={
-                          field.isSecure ? Colors.accentMint : Colors.textMuted
+                          field.isSecure ? colors.accentMint : colors.textMuted
                         }
                       />
                     </Pressable>
@@ -1071,7 +1077,7 @@ export default function EntryEditScreen() {
                       <Ionicons
                         name="trash-outline"
                         size={18}
-                        color={Colors.statusError}
+                        color={colors.statusError}
                       />
                     </Pressable>
                   </View>
@@ -1094,7 +1100,7 @@ export default function EntryEditScreen() {
                 <Ionicons
                   name="add-circle-outline"
                   size={16}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
                 <Text style={styles.addFieldBtnText}>Add Custom Field</Text>
               </Pressable>
@@ -1113,7 +1119,7 @@ export default function EntryEditScreen() {
                     <Ionicons
                       name="checkmark"
                       size={14}
-                      color={Colors.backgroundPrimary}
+                      color={colors.backgroundPrimary}
                     />
                   )}
                 </Pressable>
@@ -1161,7 +1167,7 @@ export default function EntryEditScreen() {
                         value={customExpiryText}
                         onChangeText={setCustomExpiryText}
                         placeholder="e.g. 2026-12-31 23:59"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         autoCapitalize="none"
                         autoCorrect={false}
                       />
@@ -1186,7 +1192,7 @@ export default function EntryEditScreen() {
                     <Ionicons
                       name="document-attach-outline"
                       size={18}
-                      color={Colors.accentMint}
+                      color={colors.accentMint}
                     />
                     <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
                       <Text style={styles.attachmentEditName} numberOfLines={1}>
@@ -1209,7 +1215,7 @@ export default function EntryEditScreen() {
                     <Ionicons
                       name="trash-outline"
                       size={18}
-                      color={Colors.statusError}
+                      color={colors.statusError}
                     />
                   </Pressable>
                 </View>
@@ -1221,7 +1227,7 @@ export default function EntryEditScreen() {
                 <Ionicons
                   name="cloud-upload-outline"
                   size={16}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
                 <Text style={styles.addAttachmentBtnText}>Add Attachment</Text>
               </Pressable>
@@ -1263,641 +1269,642 @@ export default function EntryEditScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.backgroundPrimary },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.backgroundPrimary },
 
-  // Icon Picker Button
-  iconPickerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  iconPickerCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.accentMintDim,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: Colors.accentMint,
-  },
-  iconPickerInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  iconPickerLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  iconPickerHint: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  backButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-    textAlign: "center",
-  },
-  saveButton: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    minHeight: 36,
-    justifyContent: "center",
-  },
-  saveButtonText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.huge,
-  },
-  card: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.xl,
-    ...Shadows.card,
-  },
-  formField: { marginBottom: Spacing.xl },
-  formLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    marginBottom: Spacing.xs,
-  },
-  formLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  formInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    minHeight: TouchTarget.min,
-  },
-  formInput: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.sm,
-  },
-  formInputMultiline: { minHeight: 100, paddingTop: Spacing.md },
-  formInputMono: { fontFamily: Fonts.mono.regular, letterSpacing: 1 },
-  eyeBtn: {
-    padding: Spacing.xs,
-    minWidth: 36,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    marginBottom: Spacing.md,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  tagItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.accentMintDim,
-    paddingLeft: Spacing.md,
-    paddingRight: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    gap: Spacing.xs,
-  },
-  tagText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-  },
-  tagDeleteBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addTagRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  tagInput: {
-    flex: 1,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    height: 40,
-  },
-  addTagBtn: {
-    width: 40,
-    height: 40,
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  customFieldRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  customFieldInputs: {
-    flex: 1,
-    gap: Spacing.xs,
-  },
-  customFieldKeyInput: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    height: 38,
-  },
-  customFieldValueInput: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    height: 38,
-  },
-  customFieldActions: {
-    flexDirection: "row",
-    gap: Spacing.xs,
-  },
-  customFieldActionBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  addFieldBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: Colors.accentMint,
-    marginTop: Spacing.sm,
-  },
-  addFieldBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.accentMint,
-  },
-  expiryHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderWidth: 2,
-    borderColor: Colors.borderSageActive,
-    borderRadius: Radii.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkboxChecked: {
-    backgroundColor: Colors.accentMint,
-    borderColor: Colors.accentMint,
-  },
-  presetGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    rowGap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  presetBtn: {
-    width: "31%",
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingVertical: Spacing.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  presetBtnActive: {
-    borderColor: Colors.accentMint,
-    backgroundColor: Colors.accentMintDim,
-  },
-  presetBtnText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-    textAlign: "center",
-  },
-  presetBtnTextActive: {
-    color: Colors.accentMint,
-    fontFamily: Fonts.heading.medium,
-    textAlign: "center",
-  },
-  customExpiryContainer: {
-    marginTop: Spacing.sm,
-  },
-  customExpiryLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginBottom: Spacing.sm,
-  },
-  customExpiryInput: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.bodySmall,
-    minHeight: 44,
-  },
-  attachmentEditRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-    marginBottom: Spacing.sm,
-  },
-  attachmentEditInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  attachmentEditName: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  attachmentEditSize: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  attachmentDeleteBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addAttachmentBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: Colors.accentMint,
-    marginTop: Spacing.sm,
-  },
-  addAttachmentBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.accentMint,
-  },
-  strengthContainer: {
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.md,
-    backgroundColor: Colors.surfaceCard,
-    padding: Spacing.md,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  strengthHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  strengthLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  strengthValue: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-  },
-  strengthBarContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    height: 6,
-  },
-  strengthBar: {
-    flex: 1,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  generatorPanel: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.md,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.lg,
-    gap: Spacing.md,
-  },
-  generatorHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  generatorTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  regenerateBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  regenerateBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-  },
-  generatorLengthRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  generatorLengthLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  generatorLengthVal: {
-    fontFamily: Fonts.heading.semiBold,
-    color: Colors.textPrimary,
-  },
-  genLengthControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  genLengthBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: Radii.sm,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceCard,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  genPillsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.xs,
-  },
-  genPill: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    backgroundColor: Colors.surfaceElevated,
-    minHeight: 32,
-    justifyContent: "center",
-  },
-  genPillActive: {
-    backgroundColor: Colors.accentMintDim,
-    borderColor: Colors.accentMint,
-  },
-  genPillText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  genPillTextActive: {
-    fontFamily: Fonts.heading.medium,
-    color: Colors.accentMint,
-  },
+    // Icon Picker Button
+    iconPickerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.xl,
+    },
+    iconPickerCircle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.accentMintDim,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1.5,
+      borderColor: colors.accentMint,
+    },
+    iconPickerInfo: {
+      flex: 1,
+      marginLeft: Spacing.md,
+    },
+    iconPickerLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    iconPickerHint: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    backButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+      textAlign: "center",
+    },
+    saveButton: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+      minHeight: 36,
+      justifyContent: "center",
+    },
+    saveButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    scrollContent: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.xl,
+      paddingBottom: Spacing.huge,
+    },
+    card: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.xl,
+      ...Shadows.card,
+    },
+    formField: { marginBottom: Spacing.xl },
+    formLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+      marginBottom: Spacing.xs,
+    },
+    formLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    formInputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      minHeight: TouchTarget.min,
+    },
+    formInput: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      paddingVertical: Spacing.sm,
+    },
+    formInputMultiline: { minHeight: 100, paddingTop: Spacing.md },
+    formInputMono: { fontFamily: Fonts.mono.regular, letterSpacing: 1 },
+    eyeBtn: {
+      padding: Spacing.xs,
+      minWidth: 36,
+      minHeight: 36,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      marginBottom: Spacing.md,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    tagsContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    tagItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.accentMintDim,
+      paddingLeft: Spacing.md,
+      paddingRight: Spacing.sm,
+      paddingVertical: 6,
+      borderRadius: Radii.full,
+      gap: Spacing.xs,
+    },
+    tagText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+    },
+    tagDeleteBtn: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addTagRow: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+    },
+    tagInput: {
+      flex: 1,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      color: colors.textPrimary,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      height: 40,
+    },
+    addTagBtn: {
+      width: 40,
+      height: 40,
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    customFieldRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    customFieldInputs: {
+      flex: 1,
+      gap: Spacing.xs,
+    },
+    customFieldKeyInput: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      color: colors.textPrimary,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      height: 38,
+    },
+    customFieldValueInput: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      color: colors.textPrimary,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      height: 38,
+    },
+    customFieldActions: {
+      flexDirection: "row",
+      gap: Spacing.xs,
+    },
+    customFieldActionBtn: {
+      width: 36,
+      height: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    addFieldBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: colors.accentMint,
+      marginTop: Spacing.sm,
+    },
+    addFieldBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.accentMint,
+    },
+    expiryHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.md,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderWidth: 2,
+      borderColor: colors.borderSageActive,
+      borderRadius: Radii.sm,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    checkboxChecked: {
+      backgroundColor: colors.accentMint,
+      borderColor: colors.accentMint,
+    },
+    presetGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      rowGap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    presetBtn: {
+      width: "31%",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingVertical: Spacing.sm,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    presetBtnActive: {
+      borderColor: colors.accentMint,
+      backgroundColor: colors.accentMintDim,
+    },
+    presetBtnText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      textAlign: "center",
+    },
+    presetBtnTextActive: {
+      color: colors.accentMint,
+      fontFamily: Fonts.heading.medium,
+      textAlign: "center",
+    },
+    customExpiryContainer: {
+      marginTop: Spacing.sm,
+    },
+    customExpiryLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginBottom: Spacing.sm,
+    },
+    customExpiryInput: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      color: colors.textPrimary,
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.bodySmall,
+      minHeight: 44,
+    },
+    attachmentEditRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+      marginBottom: Spacing.sm,
+    },
+    attachmentEditInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    attachmentEditName: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    attachmentEditSize: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    attachmentDeleteBtn: {
+      width: 36,
+      height: 36,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addAttachmentBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: colors.accentMint,
+      marginTop: Spacing.sm,
+    },
+    addAttachmentBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.accentMint,
+    },
+    strengthContainer: {
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.md,
+      backgroundColor: colors.surfaceCard,
+      padding: Spacing.md,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    strengthHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.sm,
+    },
+    strengthLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    strengthValue: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+    },
+    strengthBarContainer: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      height: 6,
+    },
+    strengthBar: {
+      flex: 1,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+    },
+    generatorPanel: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.md,
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.lg,
+      gap: Spacing.md,
+    },
+    generatorHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    generatorTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    regenerateBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: Spacing.xs,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    regenerateBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+    },
+    generatorLengthRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    generatorLengthLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    generatorLengthVal: {
+      fontFamily: Fonts.heading.semiBold,
+      color: colors.textPrimary,
+    },
+    genLengthControls: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+    },
+    genLengthBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.sm,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.surfaceCard,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    genPillsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Spacing.xs,
+    },
+    genPill: {
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 6,
+      borderRadius: Radii.full,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      backgroundColor: colors.surfaceElevated,
+      minHeight: 32,
+      justifyContent: "center",
+    },
+    genPillActive: {
+      backgroundColor: colors.accentMintDim,
+      borderColor: colors.accentMint,
+    },
+    genPillText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    genPillTextActive: {
+      fontFamily: Fonts.heading.medium,
+      color: colors.accentMint,
+    },
 
-  // Scanner Styles
-  scannerContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  scannerOverlayContainer: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.xl,
-  },
-  scannerPermissionText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textSecondary,
-    textAlign: "center",
-    marginVertical: Spacing.lg,
-  },
-  permissionBtn: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.md,
-  },
-  permissionBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
-  scannerCloseBtnTop: {
-    position: "absolute",
-    top: 50,
-    right: 20,
-    padding: Spacing.sm,
-  },
-  scannerOverlayTop: {
-    flex: 1.5,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-  },
-  scannerOverlayMiddleRow: {
-    flexDirection: "row",
-    height: 250,
-  },
-  scannerOverlaySide: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-  },
-  scannerOverlayBottom: {
-    flex: 2,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-  },
-  scannerTargetFrame: {
-    width: 250,
-    height: 250,
-    borderWidth: 1,
-    borderColor: "rgba(52, 211, 153, 0.3)",
-    position: "relative",
-  },
-  corner: {
-    position: "absolute",
-    width: 20,
-    height: 20,
-    borderColor: Colors.accentMint,
-  },
-  topLeftCorner: {
-    top: -2,
-    left: -2,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    borderTopLeftRadius: Radii.sm,
-  },
-  topRightCorner: {
-    top: -2,
-    right: -2,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    borderTopRightRadius: Radii.sm,
-  },
-  bottomLeftCorner: {
-    bottom: -2,
-    left: -2,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    borderBottomLeftRadius: Radii.sm,
-  },
-  bottomRightCorner: {
-    bottom: -2,
-    right: -2,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    borderBottomRightRadius: Radii.sm,
-  },
-  scannerControlsContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "space-between",
-  },
-  scannerHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-  },
-  scannerControlCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scannerTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  scannerFooter: {
-    alignItems: "center",
-    paddingBottom: Spacing.xxl,
-  },
-  scannerHelpText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    overflow: "hidden",
-  },
-});
+    // Scanner Styles
+    scannerContainer: {
+      flex: 1,
+      backgroundColor: "#000",
+    },
+    scannerOverlayContainer: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: Spacing.xl,
+    },
+    scannerPermissionText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textSecondary,
+      textAlign: "center",
+      marginVertical: Spacing.lg,
+    },
+    permissionBtn: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.xxl,
+      paddingVertical: Spacing.md,
+    },
+    permissionBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    scannerCloseBtnTop: {
+      position: "absolute",
+      top: 50,
+      right: 20,
+      padding: Spacing.sm,
+    },
+    scannerOverlayTop: {
+      flex: 1.5,
+      backgroundColor: "rgba(0, 0, 0, 0.6)",
+    },
+    scannerOverlayMiddleRow: {
+      flexDirection: "row",
+      height: 250,
+    },
+    scannerOverlaySide: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.6)",
+    },
+    scannerOverlayBottom: {
+      flex: 2,
+      backgroundColor: "rgba(0, 0, 0, 0.6)",
+    },
+    scannerTargetFrame: {
+      width: 250,
+      height: 250,
+      borderWidth: 1,
+      borderColor: "rgba(52, 211, 153, 0.3)",
+      position: "relative",
+    },
+    corner: {
+      position: "absolute",
+      width: 20,
+      height: 20,
+      borderColor: colors.accentMint,
+    },
+    topLeftCorner: {
+      top: -2,
+      left: -2,
+      borderTopWidth: 4,
+      borderLeftWidth: 4,
+      borderTopLeftRadius: Radii.sm,
+    },
+    topRightCorner: {
+      top: -2,
+      right: -2,
+      borderTopWidth: 4,
+      borderRightWidth: 4,
+      borderTopRightRadius: Radii.sm,
+    },
+    bottomLeftCorner: {
+      bottom: -2,
+      left: -2,
+      borderBottomWidth: 4,
+      borderLeftWidth: 4,
+      borderBottomLeftRadius: Radii.sm,
+    },
+    bottomRightCorner: {
+      bottom: -2,
+      right: -2,
+      borderBottomWidth: 4,
+      borderRightWidth: 4,
+      borderBottomRightRadius: Radii.sm,
+    },
+    scannerControlsContainer: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      justifyContent: "space-between",
+    },
+    scannerHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.md,
+    },
+    scannerControlCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    scannerTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    scannerFooter: {
+      alignItems: "center",
+      paddingBottom: Spacing.xxl,
+    },
+    scannerHelpText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+      backgroundColor: "rgba(0, 0, 0, 0.6)",
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 6,
+      borderRadius: Radii.full,
+      overflow: "hidden",
+    },
+  });

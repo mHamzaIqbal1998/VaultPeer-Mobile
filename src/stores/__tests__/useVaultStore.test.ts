@@ -5,6 +5,7 @@ import {
   enableBiometric,
 } from "../../services/biometricService";
 import * as kdbxweb from "kdbxweb";
+import * as SecureStore from "expo-secure-store";
 
 jest.mock("react-native", () => ({
   Platform: { OS: "android" },
@@ -267,5 +268,82 @@ describe("useVaultStore", () => {
 
     // Verify biometric updates
     expect(mockEnableBiometric).toHaveBeenCalledWith("newPassword");
+  });
+
+  describe("app preferences", () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      // Reset state defaults
+      const store = useVaultStore.getState();
+      store.theme = "dark";
+      store.autoLockTimeout = 60000;
+      store.clipboardClearTime = 30000;
+    });
+
+    it("should initialize with default app preferences", () => {
+      const state = useVaultStore.getState();
+      expect(state.theme).toBe("dark");
+      expect(state.autoLockTimeout).toBe(60000);
+      expect(state.clipboardClearTime).toBe(30000);
+    });
+
+    it("should update and persist theme selection", async () => {
+      const store = useVaultStore.getState();
+      const mockSetItem = SecureStore.setItemAsync as jest.Mock;
+
+      await store.setTheme("light");
+
+      const state = useVaultStore.getState();
+      expect(state.theme).toBe("light");
+      expect(mockSetItem).toHaveBeenCalledWith("vault_app_theme", "light");
+    });
+
+    it("should update and persist auto-lock timeout selection", async () => {
+      const store = useVaultStore.getState();
+      const mockSetItem = SecureStore.setItemAsync as jest.Mock;
+
+      await store.setAutoLockTimeout(120000);
+
+      const state = useVaultStore.getState();
+      expect(state.autoLockTimeout).toBe(120000);
+      expect(mockSetItem).toHaveBeenCalledWith(
+        "vault_app_auto_lock_timeout",
+        "120000"
+      );
+    });
+
+    it("should update and persist clipboard clear timeout selection", async () => {
+      const store = useVaultStore.getState();
+      const mockSetItem = SecureStore.setItemAsync as jest.Mock;
+
+      await store.setClipboardClearTime(15000);
+
+      const state = useVaultStore.getState();
+      expect(state.clipboardClearTime).toBe(15000);
+      expect(mockSetItem).toHaveBeenCalledWith(
+        "vault_app_clipboard_clear_time",
+        "15000"
+      );
+    });
+
+    it("should load persisted app preferences on startup", async () => {
+      const mockGetItem = SecureStore.getItemAsync as jest.Mock;
+      mockGetItem.mockImplementation((key: string) => {
+        if (key === "vault_app_theme") return Promise.resolve("light");
+        if (key === "vault_app_auto_lock_timeout")
+          return Promise.resolve("300000");
+        if (key === "vault_app_clipboard_clear_time")
+          return Promise.resolve("10000");
+        return Promise.resolve(null);
+      });
+
+      const store = useVaultStore.getState();
+      await store.loadAppSettings();
+
+      const state = useVaultStore.getState();
+      expect(state.theme).toBe("light");
+      expect(state.autoLockTimeout).toBe(300000);
+      expect(state.clipboardClearTime).toBe(10000);
+    });
   });
 });

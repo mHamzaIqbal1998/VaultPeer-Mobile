@@ -1,12 +1,13 @@
 import { Tabs, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors, Fonts } from "@/src/constants/theme";
+import { useThemeColors, Fonts } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 
 export default function VaultLayout() {
   const { _db: db } = useVaultStore();
   const router = useRouter();
+  const colors = useThemeColors();
 
   useEffect(() => {
     if (!db) {
@@ -22,8 +23,11 @@ export default function VaultLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.surfaceCard,
-          borderTopColor: "rgba(35, 46, 42, 0.5)", // thin glass border
+          backgroundColor: colors.surfaceCard,
+          borderTopColor:
+            colors.theme === "light"
+              ? "rgba(208, 219, 214, 0.6)"
+              : "rgba(35, 46, 42, 0.5)", // thin glass border
           borderTopWidth: 1,
           height: 64,
           paddingBottom: 10,
@@ -34,8 +38,8 @@ export default function VaultLayout() {
           shadowOpacity: 0.15,
           shadowRadius: 6,
         },
-        tabBarActiveTintColor: Colors.accentMint,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: colors.accentMint,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
           fontFamily: Fonts.body.regular,
           fontSize: 11,

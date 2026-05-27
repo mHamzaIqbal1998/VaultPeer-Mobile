@@ -292,3 +292,16 @@ Enables opening and maintaining a list of multiple database files on the initial
   - Provide a "Delete" or "Forget" button on each card to remove the file reference and purge its biometric data from SecureStore.
   - Include clean actions for "Open Another Database" and "Create New Database" to support adding more vault files.
 - [x] Write unit tests to verify list persistence, file-specific biometric key routing, and multi-vault unlocking flows.
+
+### Phase 17: Light Theme Support & App Security Customizations
+
+Implements dual-theme (light/dark) mode capabilities matching the cyber-sage aesthetic, and makes the auto-lock and clipboard clear timeouts fully editable from App Settings.
+
+- [ ] Define the Light Theme color palette in `src/constants/theme.ts` that complements the existing dark cyber aesthetic with high contrast and light green/mint elements.
+- [ ] Add `theme`, `autoLockTimeout`, and `clipboardClearTime` states and actions to `useVaultStore.ts` with local persistence.
+- [ ] Refactor styles across screens and components (such as `app/index.tsx`, `app/vault/settings.tsx`, `app/vault/index.tsx`, etc.) to dynamically compute using the active theme colors.
+- [ ] Update settings controls in the App Settings tab (`app/vault/settings.tsx`):
+  - Add theme selection segment or switch control (Light vs. Dark).
+  - Convert the "Auto-lock Timeout" and "Clipboard Clear Time" settings from readonly labels into editable inputs or selection picker menus.
+- [ ] Update `AppSecurityWrapper.tsx` and `useClipboard.ts` to dynamically retrieve and enforce user-configured values from the store.
+- [ ] Write unit tests to verify theme preference updates, editable settings synchronization, and dynamic timeout checks.
