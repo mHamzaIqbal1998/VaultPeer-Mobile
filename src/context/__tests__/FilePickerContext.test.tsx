@@ -84,7 +84,7 @@ describe("FilePickerContext - Recent Vaults & Multi-vault", () => {
     expect(hookValue.fileUri).toBeNull();
   });
 
-  it("should load recent vaults and active vault from SecureStore on mount", async () => {
+  it("should load recent vaults from SecureStore on mount, keeping active selection null", async () => {
     const mockRecent = [
       { uri: "file://1.kdbx", bookmark: "bm1", name: "1", lastOpened: 1000 },
       { uri: "file://2.kdbx", bookmark: "bm2", name: "2", lastOpened: 2000 },
@@ -98,8 +98,8 @@ describe("FilePickerContext - Recent Vaults & Multi-vault", () => {
     });
 
     expect(hookValue.recentVaults).toEqual(mockRecent);
-    expect(hookValue.fileUri).toBe("file://2.kdbx");
-    expect(hookValue.bookmark).toBe("bm2");
+    expect(hookValue.fileUri).toBeNull();
+    expect(hookValue.bookmark).toBeNull();
   });
 
   it("should select a recent vault and update active state and SecureStore", async () => {

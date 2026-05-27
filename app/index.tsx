@@ -1107,7 +1107,7 @@ export default function FileSetupScreen() {
 
                     <Pressable
                       onPress={() => {
-                        setMode("select");
+                        setMode(recentVaults.length > 0 ? "recent" : "select");
                         setFormError(null);
                         setShowAdvanced(false);
                         setSelectedKdf("Argon2id");
