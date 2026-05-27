@@ -9,39 +9,39 @@
  * - Access history logging
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import { CyberCard } from "@/src/components/CyberCard";
+import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import {
-  View,
-  Text,
-  StyleSheet,
+  Colors,
+  FontSizes,
+  Fonts,
+  LineHeights,
+  Radii,
+  Shadows,
+  Spacing,
+  TouchTarget,
+} from "@/src/constants/theme";
+import { useClipboard } from "@/src/hooks/useClipboard";
+import type { OtpParams } from "@/src/services/otpService";
+import { generateTotp, parseOtpUri } from "@/src/services/otpService";
+import { useVaultStore } from "@/src/stores/useVaultStore";
+import type { VaultAttachment, VaultHistorySnapshot } from "@/src/types/kdbx";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
-  Alert,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useClipboard } from "@/src/hooks/useClipboard";
-import * as Haptics from "expo-haptics";
-import {
-  Colors,
-  Fonts,
-  FontSizes,
-  LineHeights,
-  Spacing,
-  Radii,
-  Shadows,
-  TouchTarget,
-} from "@/src/constants/theme";
-import { useVaultStore } from "@/src/stores/useVaultStore";
-import { getKdbxIconName } from "@/src/constants/kdbxIcons";
-import { CyberCard } from "@/src/components/CyberCard";
 import { createFile, writeTempFile } from "vaultpeer-file-system";
-import type { VaultAttachment, VaultHistorySnapshot } from "@/src/types/kdbx";
-import { parseOtpUri, generateTotp } from "@/src/services/otpService";
-import type { OtpParams } from "@/src/services/otpService";
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -693,10 +693,10 @@ export default function EntryDetailScreen() {
             <View style={styles.fieldLabelRow}>
               <Ionicons
                 name="time-outline"
-                size={16}
+                size={14}
                 color={Colors.textMuted}
               />
-              <Text style={styles.sectionTitle}>Entry History</Text>
+              <Text style={styles.historySectionTitle}>Entry History</Text>
             </View>
             <View style={styles.historyBadgeRow}>
               <Ionicons
@@ -1115,6 +1115,13 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.bodySmall,
     color: Colors.textMuted,
     marginBottom: Spacing.md,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  historySectionTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 1,
   },
