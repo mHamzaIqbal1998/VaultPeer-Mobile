@@ -340,6 +340,10 @@ export default function VaultSettingsScreen() {
     setAutoLockTimeout,
     clipboardClearTime,
     setClipboardClearTime,
+    autoSave,
+    setAutoSave,
+    isSaving,
+    setIsSaving,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -397,6 +401,7 @@ export default function VaultSettingsScreen() {
   });
 
   const hideModal = useCallback(() => {
+    if (useVaultStore.getState().isSaving) return;
     setModalConfig((prev) => ({ ...prev, visible: false }));
   }, []);
 
@@ -827,13 +832,41 @@ export default function VaultSettingsScreen() {
   }, [kdfInfo]);
 
   const handleLock = useCallback(() => {
-    closeDatabase();
-    router.replace("/");
-  }, [closeDatabase, router]);
+    const performLock = () => {
+      closeDatabase();
+      router.replace("/");
+    };
+
+    if (isSaving) {
+      // Show saving indicator modal and lock when done
+      setModalConfig({
+        visible: true,
+        title: "Saving Changes",
+        description: "Saving changes to your vault file. Please wait...",
+        icon: "cloud-upload-outline",
+        iconColor: colors.accentMint,
+        buttons: [],
+      });
+
+      const checkAndLock = () => {
+        if (useVaultStore.getState().isSaving) {
+          setTimeout(checkAndLock, 100);
+        } else {
+          setModalConfig((prev) => ({ ...prev, visible: false }));
+          performLock();
+        }
+      };
+      setTimeout(checkAndLock, 100);
+      return;
+    }
+
+    performLock();
+  }, [closeDatabase, router, isSaving, colors.accentMint]);
 
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
     setSaving(true);
+    setIsSaving(true);
     setTimeout(async () => {
       try {
         await saveVault(db);
@@ -846,9 +879,18 @@ export default function VaultSettingsScreen() {
         );
       } finally {
         setSaving(false);
+        setIsSaving(false);
       }
     }, 50);
-  }, [db, saveVault, markClean, saving, showNotificationModal, showErrorModal]);
+  }, [
+    db,
+    saveVault,
+    markClean,
+    saving,
+    showNotificationModal,
+    showErrorModal,
+    setIsSaving,
+  ]);
 
   const handleForget = useCallback(() => {
     setModalConfig({
@@ -879,7 +921,7 @@ export default function VaultSettingsScreen() {
       if (!db) return;
       applyKdfParams(db, params);
       refreshParsedState();
-      useVaultStore.setState({ isDirty: true });
+      useVaultStore.getState().markDirty();
       showNotificationModal(
         "KDF Updated",
         "New parameters applied. Save the database to persist changes."
@@ -899,7 +941,7 @@ export default function VaultSettingsScreen() {
         onPress: () => {
           db.header.compression = 1; // 1 = GZip
           refreshParsedState();
-          useVaultStore.setState({ isDirty: true });
+          useVaultStore.getState().markDirty();
           hideModal();
           showNotificationModal(
             "Compression Updated",
@@ -914,7 +956,7 @@ export default function VaultSettingsScreen() {
         onPress: () => {
           db.header.compression = 0; // 0 = None
           refreshParsedState();
-          useVaultStore.setState({ isDirty: true });
+          useVaultStore.getState().markDirty();
           hideModal();
           showNotificationModal(
             "Compression Updated",
@@ -1554,6 +1596,25 @@ export default function VaultSettingsScreen() {
                   subtitle="Delay before clearing clipboard"
                   value={formatClipboard(clipboardClearTime)}
                   onPress={handleClipboardPress}
+                />
+
+                <View style={styles.divider} />
+
+                {/* Auto-Save */}
+                <SettingsRow
+                  icon="save-outline"
+                  title="Auto-Save"
+                  subtitle="Automatically save changes to storage"
+                  onPress={() => setAutoSave(!autoSave)}
+                  rightElement={
+                    <View pointerEvents="none" style={styles.switchButton}>
+                      <Ionicons
+                        name={autoSave ? "toggle" : "toggle-outline"}
+                        size={38}
+                        color={autoSave ? colors.accentMint : colors.textMuted}
+                      />
+                    </View>
+                  }
                 />
               </CyberCard>
             </Animated.View>

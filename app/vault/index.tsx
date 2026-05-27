@@ -202,6 +202,10 @@ export default function VaultBrowserScreen() {
   const isDirty = useVaultStore((state) => state.isDirty);
   const db = useVaultStore((state) => state._db);
   const markClean = useVaultStore((state) => state.markClean);
+  const closeDatabase = useVaultStore((state) => state.closeDatabase);
+  const autoSave = useVaultStore((state) => state.autoSave);
+  const isSaving = useVaultStore((state) => state.isSaving);
+  const setIsSaving = useVaultStore((state) => state.setIsSaving);
 
   const navigateToGroup = useVaultStore((state) => state.navigateToGroup);
   const navigateBack = useVaultStore((state) => state.navigateBack);
@@ -242,6 +246,7 @@ export default function VaultBrowserScreen() {
   });
 
   const hideModal = useCallback(() => {
+    if (useVaultStore.getState().isSaving) return;
     setModalConfig((prev) => ({ ...prev, visible: false }));
   }, []);
 
@@ -504,6 +509,7 @@ export default function VaultBrowserScreen() {
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
     setSaving(true);
+    setIsSaving(true);
     setTimeout(async () => {
       try {
         await saveVault(db);
@@ -516,9 +522,115 @@ export default function VaultBrowserScreen() {
         );
       } finally {
         setSaving(false);
+        setIsSaving(false);
       }
     }, 50);
-  }, [db, saveVault, markClean, saving, showNotificationModal, showErrorModal]);
+  }, [
+    db,
+    saveVault,
+    markClean,
+    saving,
+    showNotificationModal,
+    showErrorModal,
+    setIsSaving,
+  ]);
+
+  const handleLock = useCallback(() => {
+    const performLock = () => {
+      closeDatabase();
+      router.replace("/");
+    };
+
+    if (isSaving) {
+      // Show saving indicator modal and lock when done
+      setModalConfig({
+        visible: true,
+        title: "Saving Changes",
+        description: "Saving changes to your vault file. Please wait...",
+        icon: "cloud-upload-outline",
+        iconColor: colors.accentMint,
+        buttons: [],
+      });
+
+      const checkAndLock = () => {
+        if (useVaultStore.getState().isSaving) {
+          setTimeout(checkAndLock, 100);
+        } else {
+          setModalConfig((prev) => ({ ...prev, visible: false }));
+          performLock();
+        }
+      };
+      setTimeout(checkAndLock, 100);
+      return;
+    }
+
+    if (isDirty && !autoSave) {
+      setModalConfig({
+        visible: true,
+        title: "Unsaved Changes",
+        description:
+          "You have unsaved changes. Do you want to save them before locking, or discard them?",
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "Save & Lock",
+            variant: "primary",
+            onPress: async () => {
+              setModalConfig((prev) => ({ ...prev, visible: false }));
+              setSaving(true);
+              setIsSaving(true);
+              try {
+                if (db) {
+                  await saveVault(db);
+                  markClean();
+                }
+                performLock();
+              } catch (e: any) {
+                showErrorModal(
+                  "Error Saving",
+                  e?.message || "Failed to write database file."
+                );
+              } finally {
+                setSaving(false);
+                setIsSaving(false);
+              }
+            },
+          },
+          {
+            text: "Discard & Lock",
+            variant: "destructive",
+            onPress: () => {
+              setModalConfig((prev) => ({ ...prev, visible: false }));
+              performLock();
+            },
+          },
+          {
+            text: "Cancel",
+            variant: "secondary",
+            onPress: () => {
+              setModalConfig((prev) => ({ ...prev, visible: false }));
+            },
+          },
+        ],
+      });
+    } else {
+      performLock();
+    }
+  }, [
+    isDirty,
+    autoSave,
+    db,
+    saveVault,
+    markClean,
+    closeDatabase,
+    router,
+    colors.statusError,
+    colors.accentMint,
+    showErrorModal,
+    isSaving,
+    setIsSaving,
+  ]);
 
   // ────── Render Helpers ──────
 
@@ -650,6 +762,18 @@ export default function VaultBrowserScreen() {
               </Pressable>
             </Animated.View>
           )}
+          <Pressable
+            onPress={handleLock}
+            style={styles.iconButton}
+            hitSlop={8}
+            accessibilityLabel="Lock database"
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={22}
+              color={colors.textPrimary}
+            />
+          </Pressable>
           <Pressable
             onPress={() => {
               setShowSearch(!showSearch);

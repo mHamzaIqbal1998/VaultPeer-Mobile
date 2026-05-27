@@ -278,6 +278,7 @@ describe("useVaultStore", () => {
       store.theme = "dark";
       store.autoLockTimeout = 60000;
       store.clipboardClearTime = 30000;
+      store.autoSave = false;
     });
 
     it("should initialize with default app preferences", () => {
@@ -285,6 +286,7 @@ describe("useVaultStore", () => {
       expect(state.theme).toBe("dark");
       expect(state.autoLockTimeout).toBe(60000);
       expect(state.clipboardClearTime).toBe(30000);
+      expect(state.autoSave).toBe(false);
     });
 
     it("should update and persist theme selection", async () => {
@@ -326,6 +328,17 @@ describe("useVaultStore", () => {
       );
     });
 
+    it("should update and persist auto-save selection", async () => {
+      const store = useVaultStore.getState();
+      const mockSetItem = SecureStore.setItemAsync as jest.Mock;
+
+      await store.setAutoSave(true);
+
+      const state = useVaultStore.getState();
+      expect(state.autoSave).toBe(true);
+      expect(mockSetItem).toHaveBeenCalledWith("vault_app_auto_save", "true");
+    });
+
     it("should load persisted app preferences on startup", async () => {
       const mockGetItem = SecureStore.getItemAsync as jest.Mock;
       mockGetItem.mockImplementation((key: string) => {
@@ -334,6 +347,7 @@ describe("useVaultStore", () => {
           return Promise.resolve("300000");
         if (key === "vault_app_clipboard_clear_time")
           return Promise.resolve("10000");
+        if (key === "vault_app_auto_save") return Promise.resolve("true");
         return Promise.resolve(null);
       });
 
@@ -344,6 +358,7 @@ describe("useVaultStore", () => {
       expect(state.theme).toBe("light");
       expect(state.autoLockTimeout).toBe(300000);
       expect(state.clipboardClearTime).toBe(10000);
+      expect(state.autoSave).toBe(true);
     });
   });
 });

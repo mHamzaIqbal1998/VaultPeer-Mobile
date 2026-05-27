@@ -1,19 +1,73 @@
 import { Tabs, useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeColors, Fonts } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useFilePicker } from "@/src/context/FilePickerContext";
 
 export default function VaultLayout() {
-  const { _db: db } = useVaultStore();
+  const {
+    _db: db,
+    isDirty,
+    autoSave,
+    markClean,
+    setIsSaving,
+    vaultRevision,
+  } = useVaultStore();
   const router = useRouter();
   const colors = useThemeColors();
+  const { saveVault } = useFilePicker();
+
+  const lastSavedRevision = useRef<number>(0);
 
   useEffect(() => {
     if (!db) {
       router.replace("/");
     }
   }, [db, router]);
+
+  // Synchronize lastSavedRevision when vault becomes clean or changes
+  useEffect(() => {
+    if (!isDirty || !db) {
+      lastSavedRevision.current = vaultRevision;
+    }
+  }, [isDirty, db, vaultRevision]);
+
+  useEffect(() => {
+    if (
+      autoSave &&
+      isDirty &&
+      db &&
+      vaultRevision > lastSavedRevision.current
+    ) {
+      const currentRevision = vaultRevision;
+
+      const timer = setTimeout(async () => {
+        // Double check that we are still dirty and the db hasn't been closed
+        const currentStore = useVaultStore.getState();
+        if (!currentStore._db || !currentStore.isDirty) return;
+
+        try {
+          setIsSaving(true);
+          await saveVault(currentStore._db);
+
+          lastSavedRevision.current = currentRevision;
+
+          // If no new mutations happened during the save, mark it clean
+          if (useVaultStore.getState().vaultRevision === currentRevision) {
+            markClean();
+          }
+          console.log("[AutoSave] Vault automatically saved successfully.");
+        } catch (e) {
+          console.error("[AutoSave] Failed to auto-save vault:", e);
+        } finally {
+          setIsSaving(false);
+        }
+      }, 2000); // 2 seconds debounce
+
+      return () => clearTimeout(timer);
+    }
+  }, [isDirty, vaultRevision, autoSave, db, saveVault, markClean, setIsSaving]);
 
   if (!db) {
     return null;

@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import * as kdbxweb from "kdbxweb";
@@ -114,6 +115,7 @@ export function FilePickerProvider({
   const [error, setError] = useState<string | null>(null);
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(false);
   const [recentVaults, setRecentVaults] = useState<RecentVault[]>([]);
+  const saveChain = useRef<Promise<any>>(Promise.resolve());
 
   // Restore saved vault path on app launch
   useEffect(() => {
@@ -327,21 +329,32 @@ export function FilePickerProvider({
 
     setIsLoading(true);
     setError(null);
-    try {
-      // 1. Serialize in-memory database to binary ArrayBuffer
-      const arrayBuffer = await db.save();
-      const base64Content = arrayBufferToBase64(arrayBuffer);
 
-      // 2. Call native write file (handles atomic write: temp file -> replace)
-      const success = await writeFile(fileUri, base64Content, bookmark || "");
-      return success;
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Failed to save changes to the database.";
-      setError(msg);
-      throw new Error(msg);
+    // Append this save operation to the sequential queue
+    const resultPromise = saveChain.current.then(async () => {
+      try {
+        // 1. Serialize in-memory database to binary ArrayBuffer
+        const arrayBuffer = await db.save();
+        const base64Content = arrayBufferToBase64(arrayBuffer);
+
+        // 2. Call native write file (handles atomic write: temp file -> replace)
+        const success = await writeFile(fileUri, base64Content, bookmark || "");
+        return success;
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Failed to save changes to the database.";
+        setError(msg);
+        throw new Error(msg);
+      }
+    });
+
+    // Update the queue pointer, catching errors so subsequent saves can still run
+    saveChain.current = resultPromise.catch(() => {});
+
+    try {
+      return await resultPromise;
     } finally {
       setIsLoading(false);
     }
