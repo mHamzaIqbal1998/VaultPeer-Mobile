@@ -11,6 +11,7 @@
 
 import { CyberCard } from "@/src/components/CyberCard";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
+import { ActionModal } from "@/src/components/ActionModal";
 import {
   useThemeColors,
   FontSizes,
@@ -32,7 +33,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -288,6 +288,68 @@ export default function EntryDetailScreen() {
   >([]);
   const [restoringSnapshot, setRestoringSnapshot] = useState(false);
 
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showNotificationModal = useCallback(
+    (
+      title: string,
+      description: string,
+      icon: keyof typeof Ionicons.glyphMap = "checkmark-circle-outline"
+    ) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    []
+  );
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
+
   const handleExportAttachment = useCallback(
     async (attachment: VaultAttachment) => {
       try {
@@ -303,13 +365,13 @@ export default function EntryDetailScreen() {
         }
         const tempFileUri = await writeTempFile(base64Data);
         await createFile(attachment.name, tempFileUri);
-        Alert.alert(
+        showNotificationModal(
           "Success",
           `Saved attachment "${attachment.name}" successfully.`
         );
       } catch (err: any) {
         console.error(err);
-        Alert.alert(
+        showErrorModal(
           "Export Failed",
           err?.message || "Could not save the attachment."
         );
@@ -317,7 +379,7 @@ export default function EntryDetailScreen() {
         setExporting(null);
       }
     },
-    [entry, getAttachmentData]
+    [entry, getAttachmentData, showNotificationModal, showErrorModal]
   );
 
   const isExpired =
@@ -359,38 +421,60 @@ export default function EntryDetailScreen() {
       : `Are you sure you want to delete "${entry.title}"? This will move it to the recycle bin.`;
     const deleteBtnText = inRecycleBin ? "Delete Permanently" : "Delete";
 
-    Alert.alert(title, message, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: deleteBtnText,
-        style: "destructive",
-        onPress: () => {
-          setDeleting(true);
-          setTimeout(() => {
-            try {
-              deleteEntry(entry.uuid);
-              logAccess(entry.uuid, entry.title, "deleted");
-              router.back();
-            } catch (err) {
-              setDeleting(false);
-              console.error(err);
-            }
-          }, 50);
+    setModalConfig({
+      visible: true,
+      title,
+      description: message,
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
+        {
+          text: deleteBtnText,
+          variant: "destructive",
+          onPress: () => {
+            hideModal();
+            setDeleting(true);
+            setTimeout(() => {
+              try {
+                deleteEntry(entry.uuid);
+                logAccess(entry.uuid, entry.title, "deleted");
+                router.back();
+              } catch (err) {
+                setDeleting(false);
+                console.error(err);
+              }
+            }, 50);
+          },
         },
-      },
-    ]);
-  }, [entry, deleteEntry, logAccess, router, inRecycleBin, deleting]);
+      ],
+    });
+  }, [
+    entry,
+    deleteEntry,
+    logAccess,
+    router,
+    inRecycleBin,
+    deleting,
+    colors.statusError,
+    hideModal,
+  ]);
 
   const handleRestore = useCallback(() => {
     if (!entry || restoring) return;
-    Alert.alert(
-      "Restore Entry",
-      `Are you sure you want to restore "${entry.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Restore Entry",
+      description: `Are you sure you want to restore "${entry.title}"?`,
+      icon: "refresh-outline",
+      iconColor: colors.textPrimary,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Restore",
+          variant: "primary",
           onPress: () => {
+            hideModal();
             setRestoring(true);
             setTimeout(() => {
               try {
@@ -400,7 +484,7 @@ export default function EntryDetailScreen() {
                   router.back();
                 } else {
                   setRestoring(false);
-                  Alert.alert("Error", "Failed to restore entry.");
+                  showErrorModal("Error", "Failed to restore entry.");
                 }
               } catch (err) {
                 setRestoring(false);
@@ -409,9 +493,18 @@ export default function EntryDetailScreen() {
             }, 50);
           },
         },
-      ]
-    );
-  }, [entry, restoreEntry, logAccess, router, restoring]);
+      ],
+    });
+  }, [
+    entry,
+    restoreEntry,
+    logAccess,
+    router,
+    restoring,
+    colors.textPrimary,
+    hideModal,
+    showErrorModal,
+  ]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;
@@ -890,14 +983,23 @@ export default function EntryDetailScreen() {
                                   <Pressable
                                     onPress={() => {
                                       if (restoringSnapshot) return;
-                                      Alert.alert(
-                                        "Restore Snapshot",
-                                        `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
-                                        [
-                                          { text: "Cancel", style: "cancel" },
+                                      setModalConfig({
+                                        visible: true,
+                                        title: "Restore Snapshot",
+                                        description: `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
+                                        icon: "refresh-outline",
+                                        iconColor: colors.textPrimary,
+                                        buttons: [
+                                          {
+                                            text: "Cancel",
+                                            onPress: hideModal,
+                                            variant: "secondary",
+                                          },
                                           {
                                             text: "Restore",
+                                            variant: "primary",
                                             onPress: async () => {
+                                              hideModal();
                                               setRestoringSnapshot(true);
                                               try {
                                                 const result =
@@ -915,19 +1017,19 @@ export default function EntryDetailScreen() {
                                                       .NotificationFeedbackType
                                                       .Success
                                                   );
-                                                  Alert.alert(
+                                                  showNotificationModal(
                                                     "Restored",
                                                     "Entry restored to snapshot state."
                                                   );
                                                 } else {
-                                                  Alert.alert(
+                                                  showErrorModal(
                                                     "Error",
                                                     "Failed to restore snapshot."
                                                   );
                                                 }
                                               } catch (err) {
                                                 console.error(err);
-                                                Alert.alert(
+                                                showErrorModal(
                                                   "Error",
                                                   "An error occurred while restoring."
                                                 );
@@ -936,8 +1038,8 @@ export default function EntryDetailScreen() {
                                               }
                                             },
                                           },
-                                        ]
-                                      );
+                                        ],
+                                      });
                                     }}
                                     style={({ pressed }) => [
                                       styles.historyActionBtn,
@@ -970,15 +1072,23 @@ export default function EntryDetailScreen() {
 
                                   <Pressable
                                     onPress={() => {
-                                      Alert.alert(
-                                        "Delete Snapshot",
-                                        `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
-                                        [
-                                          { text: "Cancel", style: "cancel" },
+                                      setModalConfig({
+                                        visible: true,
+                                        title: "Delete Snapshot",
+                                        description: `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
+                                        icon: "trash-outline",
+                                        iconColor: colors.statusError,
+                                        buttons: [
+                                          {
+                                            text: "Cancel",
+                                            onPress: hideModal,
+                                            variant: "secondary",
+                                          },
                                           {
                                             text: "Delete",
-                                            style: "destructive",
+                                            variant: "destructive",
                                             onPress: () => {
+                                              hideModal();
                                               const success =
                                                 deleteHistorySnapshot(
                                                   entry.uuid,
@@ -996,15 +1106,15 @@ export default function EntryDetailScreen() {
                                                     .Success
                                                 );
                                               } else {
-                                                Alert.alert(
+                                                showErrorModal(
                                                   "Error",
                                                   "Failed to delete snapshot."
                                                 );
                                               }
                                             },
                                           },
-                                        ]
-                                      );
+                                        ],
+                                      });
                                     }}
                                     style={({ pressed }) => [
                                       styles.historyActionBtn,
@@ -1060,6 +1170,18 @@ export default function EntryDetailScreen() {
           </View>
         </CyberCard>
       </ScrollView>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }

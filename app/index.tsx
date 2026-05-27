@@ -26,7 +26,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -39,6 +38,7 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as kdbxweb from "kdbxweb";
+import { ActionModal } from "@/src/components/ActionModal";
 import {
   useThemeColors,
   Fonts,
@@ -139,6 +139,23 @@ export default function FileSetupScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
 
   // Unlocked State
   const storeDb = useVaultStore((state) => state._db);
@@ -370,15 +387,20 @@ export default function FileSetupScreen() {
 
   const handleForgetVault = async () => {
     if (!fileUri) return;
-    Alert.alert(
-      "Forget Vault",
-      "Are you sure you want to forget this vault? This will remove it from your recents list and disable biometric unlock.",
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Forget Vault",
+      description:
+        "Are you sure you want to forget this vault? This will remove it from your recents list and disable biometric unlock.",
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Forget",
-          style: "destructive",
+          variant: "destructive",
           onPress: async () => {
+            hideModal();
             await removeRecentVault(fileUri);
             setActiveDb(null);
             setDbStats(null);
@@ -386,8 +408,8 @@ export default function FileSetupScreen() {
             setFormError(null);
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   const handleChooseAnother = async () => {
@@ -688,18 +710,28 @@ export default function FileSetupScreen() {
 
                           <Pressable
                             onPress={() => {
-                              Alert.alert(
-                                "Forget Vault",
-                                `Are you sure you want to remove "${vault.name}" from your recent list? This will also disable biometric unlock for this vault.`,
-                                [
-                                  { text: "Cancel", style: "cancel" },
+                              setModalConfig({
+                                visible: true,
+                                title: "Forget Vault",
+                                description: `Are you sure you want to remove "${vault.name}" from your recent list? This will also disable biometric unlock for this vault.`,
+                                icon: "trash-outline",
+                                iconColor: colors.statusError,
+                                buttons: [
+                                  {
+                                    text: "Cancel",
+                                    onPress: hideModal,
+                                    variant: "secondary",
+                                  },
                                   {
                                     text: "Forget",
-                                    style: "destructive",
-                                    onPress: () => removeRecentVault(vault.uri),
+                                    variant: "destructive",
+                                    onPress: () => {
+                                      hideModal();
+                                      removeRecentVault(vault.uri);
+                                    },
                                   },
-                                ]
-                              );
+                                ],
+                              });
                             }}
                             style={({ pressed }) => [
                               styles.recentItemRemoveBtn,
@@ -1106,6 +1138,18 @@ export default function FileSetupScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }

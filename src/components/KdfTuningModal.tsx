@@ -15,7 +15,6 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -35,6 +34,7 @@ import {
   TouchTarget,
 } from "@/src/constants/theme";
 import { CyberCard } from "./CyberCard";
+import { ActionModal } from "./ActionModal";
 import type {
   KdfType,
   KdfTuningParams,
@@ -78,6 +78,43 @@ export function KdfTuningModal({
   const [benchmarkResult, setBenchmarkResult] = useState<string | null>(null);
   const overlayOpacity = useSharedValue(0);
 
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
+
   useEffect(() => {
     if (visible) {
       setParams(initialParams);
@@ -104,21 +141,21 @@ export function KdfTuningModal({
         `Completed in ${result.elapsedMs}ms — parameters calibrated for ~1.0s`
       );
     } catch (e: any) {
-      Alert.alert("Benchmark Failed", e?.message || "Unknown error");
+      showErrorModal("Benchmark Failed", e?.message || "Unknown error");
     } finally {
       setBenchmarking(false);
     }
-  }, [kdfType]);
+  }, [kdfType, showErrorModal]);
 
   const handleApply = useCallback(() => {
     const validation = validateKdfParams(kdfType, params);
     if (!validation.valid) {
-      Alert.alert("Invalid Parameters", validation.errors.join("\n"));
+      showErrorModal("Invalid Parameters", validation.errors.join("\n"));
       return;
     }
     onApply(params);
     onClose();
-  }, [params, kdfType, onApply, onClose]);
+  }, [params, kdfType, onApply, onClose, showErrorModal]);
 
   const updateParam = (key: keyof KdfTuningParams, value: string) => {
     const num = parseInt(value.replace(/[^0-9]/g, ""), 10);
@@ -350,6 +387,17 @@ export function KdfTuningModal({
           </ScrollView>
         </Animated.View>
       </Animated.View>
+
+      {/* Nested validation/error modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        buttons={modalConfig.buttons}
+      />
     </Modal>
   );
 }

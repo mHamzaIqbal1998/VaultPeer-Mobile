@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  Alert,
   TextInput,
   ActivityIndicator,
   Modal,
@@ -40,6 +39,7 @@ import {
 import type { KdfTuningParams } from "@/src/services/crypto/kdfBenchmark";
 import { CyberCard } from "@/src/components/CyberCard";
 import { KdfTuningModal } from "@/src/components/KdfTuningModal";
+import { ActionModal } from "@/src/components/ActionModal";
 import {
   isBiometricsSupported,
   isBiometricEnabled,
@@ -344,6 +344,19 @@ export default function VaultSettingsScreen() {
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("database");
+
+  const themeIndicatorX = useSharedValue(theme === "dark" ? 0 : 1);
+
+  useEffect(() => {
+    themeIndicatorX.value = withSpring(theme === "dark" ? 0 : 1, {
+      damping: 18,
+      stiffness: 200,
+    });
+  }, [theme, themeIndicatorX]);
+
+  const themeIndicatorStyle = useAnimatedStyle(() => ({
+    left: `${themeIndicatorX.value * 50}%` as any,
+  }));
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [showBiometricPasswordInput, setShowBiometricPasswordInput] =
@@ -370,6 +383,68 @@ export default function VaultSettingsScreen() {
   const [historySettingsInitialized, setHistorySettingsInitialized] =
     useState(false);
 
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showNotificationModal = useCallback(
+    (
+      title: string,
+      description: string,
+      icon: keyof typeof Ionicons.glyphMap = "checkmark-circle-outline"
+    ) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    []
+  );
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
+
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
     const group = groupIndex.get(storeMeta.entryTemplatesGroup);
@@ -390,33 +465,50 @@ export default function VaultSettingsScreen() {
     const itemsCount =
       (binGroup.entries?.length || 0) + (binGroup.groups?.length || 0);
     if (itemsCount === 0) {
-      Alert.alert(
+      showNotificationModal(
         "Recycle Bin Empty",
-        "There are no items in the Recycle Bin to delete."
+        "There are no items in the Recycle Bin to delete.",
+        "trash-outline"
       );
       return;
     }
 
-    Alert.alert(
-      "Empty Recycle Bin",
-      `Are you sure you want to permanently delete all ${itemsCount} item(s) inside the "${binGroup.name}" group? This action cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Empty Recycle Bin",
+      description: `Are you sure you want to permanently delete all ${itemsCount} item(s) inside the "${binGroup.name}" group? This action cannot be undone.`,
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Empty Bin",
-          style: "destructive",
+          variant: "destructive",
           onPress: async () => {
+            hideModal();
             const success = await emptyRecycleBin();
             if (success) {
-              Alert.alert("Success", "Recycle bin emptied successfully.");
+              showNotificationModal(
+                "Success",
+                "Recycle bin emptied successfully."
+              );
             } else {
-              Alert.alert("Error", "Failed to empty the recycle bin.");
+              showErrorModal("Error", "Failed to empty the recycle bin.");
             }
           },
         },
-      ]
-    );
-  }, [db, storeMeta, groupIndex, emptyRecycleBin]);
+      ],
+    });
+  }, [
+    db,
+    storeMeta,
+    groupIndex,
+    emptyRecycleBin,
+    colors.statusError,
+    hideModal,
+    showNotificationModal,
+    showErrorModal,
+  ]);
 
   const handleChangePassword = async () => {
     if (!currentPassword) {
@@ -473,10 +565,9 @@ export default function VaultSettingsScreen() {
       try {
         const success = await changeMasterPassword(newPassword);
         if (success) {
-          Alert.alert(
+          showNotificationModal(
             "Success",
-            "Master password updated successfully. Don't forget to save your database to persist changes.",
-            [{ text: "OK" }]
+            "Master password updated successfully. Don't forget to save your database to persist changes."
           );
           setShowChangePasswordModal(false);
           setCurrentPassword("");
@@ -496,36 +587,136 @@ export default function VaultSettingsScreen() {
   const [showKdfModal, setShowKdfModal] = useState(false);
 
   const handleAutoLockPress = useCallback(() => {
-    Alert.alert(
-      "Auto-Lock Timeout",
-      "Select inactivity duration before the database is locked.",
-      [
-        { text: "15 Seconds", onPress: () => setAutoLockTimeout(15000) },
-        { text: "30 Seconds", onPress: () => setAutoLockTimeout(30000) },
-        { text: "1 Minute", onPress: () => setAutoLockTimeout(60000) },
-        { text: "2 Minutes", onPress: () => setAutoLockTimeout(120000) },
-        { text: "5 Minutes", onPress: () => setAutoLockTimeout(300000) },
-        { text: "Never", onPress: () => setAutoLockTimeout(0) },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
-  }, [setAutoLockTimeout]);
+    const options = [
+      {
+        label: "15 Seconds",
+        value: 15000,
+        isSelected: autoLockTimeout === 15000,
+        onPress: () => {
+          setAutoLockTimeout(15000);
+          hideModal();
+        },
+      },
+      {
+        label: "30 Seconds",
+        value: 30000,
+        isSelected: autoLockTimeout === 30000,
+        onPress: () => {
+          setAutoLockTimeout(30000);
+          hideModal();
+        },
+      },
+      {
+        label: "1 Minute",
+        value: 60000,
+        isSelected: autoLockTimeout === 60000,
+        onPress: () => {
+          setAutoLockTimeout(60000);
+          hideModal();
+        },
+      },
+      {
+        label: "2 Minutes",
+        value: 120000,
+        isSelected: autoLockTimeout === 120000,
+        onPress: () => {
+          setAutoLockTimeout(120000);
+          hideModal();
+        },
+      },
+      {
+        label: "5 Minutes",
+        value: 300000,
+        isSelected: autoLockTimeout === 300000,
+        onPress: () => {
+          setAutoLockTimeout(300000);
+          hideModal();
+        },
+      },
+      {
+        label: "Never",
+        value: 0,
+        isSelected: autoLockTimeout === 0,
+        onPress: () => {
+          setAutoLockTimeout(0);
+          hideModal();
+        },
+      },
+    ];
+    setModalConfig({
+      visible: true,
+      title: "Auto-Lock Timeout",
+      description: "Select inactivity duration before the database is locked.",
+      icon: "time-outline",
+      options,
+    });
+  }, [autoLockTimeout, setAutoLockTimeout, hideModal]);
 
   const handleClipboardPress = useCallback(() => {
-    Alert.alert(
-      "Clipboard Clear",
-      "Select delay before sensitive clipboard items are cleared.",
-      [
-        { text: "10 Seconds", onPress: () => setClipboardClearTime(10000) },
-        { text: "20 Seconds", onPress: () => setClipboardClearTime(20000) },
-        { text: "30 Seconds", onPress: () => setClipboardClearTime(30000) },
-        { text: "1 Minute", onPress: () => setClipboardClearTime(60000) },
-        { text: "2 Minutes", onPress: () => setClipboardClearTime(120000) },
-        { text: "Never", onPress: () => setClipboardClearTime(0) },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
-  }, [setClipboardClearTime]);
+    const options = [
+      {
+        label: "10 Seconds",
+        value: 10000,
+        isSelected: clipboardClearTime === 10000,
+        onPress: () => {
+          setClipboardClearTime(10000);
+          hideModal();
+        },
+      },
+      {
+        label: "20 Seconds",
+        value: 20000,
+        isSelected: clipboardClearTime === 20000,
+        onPress: () => {
+          setClipboardClearTime(20000);
+          hideModal();
+        },
+      },
+      {
+        label: "30 Seconds",
+        value: 30000,
+        isSelected: clipboardClearTime === 30000,
+        onPress: () => {
+          setClipboardClearTime(30000);
+          hideModal();
+        },
+      },
+      {
+        label: "1 Minute",
+        value: 60000,
+        isSelected: clipboardClearTime === 60000,
+        onPress: () => {
+          setClipboardClearTime(60000);
+          hideModal();
+        },
+      },
+      {
+        label: "2 Minutes",
+        value: 120000,
+        isSelected: clipboardClearTime === 120000,
+        onPress: () => {
+          setClipboardClearTime(120000);
+          hideModal();
+        },
+      },
+      {
+        label: "Never",
+        value: 0,
+        isSelected: clipboardClearTime === 0,
+        onPress: () => {
+          setClipboardClearTime(0);
+          hideModal();
+        },
+      },
+    ];
+    setModalConfig({
+      visible: true,
+      title: "Clipboard Clear",
+      description: "Select delay before sensitive clipboard items are cleared.",
+      icon: "clipboard-outline",
+      options,
+    });
+  }, [clipboardClearTime, setClipboardClearTime, hideModal]);
 
   useEffect(() => {
     async function checkBiometrics() {
@@ -556,16 +747,20 @@ export default function VaultSettingsScreen() {
       setBiometricEnabled(false);
       setShowBiometricPasswordInput(false);
       setBiometricPassword("");
-      Alert.alert("Success", "Biometric unlock disabled.");
+      showNotificationModal(
+        "Success",
+        "Biometric unlock disabled.",
+        "finger-print-outline"
+      );
     } else {
       setShowBiometricPasswordInput(true);
     }
-  }, [biometricEnabled, fileUri]);
+  }, [biometricEnabled, fileUri, showNotificationModal]);
 
   const handleConfirmBiometric = useCallback(async () => {
     if (verifying) return;
     if (!biometricPassword) {
-      Alert.alert("Error", "Please enter your master password.");
+      showErrorModal("Error", "Please enter your master password.");
       return;
     }
     setVerifying(true);
@@ -581,13 +776,20 @@ export default function VaultSettingsScreen() {
             setBiometricEnabled(true);
             setShowBiometricPasswordInput(false);
             setBiometricPassword("");
-            Alert.alert("Success", "Biometric unlock enabled successfully.");
+            showNotificationModal(
+              "Success",
+              "Biometric unlock enabled successfully.",
+              "finger-print-outline"
+            );
           } else {
-            Alert.alert("Error", "Failed to enable biometric authentication.");
+            showErrorModal(
+              "Error",
+              "Failed to enable biometric authentication."
+            );
           }
         }
       } catch (e: any) {
-        Alert.alert(
+        showErrorModal(
           "Verification Failed",
           e?.message || "Invalid master password."
         );
@@ -595,7 +797,14 @@ export default function VaultSettingsScreen() {
         setVerifying(false);
       }
     }, 50);
-  }, [biometricPassword, loadVault, verifying, fileUri]);
+  }, [
+    biometricPassword,
+    loadVault,
+    verifying,
+    fileUri,
+    showNotificationModal,
+    showErrorModal,
+  ]);
 
   const stats = useMemo(() => {
     if (!db) return null;
@@ -629,9 +838,9 @@ export default function VaultSettingsScreen() {
       try {
         await saveVault(db);
         markClean();
-        Alert.alert("Success", "Vault saved successfully.");
+        showNotificationModal("Success", "Vault saved successfully.");
       } catch (e: any) {
-        Alert.alert(
+        showErrorModal(
           "Error Saving",
           e?.message || "Failed to write database file."
         );
@@ -639,26 +848,31 @@ export default function VaultSettingsScreen() {
         setSaving(false);
       }
     }, 50);
-  }, [db, saveVault, markClean, saving]);
+  }, [db, saveVault, markClean, saving, showNotificationModal, showErrorModal]);
 
   const handleForget = useCallback(() => {
-    Alert.alert(
-      "Forget Vault",
-      "This will remove the vault pointer and clear biometrics. The .kdbx file itself will not be deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Forget Vault",
+      description:
+        "This will remove the vault pointer and clear biometrics. The .kdbx file itself will not be deleted.",
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Forget",
-          style: "destructive",
+          variant: "destructive",
           onPress: async () => {
+            hideModal();
             closeDatabase();
             await clearVault();
             router.replace("/");
           },
         },
-      ]
-    );
-  }, [clearVault, closeDatabase, router]);
+      ],
+    });
+  }, [clearVault, closeDatabase, router, colors.statusError, hideModal]);
 
   const handleApplyKdfParams = useCallback(
     (params: KdfTuningParams) => {
@@ -666,40 +880,58 @@ export default function VaultSettingsScreen() {
       applyKdfParams(db, params);
       refreshParsedState();
       useVaultStore.setState({ isDirty: true });
-      Alert.alert(
+      showNotificationModal(
         "KDF Updated",
         "New parameters applied. Save the database to persist changes."
       );
     },
-    [db, refreshParsedState]
+    [db, refreshParsedState, showNotificationModal]
   );
 
   const handleToggleCompression = useCallback(() => {
     if (!db) return;
-    Alert.alert(
-      "Database Compression",
-      "Select XML compression algorithm for database serialization.",
-      [
-        {
-          text: "GZip (Default)",
-          onPress: () => {
-            db.header.compression = 1; // 1 = GZip
-            refreshParsedState();
-            useVaultStore.setState({ isDirty: true });
-          },
+    const compressionVal = db.header.compression || 0;
+    const options = [
+      {
+        label: "GZip (Default)",
+        value: 1,
+        isSelected: compressionVal === 1,
+        onPress: () => {
+          db.header.compression = 1; // 1 = GZip
+          refreshParsedState();
+          useVaultStore.setState({ isDirty: true });
+          hideModal();
+          showNotificationModal(
+            "Compression Updated",
+            "New parameters applied. Save the database to persist changes."
+          );
         },
-        {
-          text: "None",
-          onPress: () => {
-            db.header.compression = 0; // 0 = None
-            refreshParsedState();
-            useVaultStore.setState({ isDirty: true });
-          },
+      },
+      {
+        label: "None",
+        value: 0,
+        isSelected: compressionVal === 0,
+        onPress: () => {
+          db.header.compression = 0; // 0 = None
+          refreshParsedState();
+          useVaultStore.setState({ isDirty: true });
+          hideModal();
+          showNotificationModal(
+            "Compression Updated",
+            "New parameters applied. Save the database to persist changes."
+          );
         },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
-  }, [db, refreshParsedState]);
+      },
+    ];
+    setModalConfig({
+      visible: true,
+      title: "Database Compression",
+      description:
+        "Select XML compression algorithm for database serialization.",
+      icon: "file-tray-full-outline",
+      options,
+    });
+  }, [db, refreshParsedState, hideModal, showNotificationModal]);
 
   const handleCleanupPress = useCallback(() => {
     if (!db) return;
@@ -709,39 +941,50 @@ export default function VaultSettingsScreen() {
     const { historyToRemove, binariesToRemove } = summary;
 
     if (historyToRemove === 0 && binariesToRemove === 0) {
-      Alert.alert(
+      showNotificationModal(
         "Database Clean",
-        "Your database is already clean! No unreferenced attachments or redundant history entries found."
+        "Your database is already clean! No unreferenced attachments or redundant history entries found.",
+        "shield-checkmark-outline"
       );
       return;
     }
 
-    Alert.alert(
-      "Clean Up Database",
-      `This will optimize your database file size.\n\nSummary of items to remove:\n• Unused binaries/attachments: ${binariesToRemove}\n• Redundant history entries: ${historyToRemove}\n\nDo you want to proceed?`,
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Clean Up Database",
+      description: `This will optimize your database file size.\n\nSummary of items to remove:\n• Unused binaries/attachments: ${binariesToRemove}\n• Redundant history entries: ${historyToRemove}\n\nDo you want to proceed?`,
+      icon: "sparkles-outline",
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Clean Up",
-          style: "destructive",
+          variant: "primary",
           onPress: () => {
+            hideModal();
             const success = runCleanupDatabase({
               binaries: true,
               history: true,
             });
             if (success) {
-              Alert.alert(
+              showNotificationModal(
                 "Cleanup Success",
                 `Successfully cleaned up the database!\n\nRemoved:\n• ${binariesToRemove} unused binaries/attachments\n• ${historyToRemove} redundant history entries.\n\nDon't forget to save your changes.`
               );
             } else {
-              Alert.alert("Error", "Failed to perform database cleanup.");
+              showErrorModal("Error", "Failed to perform database cleanup.");
             }
           },
         },
-      ]
-    );
-  }, [db, cleanupDatabase, runCleanupDatabase]);
+      ],
+    });
+  }, [
+    db,
+    cleanupDatabase,
+    runCleanupDatabase,
+    hideModal,
+    showNotificationModal,
+    showErrorModal,
+  ]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1259,11 +1502,11 @@ export default function VaultSettingsScreen() {
                     </Text>
                   </View>
                   <View style={prefStyles.segmentedContainer}>
+                    <Animated.View
+                      style={[prefStyles.indicator, themeIndicatorStyle]}
+                    />
                     <Pressable
-                      style={[
-                        prefStyles.segmentButton,
-                        theme === "dark" && prefStyles.segmentButtonActive,
-                      ]}
+                      style={prefStyles.segmentButton}
                       onPress={() => setTheme("dark")}
                     >
                       <Text
@@ -1276,10 +1519,7 @@ export default function VaultSettingsScreen() {
                       </Text>
                     </Pressable>
                     <Pressable
-                      style={[
-                        prefStyles.segmentButton,
-                        theme === "light" && prefStyles.segmentButtonActive,
-                      ]}
+                      style={prefStyles.segmentButton}
                       onPress={() => setTheme("light")}
                     >
                       <Text
@@ -1769,6 +2009,18 @@ export default function VaultSettingsScreen() {
           </Animated.View>
         </Animated.View>
       </Modal>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }
@@ -2176,6 +2428,15 @@ function createPrefStyles(colors: any) {
       borderRadius: Radii.md,
       padding: 3,
       width: 140,
+      position: "relative",
+    },
+    indicator: {
+      position: "absolute",
+      top: 3,
+      bottom: 3,
+      width: "50%",
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.sm,
     },
     segmentButton: {
       flex: 1,
@@ -2183,9 +2444,7 @@ function createPrefStyles(colors: any) {
       alignItems: "center",
       justifyContent: "center",
       borderRadius: Radii.sm,
-    },
-    segmentButtonActive: {
-      backgroundColor: colors.accentMint,
+      zIndex: 1,
     },
     segmentText: {
       fontFamily: Fonts.heading.medium,

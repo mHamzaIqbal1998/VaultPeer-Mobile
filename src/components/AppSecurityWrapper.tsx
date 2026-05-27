@@ -35,7 +35,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
     if (inactivityTimeoutRef.current) {
       clearTimeout(inactivityTimeoutRef.current);
     }
-    if (db) {
+    if (db && autoLockTimeout > 0) {
       // Auto-lock after configured time of inactivity
       inactivityTimeoutRef.current = setTimeout(() => {
         lockDatabase();
@@ -66,7 +66,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
           const elapsed = Date.now() - backgroundTimeRef.current;
           backgroundTimeRef.current = null;
 
-          if (elapsed > GRACE_PERIOD_MS) {
+          if (autoLockTimeout > 0 && elapsed > GRACE_PERIOD_MS) {
             console.log(
               `[AppSecurityWrapper] Grace period expired (${Math.round(
                 elapsed / 1000
@@ -97,7 +97,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
     return () => {
       subscription.remove();
     };
-  }, [lockDatabase, resetInactivityTimer]);
+  }, [lockDatabase, resetInactivityTimer, autoLockTimeout]);
 
   // Set/reset timer when database state changes
   useEffect(() => {

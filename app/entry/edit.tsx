@@ -8,7 +8,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
@@ -28,6 +27,7 @@ import { useVaultStore } from "@/src/stores/useVaultStore";
 import { CyberCard } from "@/src/components/CyberCard";
 import { IconPickerModal } from "@/src/components/IconPickerModal";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
+import { ActionModal } from "@/src/components/ActionModal";
 import * as DocumentPicker from "expo-document-picker";
 import { readFile } from "vaultpeer-file-system";
 import type { VaultAttachment } from "@/src/types/kdbx";
@@ -233,6 +233,44 @@ export default function EntryEditScreen() {
   const template = templateEntryId ? getEntry(templateEntryId) : null;
 
   const [saving, setSaving] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
+
   const [title, setTitle] = useState(() => {
     if (existing) return existing.title;
     if (template) return template.title;
@@ -396,14 +434,14 @@ export default function EntryEditScreen() {
       });
     } catch (err: any) {
       console.error(err);
-      Alert.alert("Error", err.message || "Failed to import attachment.");
+      showErrorModal("Error", err.message || "Failed to import attachment.");
     }
   };
 
   const handleSave = useCallback(async () => {
     if (saving) return;
     if (!title.trim()) {
-      Alert.alert("Missing Title", "Please enter a title for this entry.");
+      showErrorModal("Missing Title", "Please enter a title for this entry.");
       return;
     }
 
@@ -444,7 +482,7 @@ export default function EntryEditScreen() {
       } else if (expiryPreset === "Custom") {
         const parsed = Date.parse(customExpiryText.trim().replace(" ", "T"));
         if (isNaN(parsed)) {
-          Alert.alert(
+          showErrorModal(
             "Invalid Date",
             "Please enter a valid expiry date in YYYY-MM-DD HH:MM format."
           );
@@ -476,7 +514,7 @@ export default function EntryEditScreen() {
         if (isNew) {
           const parentUuid = groupId;
           if (!parentUuid) {
-            Alert.alert("Error", "No parent group specified.");
+            showErrorModal("Error", "No parent group specified.");
             setSaving(false);
             return;
           }
@@ -494,7 +532,10 @@ export default function EntryEditScreen() {
         }
       } catch (err: any) {
         console.error(err);
-        Alert.alert("Save Failed", err.message || "Failed to save the entry.");
+        showErrorModal(
+          "Save Failed",
+          err.message || "Failed to save the entry."
+        );
       } finally {
         setSaving(false);
       }
@@ -521,6 +562,7 @@ export default function EntryEditScreen() {
     logAccess,
     router,
     iconId,
+    showErrorModal,
   ]);
 
   const handleDiscard = useCallback(() => {
@@ -563,10 +605,24 @@ export default function EntryEditScreen() {
         JSON.stringify(tags) !== JSON.stringify(existing?.tags || []);
 
     if (hasChanges) {
-      Alert.alert("Discard Changes?", "You have unsaved changes.", [
-        { text: "Keep Editing", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: () => router.back() },
-      ]);
+      setModalConfig({
+        visible: true,
+        title: "Discard Changes?",
+        description: "You have unsaved changes.",
+        icon: "warning-outline",
+        iconColor: colors.statusWarning,
+        buttons: [
+          { text: "Keep Editing", onPress: hideModal, variant: "secondary" },
+          {
+            text: "Discard",
+            variant: "destructive",
+            onPress: () => {
+              hideModal();
+              router.back();
+            },
+          },
+        ],
+      });
     } else {
       router.back();
     }
@@ -585,6 +641,8 @@ export default function EntryEditScreen() {
     tags,
     existing,
     router,
+    colors.statusWarning,
+    hideModal,
   ]);
 
   const strength = estimatePasswordStrength(password);
@@ -1265,6 +1323,18 @@ export default function EntryEditScreen() {
           />
         </View>
       )}
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }

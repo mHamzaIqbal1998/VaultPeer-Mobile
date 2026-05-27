@@ -17,7 +17,6 @@ import {
   Pressable,
   TextInput,
   FlatList,
-  Alert,
   ActivityIndicator,
   Modal,
   ScrollView,
@@ -40,6 +39,7 @@ import { useFilePicker } from "@/src/context/FilePickerContext";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
+import { ActionModal } from "@/src/components/ActionModal";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -228,6 +228,68 @@ export default function VaultBrowserScreen() {
   const [renameGroupName, setRenameGroupName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showNotificationModal = useCallback(
+    (
+      title: string,
+      description: string,
+      icon: keyof typeof Ionicons.glyphMap = "checkmark-circle-outline"
+    ) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    []
+  );
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
+
   const [showTemplateModal, setShowTemplateModal] = useState(false);
 
   const templateEntries = useMemo(() => {
@@ -325,41 +387,60 @@ export default function VaultBrowserScreen() {
       const inBin = isGroupInRecycleBin(group.uuid);
       const deleteText = inBin ? "Delete Permanently" : "Delete Group";
 
-      Alert.alert(`Group: ${group.name}`, "Choose an action", [
+      const options = [
         {
-          text: "Rename",
+          label: "Rename",
           onPress: () => {
+            hideModal();
             setRenameGroupId(group.uuid);
             setRenameGroupName(group.name);
             setShowRenameInput(true);
           },
         },
         {
-          text: deleteText,
+          label: deleteText,
           style: "destructive",
           onPress: () => {
-            Alert.alert(
-              inBin ? "Permanently Delete" : "Delete Group",
-              inBin
+            setModalConfig({
+              visible: true,
+              title: inBin ? "Permanently Delete" : "Delete Group",
+              description: inBin
                 ? `Are you sure you want to permanently delete "${group.name}"? This action cannot be undone.`
                 : `Are you sure you want to delete "${group.name}"? This will move it to the recycle bin.`,
-              [
-                { text: "Cancel", style: "cancel" },
+              icon: "trash-outline",
+              iconColor: colors.statusError,
+              buttons: [
+                { text: "Cancel", onPress: hideModal, variant: "secondary" },
                 {
                   text: inBin ? "Delete Permanently" : "Delete",
-                  style: "destructive",
+                  variant: "destructive",
                   onPress: () => {
+                    hideModal();
                     deleteGroup(group.uuid);
                   },
                 },
-              ]
-            );
+              ],
+            });
           },
         },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      ];
+
+      setModalConfig({
+        visible: true,
+        title: `Group: ${group.name}`,
+        description: "Choose an action",
+        icon: "folder-open-outline",
+        options,
+      });
     },
-    [rootGroup, db, deleteGroup, isGroupInRecycleBin]
+    [
+      rootGroup,
+      db,
+      deleteGroup,
+      isGroupInRecycleBin,
+      colors.statusError,
+      hideModal,
+    ]
   );
 
   const handleCurrentGroupOptions = useCallback(() => {
@@ -367,40 +448,58 @@ export default function VaultBrowserScreen() {
     const inBin = isGroupInRecycleBin(activeGroup.uuid);
     const deleteText = inBin ? "Delete Permanently" : "Delete Group";
 
-    Alert.alert(`Group: ${activeGroup.name}`, "Choose an action", [
+    const options = [
       {
-        text: "Rename",
+        label: "Rename",
         onPress: () => {
+          hideModal();
           setRenameGroupId(activeGroup.uuid);
           setRenameGroupName(activeGroup.name);
           setShowRenameInput(true);
         },
       },
       {
-        text: deleteText,
+        label: deleteText,
         style: "destructive",
         onPress: () => {
-          Alert.alert(
-            inBin ? "Permanently Delete" : "Delete Group",
-            inBin
+          setModalConfig({
+            visible: true,
+            title: inBin ? "Permanently Delete" : "Delete Group",
+            description: inBin
               ? `Are you sure you want to permanently delete "${activeGroup.name}"? This action cannot be undone.`
               : `Are you sure you want to delete "${activeGroup.name}"? This will move it to the recycle bin.`,
-            [
-              { text: "Cancel", style: "cancel" },
+            icon: "trash-outline",
+            iconColor: colors.statusError,
+            buttons: [
+              { text: "Cancel", onPress: hideModal, variant: "secondary" },
               {
                 text: inBin ? "Delete Permanently" : "Delete",
-                style: "destructive",
+                variant: "destructive",
                 onPress: () => {
+                  hideModal();
                   deleteGroup(activeGroup.uuid);
                 },
               },
-            ]
-          );
+            ],
+          });
         },
       },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [activeGroup, deleteGroup, isGroupInRecycleBin]);
+    ];
+
+    setModalConfig({
+      visible: true,
+      title: `Group: ${activeGroup.name}`,
+      description: "Choose an action",
+      icon: "folder-open-outline",
+      options,
+    });
+  }, [
+    activeGroup,
+    deleteGroup,
+    isGroupInRecycleBin,
+    colors.statusError,
+    hideModal,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
@@ -409,9 +508,9 @@ export default function VaultBrowserScreen() {
       try {
         await saveVault(db);
         markClean();
-        Alert.alert("Success", "Vault saved successfully.");
+        showNotificationModal("Success", "Vault saved successfully.");
       } catch (e: any) {
-        Alert.alert(
+        showErrorModal(
           "Error Saving",
           e?.message || "Failed to write database file."
         );
@@ -419,7 +518,7 @@ export default function VaultBrowserScreen() {
         setSaving(false);
       }
     }, 50);
-  }, [db, saveVault, markClean, saving]);
+  }, [db, saveVault, markClean, saving, showNotificationModal, showErrorModal]);
 
   // ────── Render Helpers ──────
 
@@ -794,17 +893,29 @@ export default function VaultBrowserScreen() {
         <View style={styles.fabContainer}>
           <Pressable
             onPress={() => {
-              Alert.alert("Add to Vault", "What would you like to create?", [
+              const options = [
                 {
-                  text: "New Entry",
-                  onPress: handleCreateEntry,
+                  label: "New Entry",
+                  onPress: () => {
+                    hideModal();
+                    handleCreateEntry();
+                  },
                 },
                 {
-                  text: "New Group",
-                  onPress: () => setShowNewGroupInput(true),
+                  label: "New Group",
+                  onPress: () => {
+                    hideModal();
+                    setShowNewGroupInput(true);
+                  },
                 },
-                { text: "Cancel", style: "cancel" },
-              ]);
+              ];
+              setModalConfig({
+                visible: true,
+                title: "Add to Vault",
+                description: "What would you like to create?",
+                icon: "add-circle-outline",
+                options,
+              });
             }}
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityLabel="Add entry or group"
@@ -948,6 +1059,18 @@ export default function VaultBrowserScreen() {
           </Animated.View>
         </Animated.View>
       </Modal>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }
