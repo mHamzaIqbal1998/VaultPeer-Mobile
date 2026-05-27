@@ -26,6 +26,8 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { CyberCard } from "@/src/components/CyberCard";
+import { IconPickerModal } from "@/src/components/IconPickerModal";
+import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import * as DocumentPicker from "expo-document-picker";
 import { readFile } from "vaultpeer-file-system";
 import type { VaultAttachment } from "@/src/types/kdbx";
@@ -212,23 +214,53 @@ function QrScannerView({
 }
 
 export default function EntryEditScreen() {
-  const { entryId, groupId } = useLocalSearchParams<{
+  const { entryId, groupId, templateEntryId } = useLocalSearchParams<{
     entryId?: string;
     groupId?: string;
+    templateEntryId?: string;
   }>();
   const router = useRouter();
   const { getEntry, createEntry, updateEntry, logAccess } = useVaultStore();
 
   const isNew = !entryId;
   const existing = entryId ? getEntry(entryId) : null;
+  const template = templateEntryId ? getEntry(templateEntryId) : null;
 
   const [saving, setSaving] = useState(false);
-  const [title, setTitle] = useState(existing?.title ?? "");
-  const [username, setUsername] = useState(existing?.username ?? "");
-  const [password, setPassword] = useState(existing?.password ?? "");
-  const [url, setUrl] = useState(existing?.url ?? "");
-  const [notes, setNotes] = useState(existing?.notes ?? "");
-  const [otp, setOtp] = useState(existing?.otp ?? "");
+  const [title, setTitle] = useState(() => {
+    if (existing) return existing.title;
+    if (template) return template.title;
+    return "";
+  });
+  const [username, setUsername] = useState(() => {
+    if (existing) return existing.username;
+    if (template) return template.username;
+    return "";
+  });
+  const [password, setPassword] = useState(() => {
+    if (existing) return existing.password;
+    if (template) return template.password;
+    return "";
+  });
+  const [url, setUrl] = useState(() => {
+    if (existing) return existing.url;
+    if (template) return template.url;
+    return "";
+  });
+  const [notes, setNotes] = useState(() => {
+    if (existing) return existing.notes;
+    if (template) return template.notes;
+    return "";
+  });
+  const [otp, setOtp] = useState<string>(() => {
+    if (existing) return existing.otp ?? "";
+    if (template) return template.otp ?? "";
+    return "";
+  });
+  const [iconId, setIconId] = useState<number>(
+    existing?.iconId ?? template?.iconId ?? 0
+  );
+  const [showIconPicker, setShowIconPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
   const [showGenerator, setShowGenerator] = useState(false);
@@ -279,27 +311,43 @@ export default function EntryEditScreen() {
   ]);
 
   const [customFields, setCustomFields] = useState<CustomFieldState[]>(() => {
-    if (!existing || !existing.fields) return [];
-    return Object.entries(existing.fields).map(([key, value]) => ({
-      id: Math.random().toString(),
-      key,
-      value,
-      isSecure: existing.secureFields?.includes(key) ?? false,
-    }));
+    if (existing && existing.fields) {
+      return Object.entries(existing.fields).map(([key, value]) => ({
+        id: Math.random().toString(),
+        key,
+        value,
+        isSecure: existing.secureFields?.includes(key) ?? false,
+      }));
+    }
+    if (template && template.fields) {
+      return Object.entries(template.fields).map(([key, value]) => ({
+        id: Math.random().toString(),
+        key,
+        value,
+        isSecure: template.secureFields?.includes(key) ?? false,
+      }));
+    }
+    return [];
   });
 
   const [attachments, setAttachments] = useState<VaultAttachment[]>(() => {
     return existing?.attachments ? [...existing.attachments] : [];
   });
 
-  const [expires, setExpires] = useState(existing?.expires ?? false);
+  const [expires, setExpires] = useState(() => {
+    if (existing) return existing.expires;
+    if (template) return template.expires;
+    return false;
+  });
   const [expiryPreset, setExpiryPreset] = useState<string>(() => {
-    if (!existing?.expires || !existing.expiryTime) return "1 Month";
+    const target = existing || template;
+    if (!target?.expires || !target.expiryTime) return "1 Month";
     return "Custom";
   });
   const [customExpiryText, setCustomExpiryText] = useState<string>(() => {
-    if (existing?.expiryTime) {
-      const d = new Date(existing.expiryTime);
+    const target = existing || template;
+    if (target?.expiryTime) {
+      const d = new Date(target.expiryTime);
       const pad = (n: number) => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
@@ -308,9 +356,11 @@ export default function EntryEditScreen() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
 
-  const [tags, setTags] = useState<string[]>(
-    existing?.tags ? [...existing.tags] : []
-  );
+  const [tags, setTags] = useState<string[]>(() => {
+    if (existing?.tags) return [...existing.tags];
+    if (template?.tags) return [...template.tags];
+    return [];
+  });
   const [newTagInput, setNewTagInput] = useState("");
 
   const handleAddAttachment = async () => {
@@ -411,6 +461,7 @@ export default function EntryEditScreen() {
       expires,
       expiryTime: finalExpiryTime,
       tags,
+      iconId,
     };
 
     setSaving(true);
@@ -463,6 +514,7 @@ export default function EntryEditScreen() {
     updateEntry,
     logAccess,
     router,
+    iconId,
   ]);
 
   const handleDiscard = useCallback(() => {
@@ -476,13 +528,15 @@ export default function EntryEditScreen() {
         customFields.length > 0 ||
         attachments.length > 0 ||
         expires ||
-        tags.length > 0
+        tags.length > 0 ||
+        iconId !== 0
       : title !== existing?.title ||
         username !== existing?.username ||
         password !== existing?.password ||
         url !== existing?.url ||
         notes !== existing?.notes ||
         otp !== (existing?.otp ?? "") ||
+        iconId !== (existing?.iconId ?? 0) ||
         JSON.stringify(
           customFields.map((f) => ({
             key: f.key,
@@ -518,6 +572,7 @@ export default function EntryEditScreen() {
     url,
     notes,
     otp,
+    iconId,
     customFields,
     attachments,
     expires,
@@ -570,6 +625,30 @@ export default function EntryEditScreen() {
         >
           <Animated.View entering={FadeInDown.duration(300)}>
             <CyberCard style={{ padding: Spacing.xl }}>
+              {/* ── Icon Picker Button ── */}
+              <Pressable
+                onPress={() => setShowIconPicker(true)}
+                style={styles.iconPickerBtn}
+                accessibilityLabel="Change entry icon"
+              >
+                <View style={styles.iconPickerCircle}>
+                  <Ionicons
+                    name={getKdbxIconName(iconId)}
+                    size={24}
+                    color={Colors.accentMint}
+                  />
+                </View>
+                <View style={styles.iconPickerInfo}>
+                  <Text style={styles.iconPickerLabel}>Entry Icon</Text>
+                  <Text style={styles.iconPickerHint}>Tap to change</Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={Colors.textMuted}
+                />
+              </Pressable>
+
               <FormField
                 label="Title"
                 value={title}
@@ -1151,6 +1230,14 @@ export default function EntryEditScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* ── Icon Picker Modal ── */}
+      <IconPickerModal
+        visible={showIconPicker}
+        selectedIconId={iconId}
+        onSelect={(id) => setIconId(id)}
+        onClose={() => setShowIconPicker(false)}
+      />
+
       {showScanner && (
         <View style={StyleSheet.absoluteFillObject}>
           <QrScannerView
@@ -1178,6 +1265,43 @@ export default function EntryEditScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.backgroundPrimary },
+
+  // Icon Picker Button
+  iconPickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  iconPickerCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.accentMintDim,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: Colors.accentMint,
+  },
+  iconPickerInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  iconPickerLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  iconPickerHint: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

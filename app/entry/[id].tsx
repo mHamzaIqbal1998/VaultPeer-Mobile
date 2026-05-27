@@ -9,39 +9,39 @@
  * - Access history logging
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import { CyberCard } from "@/src/components/CyberCard";
+import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import {
-  View,
-  Text,
-  StyleSheet,
+  Colors,
+  FontSizes,
+  Fonts,
+  LineHeights,
+  Radii,
+  Shadows,
+  Spacing,
+  TouchTarget,
+} from "@/src/constants/theme";
+import { useClipboard } from "@/src/hooks/useClipboard";
+import type { OtpParams } from "@/src/services/otpService";
+import { generateTotp, parseOtpUri } from "@/src/services/otpService";
+import { useVaultStore } from "@/src/stores/useVaultStore";
+import type { VaultAttachment, VaultHistorySnapshot } from "@/src/types/kdbx";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
-  Alert,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useClipboard } from "@/src/hooks/useClipboard";
-import * as Haptics from "expo-haptics";
-import {
-  Colors,
-  Fonts,
-  FontSizes,
-  LineHeights,
-  Spacing,
-  Radii,
-  Shadows,
-  TouchTarget,
-} from "@/src/constants/theme";
-import { useVaultStore } from "@/src/stores/useVaultStore";
-import { getKdbxIconName } from "@/src/constants/kdbxIcons";
-import { CyberCard } from "@/src/components/CyberCard";
 import { createFile, writeTempFile } from "vaultpeer-file-system";
-import type { VaultAttachment } from "@/src/types/kdbx";
-import { parseOtpUri, generateTotp } from "@/src/services/otpService";
-import type { OtpParams } from "@/src/services/otpService";
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -257,6 +257,13 @@ export default function EntryDetailScreen() {
   const restoreEntry = useVaultStore((state) => state.restoreEntry);
   const logAccess = useVaultStore((state) => state.logAccess);
   const getAttachmentData = useVaultStore((state) => state.getAttachmentData);
+  const getEntryHistory = useVaultStore((state) => state.getEntryHistory);
+  const restoreHistorySnapshot = useVaultStore(
+    (state) => state.restoreHistorySnapshot
+  );
+  const deleteHistorySnapshot = useVaultStore(
+    (state) => state.deleteHistorySnapshot
+  );
   const isGroupInRecycleBin = useVaultStore(
     (state) => state.isGroupInRecycleBin
   );
@@ -268,6 +275,12 @@ export default function EntryDetailScreen() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [expandedSnapshot, setExpandedSnapshot] = useState<number | null>(null);
+  const [historySnapshots, setHistorySnapshots] = useState<
+    VaultHistorySnapshot[]
+  >([]);
+  const [restoringSnapshot, setRestoringSnapshot] = useState(false);
 
   const handleExportAttachment = useCallback(
     async (attachment: VaultAttachment) => {
@@ -663,6 +676,305 @@ export default function EntryDetailScreen() {
           </CyberCard>
         )}
 
+        {/* ── Entry History ── */}
+        <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+          <Pressable
+            onPress={() => {
+              if (!showHistory && entry) {
+                const snapshots = getEntryHistory(entry.uuid);
+                setHistorySnapshots(snapshots);
+              }
+              setShowHistory(!showHistory);
+              setExpandedSnapshot(null);
+            }}
+            style={styles.historyToggleRow}
+            hitSlop={4}
+          >
+            <View style={styles.fieldLabelRow}>
+              <Ionicons
+                name="time-outline"
+                size={14}
+                color={Colors.textMuted}
+              />
+              <Text style={styles.historySectionTitle}>Entry History</Text>
+            </View>
+            <View style={styles.historyBadgeRow}>
+              <Ionicons
+                name={showHistory ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={Colors.textMuted}
+              />
+            </View>
+          </Pressable>
+
+          {showHistory && (
+            <Animated.View entering={FadeInDown.duration(200)}>
+              {historySnapshots.length === 0 ? (
+                <View style={styles.historyEmpty}>
+                  <Ionicons
+                    name="document-outline"
+                    size={28}
+                    color={Colors.textDisabled}
+                  />
+                  <Text style={styles.historyEmptyText}>
+                    No history snapshots available
+                  </Text>
+                </View>
+              ) : (
+                historySnapshots
+                  .slice()
+                  .reverse()
+                  .map((snapshot) => {
+                    const realIndex = snapshot.index;
+                    const isExpanded = expandedSnapshot === realIndex;
+                    const snapDate = new Date(snapshot.modifiedAt);
+                    const isActive =
+                      snapshot.title === entry.title &&
+                      snapshot.password === entry.password &&
+                      snapshot.username === entry.username;
+
+                    return (
+                      <View key={realIndex} style={styles.historyItem}>
+                        <Pressable
+                          onPress={() =>
+                            setExpandedSnapshot(isExpanded ? null : realIndex)
+                          }
+                          style={[
+                            styles.historyItemHeader,
+                            isExpanded && styles.historyItemHeaderExpanded,
+                          ]}
+                        >
+                          <View style={styles.historyItemInfo}>
+                            <Ionicons
+                              name="git-commit-outline"
+                              size={16}
+                              color={
+                                isActive ? Colors.accentMint : Colors.textMuted
+                              }
+                            />
+                            <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                              <Text
+                                style={styles.historyItemTitle}
+                                numberOfLines={1}
+                              >
+                                {snapshot.title || "(no title)"}
+                              </Text>
+                              <Text style={styles.historyItemDate}>
+                                {snapDate.toLocaleDateString()}{" "}
+                                {snapDate.toLocaleTimeString()}
+                              </Text>
+                            </View>
+                          </View>
+                          <Ionicons
+                            name={isExpanded ? "chevron-up" : "chevron-down"}
+                            size={16}
+                            color={Colors.textMuted}
+                          />
+                        </Pressable>
+
+                        {isExpanded && (
+                          <Animated.View
+                            entering={FadeInDown.duration(150)}
+                            style={styles.historyPreview}
+                          >
+                            {snapshot.username ? (
+                              <View style={styles.historyFieldRow}>
+                                <Text style={styles.historyFieldLabel}>
+                                  Username
+                                </Text>
+                                <Text
+                                  style={styles.historyFieldValue}
+                                  numberOfLines={1}
+                                >
+                                  {snapshot.username}
+                                </Text>
+                              </View>
+                            ) : null}
+                            {snapshot.password ? (
+                              <View style={styles.historyFieldRow}>
+                                <Text style={styles.historyFieldLabel}>
+                                  Password
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.historyFieldValue,
+                                    styles.historyFieldMono,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  ••••••••
+                                </Text>
+                              </View>
+                            ) : null}
+                            {snapshot.url ? (
+                              <View style={styles.historyFieldRow}>
+                                <Text style={styles.historyFieldLabel}>
+                                  URL
+                                </Text>
+                                <Text
+                                  style={styles.historyFieldValue}
+                                  numberOfLines={1}
+                                >
+                                  {snapshot.url}
+                                </Text>
+                              </View>
+                            ) : null}
+                            {Object.entries(snapshot.fields).length > 0 && (
+                              <View style={styles.historyFieldRow}>
+                                <Text style={styles.historyFieldLabel}>
+                                  Custom Fields
+                                </Text>
+                                <Text style={styles.historyFieldValue}>
+                                  {Object.keys(snapshot.fields).length} field
+                                  {Object.keys(snapshot.fields).length !== 1
+                                    ? "s"
+                                    : ""}
+                                </Text>
+                              </View>
+                            )}
+
+                            <View style={styles.historyActions}>
+                              <Pressable
+                                onPress={() => {
+                                  if (restoringSnapshot) return;
+                                  Alert.alert(
+                                    "Restore Snapshot",
+                                    `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
+                                    [
+                                      { text: "Cancel", style: "cancel" },
+                                      {
+                                        text: "Restore",
+                                        onPress: async () => {
+                                          setRestoringSnapshot(true);
+                                          try {
+                                            const result =
+                                              await restoreHistorySnapshot(
+                                                entry.uuid,
+                                                realIndex
+                                              );
+                                            if (result) {
+                                              const updated = getEntryHistory(
+                                                entry.uuid
+                                              );
+                                              setHistorySnapshots(updated);
+                                              setExpandedSnapshot(null);
+                                              Haptics.notificationAsync(
+                                                Haptics.NotificationFeedbackType
+                                                  .Success
+                                              );
+                                              Alert.alert(
+                                                "Restored",
+                                                "Entry restored to snapshot state."
+                                              );
+                                            } else {
+                                              Alert.alert(
+                                                "Error",
+                                                "Failed to restore snapshot."
+                                              );
+                                            }
+                                          } catch (err) {
+                                            console.error(err);
+                                            Alert.alert(
+                                              "Error",
+                                              "An error occurred while restoring."
+                                            );
+                                          } finally {
+                                            setRestoringSnapshot(false);
+                                          }
+                                        },
+                                      },
+                                    ]
+                                  );
+                                }}
+                                style={({ pressed }) => [
+                                  styles.historyActionBtn,
+                                  styles.historyRestoreBtn,
+                                  pressed && { opacity: 0.7 },
+                                  restoringSnapshot && { opacity: 0.5 },
+                                ]}
+                                disabled={restoringSnapshot}
+                              >
+                                {restoringSnapshot ? (
+                                  <ActivityIndicator
+                                    size="small"
+                                    color={Colors.backgroundPrimary}
+                                  />
+                                ) : (
+                                  <>
+                                    <Ionicons
+                                      name="refresh-outline"
+                                      size={14}
+                                      color={Colors.backgroundPrimary}
+                                    />
+                                    <Text style={styles.historyRestoreBtnText}>
+                                      Restore
+                                    </Text>
+                                  </>
+                                )}
+                              </Pressable>
+
+                              <Pressable
+                                onPress={() => {
+                                  Alert.alert(
+                                    "Delete Snapshot",
+                                    `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
+                                    [
+                                      { text: "Cancel", style: "cancel" },
+                                      {
+                                        text: "Delete",
+                                        style: "destructive",
+                                        onPress: () => {
+                                          const success = deleteHistorySnapshot(
+                                            entry.uuid,
+                                            realIndex
+                                          );
+                                          if (success) {
+                                            const updated = getEntryHistory(
+                                              entry.uuid
+                                            );
+                                            setHistorySnapshots(updated);
+                                            setExpandedSnapshot(null);
+                                            Haptics.notificationAsync(
+                                              Haptics.NotificationFeedbackType
+                                                .Success
+                                            );
+                                          } else {
+                                            Alert.alert(
+                                              "Error",
+                                              "Failed to delete snapshot."
+                                            );
+                                          }
+                                        },
+                                      },
+                                    ]
+                                  );
+                                }}
+                                style={({ pressed }) => [
+                                  styles.historyActionBtn,
+                                  styles.historyDeleteBtn,
+                                  pressed && { opacity: 0.7 },
+                                ]}
+                              >
+                                <Ionicons
+                                  name="trash-outline"
+                                  size={14}
+                                  color={Colors.statusError}
+                                />
+                                <Text style={styles.historyDeleteBtnText}>
+                                  Delete
+                                </Text>
+                              </Pressable>
+                            </View>
+                          </Animated.View>
+                        )}
+                      </View>
+                    );
+                  })
+              )}
+            </Animated.View>
+          )}
+        </CyberCard>
+
         {/* ── Metadata ── */}
         <CyberCard style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
           <Text style={styles.sectionTitle}>Metadata</Text>
@@ -803,6 +1115,13 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.bodySmall,
     color: Colors.textMuted,
     marginBottom: Spacing.md,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  historySectionTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 1,
   },
@@ -1042,5 +1361,131 @@ const styles = StyleSheet.create({
     color: Colors.accentMint,
     minWidth: 24,
     textAlign: "right",
+  },
+
+  // Entry History
+  historyToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  historyBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  historyEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.xxl,
+    gap: Spacing.sm,
+  },
+  historyEmptyText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textDisabled,
+  },
+  historyItem: {
+    marginTop: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    overflow: "hidden",
+  },
+  historyItemHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  historyItemHeaderExpanded: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderSage,
+  },
+  historyItemInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  historyItemTitle: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+  },
+  historyItemDate: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  historyPreview: {
+    padding: Spacing.md,
+    backgroundColor: Colors.surfaceCard,
+    gap: Spacing.sm,
+  },
+  historyFieldRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: Spacing.xxs,
+  },
+  historyFieldLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  historyFieldValue: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textSecondary,
+    flex: 1,
+    textAlign: "right",
+    marginLeft: Spacing.md,
+  },
+  historyFieldMono: {
+    fontFamily: Fonts.mono.regular,
+    letterSpacing: 2,
+  },
+  historyActions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderSage,
+  },
+  historyActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.md,
+    minHeight: 36,
+  },
+  historyRestoreBtn: {
+    backgroundColor: Colors.accentMint,
+    ...Shadows.glow,
+  },
+  historyRestoreBtnText: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.caption,
+    color: Colors.backgroundPrimary,
+  },
+  historyDeleteBtn: {
+    backgroundColor: Colors.statusErrorDim,
+    borderWidth: 1,
+    borderColor: Colors.statusError,
+  },
+  historyDeleteBtnText: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.statusError,
   },
 });

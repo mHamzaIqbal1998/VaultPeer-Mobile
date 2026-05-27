@@ -193,3 +193,84 @@ Redesigns the settings dashboard into distinct "Database" (stored in KDBX) and "
   - Adds a prominent "Benchmark for 1.0s" button that runs the benchmark in a loading overlay and applies the calibrated parameters.
 - [x] Update the database serialization and update pipeline in the store to write these custom KDF parameters to the KDBX file header map via `db.header.kdfParameters.set()`.
 - [x] Add unit tests in `src/services/crypto/__tests__/kdfBenchmark.test.ts` to verify the benchmarking math and parameter tuning across all algorithms.
+
+### Phase 11: Compression & Database Maintenance Settings
+
+Integrates data compression configuration and on-demand database maintenance features matching KeePassDX, allowing users to configure XML compression algorithms and clean up unlinked binaries or history data.
+
+- [x] Add the database compression option (`db.header.compression`) to Database Settings, allowing users to select between "GZip (Default)" and "None".
+- [x] Implement UI toggles/pickers in the Settings screen to update the database compression field.
+- [x] Create a "Database Maintenance" section under Database Settings in `app/vault/settings.tsx`.
+- [x] Implement a "Clean Up Database" action that:
+  - Invokes `db.cleanup({ binaries: true, history: true })` on the active database instance.
+  - Removes unreferenced attachments/binaries and redundant history entries.
+  - Updates the dirty state of the vault in the store so the user can save the pruned database.
+- [x] Add a confirmation prompt showing a summary before performing the cleanup, and a success alert displaying the result.
+- [x] Write unit tests to verify that changing the compression setting correctly updates the saved file payload format and that manual cleanup successfully purges unlinked binaries.
+
+### Phase 12: Templates Support
+
+Introduces KeePassDX-style entry templates. Allows users to enable templates in database settings, which initializes a standard "Templates" group containing pre-configured formats (Credit Cards, Emails, Secure Notes). During new entry creation, users can choose from default or custom templates to auto-populate fields.
+
+- [x] Add a database configuration toggle "Enable Entry Templates" in Database Settings.
+- [x] Expose a "Template Group" selector menu in Database Settings allowing users to choose which group acts as the active template repository (populating the selector dynamically with all database groups).
+- [x] Implement group and entry seeding logic in the store:
+  - When templates are enabled, check if `db.meta.entryTemplatesGroup` is set and valid.
+  - If not set, check if a root-level group named "Templates" exists.
+  - If missing, create the "Templates" group and set its UUID to `db.meta.entryTemplatesGroup`.
+  - Populate it with default templates: "Credit Card" (with Card Number, Expiry, CVV, Cardholder Name fields), "Email Account" (with Recovery Email, IMAP/SMTP server fields), and "Secure Note" (with a secure multi-line text area).
+- [x] Design a premium template selector modal or screen using a grid layout with vibrant cards for each template:
+  - Display cards with custom icons and descriptive helper text.
+  - Include a "Blank Entry" default card.
+  - Fetch and list any user-created templates from the selected template group dynamically.
+- [x] Integrate the template selection screen into the creation flow:
+  - When tapping the "+" add button inside any group view, if templates are enabled, display the template selector.
+  - Upon selecting a template, navigate to `app/entry/edit.tsx` with the template parameters.
+- [x] Update `app/entry/edit.tsx` to read the template entry's fields (Title, Username, Password, URL, Notes, Custom Fields, and Tags) and pre-fill the form fields on mount.
+- [x] Add unit tests in `src/stores/__tests__/templates.test.ts` to verify group creation, default template seeding, metadata sync via `entryTemplatesGroup`, field duplication to new entries, and custom user templates loading.
+
+### Phase 13: Recycle Bin Support
+
+Integrates KeePassDX-style Recycle Bin configuration. Allows users to enable/disable Recycle Bin usage in Database Settings and choose which group acts as the active Recycle Bin. On enabling, if the default "Recycle Bin" group is missing, the application will initialize it automatically.
+
+- [x] Add a database configuration toggle "Enable Recycle Bin" in Database Settings.
+- [x] Expose a "Recycle Bin Group" selector menu in Database Settings allowing users to choose which group acts as the active recycle bin (populated with all database groups dynamically).
+- [x] Update the store configuration logic:
+  - Synchronize choices with `db.meta.recycleBinEnabled` and `db.meta.recycleBinUuid` (converting the UUID back and forth).
+  - When the recycle bin is enabled, verify that a group matches the designated UUID or a group named "Recycle Bin" exists at the root.
+  - If missing, create the "Recycle Bin" group automatically, assign its UUID to `db.meta.recycleBinUuid`, and set the group icon to the standard trash bin icon (Icon 27).
+- [x] Refactor the group and entry deletion logic in `useVaultStore.ts` to verify that deletions respect the configured settings (moving items to the designated Recycle Bin if enabled, or deleting permanently if disabled/already in the bin).
+- [x] Expose an on-demand "Empty Recycle Bin" button under Database Settings that purges all entries and subgroups within the designated bin permanently.
+- [x] Write unit tests verifying Recycle Bin state changes, automatic group creation, moving entries to the bin, permanent deletion, and empty bin actions.
+
+### Phase 14: Master Password Strength & Change Operations
+
+Implements visual password strength metrics during database/file creation and provides on-demand Master Password modification from Settings with automatic SecureStore biometric credential synchronization.
+
+- [x] Add the password strength indicator bar and rating (using the existing `estimatePasswordStrength` service) to the database/file creation screen in `app/index.tsx`.
+- [x] Design a secure "Change Master Password" modal/workflow under the Security section of Database Settings in `app/vault/settings.tsx`:
+  - Request the current master password and verify it against `db.credentials.passwordHash`.
+  - Request the new master password (complete with strength indicator and confirm password validation).
+- [x] Implement master password update mechanics in the store:
+  - Generate a new Kdbx credentials instance from the new password.
+  - Set the new credentials on the active database (`db.credentials`).
+  - Update the dirty state of the vault to trigger file saving on close or on manual save.
+  - If biometric unlock is active, call `enableBiometric(newPassword)` to automatically update the master password stored in `SecureStore`.
+- [x] Write unit tests to verify password validation, credentials updates on the Kdbx instance, and SecureStore synchronization.
+
+### Phase 15: Entry History Settings & Restore Operations
+
+Integrates database history settings matching KeePassDX, allowing users to limit entry history items and sizes, view historical snapshots of individual entries, and restore/delete snapshots on-demand.
+
+- [x] Update the `VaultMeta` type definition in `src/types/kdbx.ts` and the `parseMeta` service in `src/services/crypto/databaseParser.ts` to extract `historyMaxItems` and `historyMaxSize`.
+- [x] Add history configuration inputs in Database Settings (`app/vault/settings.tsx`):
+  - "Max History Items" number input mapping to `db.meta.historyMaxItems`.
+  - "Max History Size" number input mapping to `db.meta.historyMaxSize` (displaying in MB/KB and converting to bytes).
+- [x] Add a "History" tab or section to the Entry details screen:
+  - Fetch and render the history array (`entry.history`) from the selected entry.
+  - Sort snapshots chronologically and show modification timestamps.
+- [x] Implement historical preview and restoration features:
+  - Add a collapsible preview for each history item displaying its saved fields, custom fields, and password.
+  - Implement a "Restore" button that copies the snapshot's state back into the active entry's fields, updating the entry and marking the database as dirty.
+  - Implement a "Delete" button that splices out a specific snapshot using `entry.removeHistory(index)`.
+- [x] Write unit tests to verify database configuration parsing, snapshot creation, history item deletion, and restore capabilities.

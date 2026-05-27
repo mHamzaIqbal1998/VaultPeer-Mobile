@@ -37,6 +37,20 @@ export interface VaultMeta {
   entryCount: number;
   /** Number of top-level groups */
   groupCount: number;
+  /** Compression setting */
+  compression?: "None" | "GZip";
+  /** UUID of the entry templates group */
+  entryTemplatesGroup?: string;
+  /** Whether entry templates are enabled */
+  entryTemplatesEnabled?: boolean;
+  /** Whether the recycle bin is enabled */
+  recycleBinEnabled?: boolean;
+  /** UUID of the recycle bin group */
+  recycleBinUuid?: string;
+  /** Maximum number of history items per entry (default 10) */
+  historyMaxItems?: number;
+  /** Maximum total size of history entries in bytes (default 6 MB) */
+  historyMaxSize?: number;
 }
 
 // ────────────────────────────────────────────
@@ -84,6 +98,34 @@ export interface VaultEntry {
   otp?: string;
   /** Parent group UUID */
   parentGroupUuid: string;
+}
+
+/** A historical snapshot of an entry (for history restore/preview) */
+export interface VaultHistorySnapshot {
+  /** Index in the history array */
+  index: number;
+  /** Title at the time of snapshot */
+  title: string;
+  /** Username at the time of snapshot */
+  username: string;
+  /** Password at the time of snapshot */
+  password: string;
+  /** URL at the time of snapshot */
+  url: string;
+  /** Notes at the time of snapshot */
+  notes: string;
+  /** Custom fields at the time of snapshot */
+  fields: Record<string, string>;
+  /** Names of secure custom fields */
+  secureFields: string[];
+  /** Tags at the time of snapshot */
+  tags: string[];
+  /** ISO-8601 modification timestamp */
+  modifiedAt: string;
+  /** Icon index */
+  iconId: number;
+  /** OTP URI */
+  otp?: string;
 }
 
 /** A folder / group node in the KeePass tree */

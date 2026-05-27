@@ -7,6 +7,7 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
+  setupFiles: ["<rootDir>/jest.setup.js"],
   testPathIgnorePatterns: ["/node_modules/", "/android/", "/.expo/"],
   collectCoverageFrom: [
     "src/**/*.{ts,tsx}",

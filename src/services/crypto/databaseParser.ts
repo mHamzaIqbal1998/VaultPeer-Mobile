@@ -287,6 +287,8 @@ function getCipherName(db: Kdbx): string {
  */
 export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
   const parsedRoot = rootGroup || parseGroup(db.getDefaultGroup(), null);
+  const comp = (db.header as any)?.compression;
+  const compression = comp === 0 ? "None" : "GZip";
 
   return {
     name: db.meta?.name ?? "Untitled Vault",
@@ -297,6 +299,31 @@ export function parseMeta(db: Kdbx, rootGroup?: VaultGroup): VaultMeta {
     lastModified: toISOString(db.meta?.settingsChanged ?? new Date()),
     entryCount: countEntries(parsedRoot),
     groupCount: parsedRoot.groups.length,
+    compression,
+    entryTemplatesGroup: (() => {
+      const uuidStr = db.meta?.entryTemplatesGroup
+        ? uuidToString(db.meta.entryTemplatesGroup)
+        : undefined;
+      return uuidStr === "AAAAAAAAAAAAAAAAAAAAAA==" ? undefined : uuidStr;
+    })(),
+    entryTemplatesEnabled: db.meta?.customData
+      ? db.meta.customData.get("templatesEnabled")?.value === "true"
+      : false,
+    recycleBinEnabled: !!db.meta?.recycleBinEnabled,
+    recycleBinUuid: (() => {
+      const uuidStr = db.meta?.recycleBinUuid
+        ? uuidToString(db.meta.recycleBinUuid)
+        : undefined;
+      return uuidStr === "AAAAAAAAAAAAAAAAAAAAAA==" ? undefined : uuidStr;
+    })(),
+    historyMaxItems:
+      typeof db.meta?.historyMaxItems === "number"
+        ? db.meta.historyMaxItems
+        : 10,
+    historyMaxSize:
+      typeof db.meta?.historyMaxSize === "number"
+        ? db.meta.historyMaxSize
+        : 6 * 1024 * 1024,
   };
 }
 

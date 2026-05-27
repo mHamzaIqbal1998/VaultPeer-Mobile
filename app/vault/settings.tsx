@@ -8,6 +8,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -15,6 +16,8 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  FadeIn,
+  FadeOut,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -43,6 +46,8 @@ import {
   enableBiometric,
   disableBiometric,
 } from "@/src/services/biometricService";
+import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
+import * as kdbxweb from "kdbxweb";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -288,6 +293,17 @@ export default function VaultSettingsScreen() {
     markClean,
     refreshParsedState,
     meta: storeMeta,
+    cleanupDatabase,
+    runCleanupDatabase,
+    setTemplatesEnabled,
+    setTemplatesGroup,
+    groupIndex,
+    setRecycleBinEnabled,
+    setRecycleBinGroup,
+    emptyRecycleBin,
+    changeMasterPassword,
+    setHistoryMaxItems,
+    setHistoryMaxSize,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
@@ -299,6 +315,148 @@ export default function VaultSettingsScreen() {
   const [biometricPassword, setBiometricPassword] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showRecycleBinGroupModal, setShowRecycleBinGroupModal] =
+    useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(
+    null
+  );
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [historyMaxItemsInput, setHistoryMaxItemsInput] = useState("");
+  const [historyMaxSizeInput, setHistoryMaxSizeInput] = useState("");
+  const [historySettingsInitialized, setHistorySettingsInitialized] =
+    useState(false);
+
+  const templateGroupName = useMemo(() => {
+    if (!storeMeta?.entryTemplatesGroup) return "Templates";
+    const group = groupIndex.get(storeMeta.entryTemplatesGroup);
+    return group ? group.name : "Templates";
+  }, [storeMeta, groupIndex]);
+
+  const recycleBinGroupName = useMemo(() => {
+    if (!storeMeta?.recycleBinUuid) return "Recycle Bin";
+    const group = groupIndex.get(storeMeta.recycleBinUuid);
+    return group ? group.name : "Recycle Bin";
+  }, [storeMeta, groupIndex]);
+
+  const handleEmptyRecycleBinPress = useCallback(() => {
+    if (!db || !storeMeta?.recycleBinUuid) return;
+    const binGroup = groupIndex.get(storeMeta.recycleBinUuid);
+    if (!binGroup) return;
+
+    const itemsCount =
+      (binGroup.entries?.length || 0) + (binGroup.groups?.length || 0);
+    if (itemsCount === 0) {
+      Alert.alert(
+        "Recycle Bin Empty",
+        "There are no items in the Recycle Bin to delete."
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Empty Recycle Bin",
+      `Are you sure you want to permanently delete all ${itemsCount} item(s) inside the "${binGroup.name}" group? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Empty Bin",
+          style: "destructive",
+          onPress: async () => {
+            const success = await emptyRecycleBin();
+            if (success) {
+              Alert.alert("Success", "Recycle bin emptied successfully.");
+            } else {
+              Alert.alert("Error", "Failed to empty the recycle bin.");
+            }
+          },
+        },
+      ]
+    );
+  }, [db, storeMeta, groupIndex, emptyRecycleBin]);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      setChangePasswordError("Please enter your current master password.");
+      return;
+    }
+    if (!newPassword) {
+      setChangePasswordError("Please enter a new master password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError("New passwords do not match.");
+      return;
+    }
+
+    try {
+      const inputHash =
+        await kdbxweb.ProtectedValue.fromString(currentPassword).getHash();
+      const currentHash = (db?.credentials as any)?.passwordHash?.getBinary();
+      if (!currentHash) {
+        setChangePasswordError(
+          "Failed to retrieve current database credentials."
+        );
+        return;
+      }
+
+      let match = inputHash.byteLength === currentHash.byteLength;
+      if (match) {
+        const inputArr = new Uint8Array(inputHash);
+        const currentArr = new Uint8Array(currentHash);
+        for (let i = 0; i < inputArr.length; i++) {
+          if (inputArr[i] !== currentArr[i]) {
+            match = false;
+            break;
+          }
+        }
+      }
+
+      if (!match) {
+        setChangePasswordError("Incorrect current master password.");
+        return;
+      }
+    } catch (e: any) {
+      setChangePasswordError(
+        "Failed to verify current master password: " + (e?.message || "")
+      );
+      return;
+    }
+
+    setChangePasswordError(null);
+    setChangingPassword(true);
+
+    setTimeout(async () => {
+      try {
+        const success = await changeMasterPassword(newPassword);
+        if (success) {
+          Alert.alert(
+            "Success",
+            "Master password updated successfully. Don't forget to save your database to persist changes.",
+            [{ text: "OK" }]
+          );
+          setShowChangePasswordModal(false);
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+        } else {
+          setChangePasswordError("Failed to update master password.");
+        }
+      } catch (e: any) {
+        setChangePasswordError(e?.message || "An unexpected error occurred.");
+      } finally {
+        setChangingPassword(false);
+      }
+    }, 100);
+  };
+
   const [showKdfModal, setShowKdfModal] = useState(false);
 
   useEffect(() => {
@@ -310,6 +468,19 @@ export default function VaultSettingsScreen() {
     }
     checkBiometrics();
   }, []);
+
+  // Initialize history settings inputs from storeMeta
+  useEffect(() => {
+    if (storeMeta && !historySettingsInitialized) {
+      setHistoryMaxItemsInput(String(storeMeta.historyMaxItems ?? 10));
+      const sizeInMB =
+        Math.round(
+          ((storeMeta.historyMaxSize ?? 6 * 1024 * 1024) / (1024 * 1024)) * 10
+        ) / 10;
+      setHistoryMaxSizeInput(String(sizeInMB));
+      setHistorySettingsInitialized(true);
+    }
+  }, [storeMeta, historySettingsInitialized]);
 
   const handleToggleBiometric = useCallback(async () => {
     if (biometricEnabled) {
@@ -431,6 +602,75 @@ export default function VaultSettingsScreen() {
     },
     [db, refreshParsedState]
   );
+
+  const handleToggleCompression = useCallback(() => {
+    if (!db) return;
+    Alert.alert(
+      "Database Compression",
+      "Select XML compression algorithm for database serialization.",
+      [
+        {
+          text: "GZip (Default)",
+          onPress: () => {
+            db.header.compression = 1; // 1 = GZip
+            refreshParsedState();
+            useVaultStore.setState({ isDirty: true });
+          },
+        },
+        {
+          text: "None",
+          onPress: () => {
+            db.header.compression = 0; // 0 = None
+            refreshParsedState();
+            useVaultStore.setState({ isDirty: true });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }, [db, refreshParsedState]);
+
+  const handleCleanupPress = useCallback(() => {
+    if (!db) return;
+    const summary = cleanupDatabase({ binaries: true, history: true });
+    if (!summary) return;
+
+    const { historyToRemove, binariesToRemove } = summary;
+
+    if (historyToRemove === 0 && binariesToRemove === 0) {
+      Alert.alert(
+        "Database Clean",
+        "Your database is already clean! No unreferenced attachments or redundant history entries found."
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Clean Up Database",
+      `This will optimize your database file size.\n\nSummary of items to remove:\n• Unused binaries/attachments: ${binariesToRemove}\n• Redundant history entries: ${historyToRemove}\n\nDo you want to proceed?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clean Up",
+          style: "destructive",
+          onPress: () => {
+            const success = runCleanupDatabase({
+              binaries: true,
+              history: true,
+            });
+            if (success) {
+              Alert.alert(
+                "Cleanup Success",
+                `Successfully cleaned up the database!\n\nRemoved:\n• ${binariesToRemove} unused binaries/attachments\n• ${historyToRemove} redundant history entries.\n\nDon't forget to save your changes.`
+              );
+            } else {
+              Alert.alert("Error", "Failed to perform database cleanup.");
+            }
+          },
+        },
+      ]
+    );
+  }, [db, cleanupDatabase, runCleanupDatabase]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -567,17 +807,251 @@ export default function VaultSettingsScreen() {
                 ))}
                 <View style={styles.divider} />
                 <SettingsRow
+                  icon="key-outline"
+                  iconColor={Colors.accentMint}
+                  title="Change Master Password"
+                  subtitle="Modify database master passphrase"
+                  onPress={() => setShowChangePasswordModal(true)}
+                />
+                <View style={styles.divider} />
+                <SettingsRow
                   icon="speedometer-outline"
                   iconColor={Colors.accentMint}
                   title="Tune KDF Parameters"
                   subtitle="Benchmark & adjust security strength"
                   onPress={() => setShowKdfModal(true)}
                 />
+                <View style={styles.divider} />
+                <SettingsRow
+                  icon="archive-outline"
+                  title="Database Compression"
+                  subtitle="Configure XML compression algorithm"
+                  value={stats.compression || "GZip"}
+                  onPress={handleToggleCompression}
+                />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Database Maintenance */}
+            <Animated.View entering={FadeInDown.duration(200).delay(150)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="hammer-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Database Maintenance</Text>
+                </View>
+                <SettingsRow
+                  icon="brush-outline"
+                  title="Clean Up Database"
+                  subtitle="Remove unlinked attachments & clean history entries"
+                  onPress={handleCleanupPress}
+                />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Entry History Settings */}
+            <Animated.View entering={FadeInDown.duration(200).delay(160)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="time-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Entry History</Text>
+                </View>
+                <Text style={styles.historyDesc}>
+                  Configure how many historical snapshots are retained per
+                  entry.
+                </Text>
+                <View style={styles.historyInputRow}>
+                  <View style={styles.historyInputGroup}>
+                    <Text style={styles.historyInputLabel}>Max Items</Text>
+                    <View style={styles.historyInputContainer}>
+                      <TextInput
+                        style={styles.historyInput}
+                        value={historyMaxItemsInput}
+                        onChangeText={setHistoryMaxItemsInput}
+                        onBlur={() => {
+                          const parsed = parseInt(historyMaxItemsInput, 10);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            setHistoryMaxItems(parsed);
+                          } else {
+                            setHistoryMaxItemsInput(
+                              String(storeMeta?.historyMaxItems ?? 10)
+                            );
+                          }
+                        }}
+                        keyboardType="number-pad"
+                        placeholderTextColor={Colors.textDisabled}
+                        placeholder="10"
+                        maxLength={4}
+                      />
+                    </View>
+                    <Text style={styles.historyInputHint}>per entry</Text>
+                  </View>
+                  <View style={styles.historyInputGroup}>
+                    <Text style={styles.historyInputLabel}>Max Size</Text>
+                    <View style={styles.historyInputContainer}>
+                      <TextInput
+                        style={styles.historyInput}
+                        value={historyMaxSizeInput}
+                        onChangeText={setHistoryMaxSizeInput}
+                        onBlur={() => {
+                          const parsed = parseFloat(historyMaxSizeInput);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            const bytes = Math.round(parsed * 1024 * 1024);
+                            setHistoryMaxSize(bytes);
+                          } else {
+                            const currentMB =
+                              Math.round(
+                                ((storeMeta?.historyMaxSize ??
+                                  6 * 1024 * 1024) /
+                                  (1024 * 1024)) *
+                                  10
+                              ) / 10;
+                            setHistoryMaxSizeInput(String(currentMB));
+                          }
+                        }}
+                        keyboardType="decimal-pad"
+                        placeholderTextColor={Colors.textDisabled}
+                        placeholder="6"
+                        maxLength={6}
+                      />
+                    </View>
+                    <Text style={styles.historyInputHint}>MB total</Text>
+                  </View>
+                </View>
+              </CyberCard>
+            </Animated.View>
+
+            {/* Entry Templates */}
+            <Animated.View entering={FadeInDown.duration(200).delay(175)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="copy-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Entry Templates</Text>
+                </View>
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Enable Entry Templates</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Use predefined templates for creating new entries
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      const newEnabled = !storeMeta?.entryTemplatesEnabled;
+                      await setTemplatesEnabled(newEnabled);
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        storeMeta?.entryTemplatesEnabled
+                          ? "toggle"
+                          : "toggle-outline"
+                      }
+                      size={38}
+                      color={
+                        storeMeta?.entryTemplatesEnabled
+                          ? Colors.accentMint
+                          : Colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+                {storeMeta?.entryTemplatesEnabled && (
+                  <>
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="folder-open-outline"
+                      title="Template Group"
+                      subtitle="Group containing your custom templates"
+                      value={templateGroupName}
+                      onPress={() => setShowGroupModal(true)}
+                    />
+                  </>
+                )}
+              </CyberCard>
+            </Animated.View>
+
+            {/* Recycle Bin */}
+            <Animated.View entering={FadeInDown.duration(200).delay(185)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={Colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Recycle Bin</Text>
+                </View>
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Enable Recycle Bin</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Move deleted items to a recycle bin instead of deleting
+                      permanently
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      const newEnabled = !storeMeta?.recycleBinEnabled;
+                      await setRecycleBinEnabled(newEnabled);
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        storeMeta?.recycleBinEnabled
+                          ? "toggle"
+                          : "toggle-outline"
+                      }
+                      size={38}
+                      color={
+                        storeMeta?.recycleBinEnabled
+                          ? Colors.accentMint
+                          : Colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+                {storeMeta?.recycleBinEnabled && (
+                  <>
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="folder-open-outline"
+                      title="Recycle Bin Group"
+                      subtitle="Group designated as the active recycle bin"
+                      value={recycleBinGroupName}
+                      onPress={() => setShowRecycleBinGroupModal(true)}
+                    />
+                    <View style={styles.divider} />
+                    <SettingsRow
+                      icon="trash-bin-outline"
+                      iconColor={Colors.statusError}
+                      title="Empty Recycle Bin"
+                      subtitle="Permanently delete all items in the bin"
+                      onPress={handleEmptyRecycleBinPress}
+                      destructive
+                    />
+                  </>
+                )}
               </CyberCard>
             </Animated.View>
 
             {/* Database Actions */}
-            <Animated.View entering={FadeInDown.duration(200).delay(150)}>
+            <Animated.View entering={FadeInDown.duration(200).delay(200)}>
               <CyberCard style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Ionicons
@@ -769,6 +1243,415 @@ export default function VaultSettingsScreen() {
           initialParams={kdfInfo}
         />
       )}
+
+      {/* Change Master Password Modal */}
+      <Modal
+        visible={showChangePasswordModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => {
+          if (!changingPassword) {
+            setShowChangePasswordModal(false);
+            setChangePasswordError(null);
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+          }
+        }}
+      >
+        <Animated.View style={modalStyles.overlay}>
+          <Pressable
+            style={modalStyles.overlayPress}
+            onPress={() => {
+              if (!changingPassword) {
+                setShowChangePasswordModal(false);
+                setChangePasswordError(null);
+                setCurrentPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+              }
+            }}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={[modalStyles.modalContainer, { maxHeight: "85%" }]}
+          >
+            <View style={modalStyles.header}>
+              <View style={modalStyles.headerIcon}>
+                <Ionicons
+                  name="key-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={modalStyles.headerTitle}>
+                Change Master Password
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (!changingPassword) {
+                    setShowChangePasswordModal(false);
+                    setChangePasswordError(null);
+                    setCurrentPassword("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                  }
+                }}
+                disabled={changingPassword}
+                hitSlop={12}
+                style={modalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: Spacing.md }}
+            >
+              {changePasswordError && (
+                <View style={styles.errorContainer}>
+                  <Ionicons
+                    name="alert-circle"
+                    size={16}
+                    color={Colors.statusError}
+                  />
+                  <Text style={styles.errorText}>{changePasswordError}</Text>
+                </View>
+              )}
+
+              {/* Current Password */}
+              <Text style={styles.inputLabel}>Current Master Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="lock-closed"
+                  size={18}
+                  color={Colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry={!showCurrentPassword}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Enter current password"
+                  placeholderTextColor={Colors.textDisabled}
+                  editable={!changingPassword}
+                />
+                <Pressable
+                  onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showCurrentPassword ? "eye-off" : "eye"}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+
+              {/* New Password */}
+              <Text style={styles.inputLabel}>New Master Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="key"
+                  size={18}
+                  color={Colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry={!showNewPassword}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="Enter new password"
+                  placeholderTextColor={Colors.textDisabled}
+                  editable={!changingPassword}
+                />
+                <Pressable
+                  onPress={() => setShowNewPassword(!showNewPassword)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showNewPassword ? "eye-off" : "eye"}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+
+              {/* Password Strength Indicator */}
+              {newPassword.length > 0 && (
+                <View style={styles.strengthContainer}>
+                  <View style={styles.strengthHeader}>
+                    <Text style={styles.strengthLabel}>Password Strength</Text>
+                    <Text
+                      style={[
+                        styles.strengthValue,
+                        { color: estimatePasswordStrength(newPassword).color },
+                      ]}
+                    >
+                      {estimatePasswordStrength(newPassword).label} (
+                      {Math.round(
+                        estimatePasswordStrength(newPassword).entropy
+                      )}{" "}
+                      bits)
+                    </Text>
+                  </View>
+                  <View style={styles.strengthBarContainer}>
+                    {[0, 1, 2, 3].map((index) => {
+                      const strength = estimatePasswordStrength(newPassword);
+                      const active = strength.score >= index + 1;
+                      return (
+                        <View
+                          key={index}
+                          style={[
+                            styles.strengthBar,
+                            active
+                              ? { backgroundColor: strength.color }
+                              : { backgroundColor: Colors.surfaceElevated },
+                          ]}
+                        />
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* Confirm New Password */}
+              <Text style={styles.inputLabel}>Confirm New Master Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={Colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={Colors.textDisabled}
+                  editable={!changingPassword}
+                />
+                <Pressable
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? "eye-off" : "eye"}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={handleChangePassword}
+                disabled={changingPassword}
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  pressed && styles.submitButtonPressed,
+                  changingPassword && styles.submitButtonDisabled,
+                ]}
+              >
+                {changingPassword ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={Colors.backgroundPrimary}
+                  />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    Change Master Password
+                  </Text>
+                )}
+              </Pressable>
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
+      {/* Group Selector Modal */}
+      <Modal
+        visible={showGroupModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => setShowGroupModal(false)}
+      >
+        <Animated.View style={modalStyles.overlay}>
+          <Pressable
+            style={modalStyles.overlayPress}
+            onPress={() => setShowGroupModal(false)}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={modalStyles.modalContainer}
+          >
+            <View style={modalStyles.header}>
+              <View style={modalStyles.headerIcon}>
+                <Ionicons
+                  name="folder-open-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={modalStyles.headerTitle}>Select Template Group</Text>
+              <Pressable
+                onPress={() => setShowGroupModal(false)}
+                hitSlop={12}
+                style={modalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={modalStyles.scrollList}
+              showsVerticalScrollIndicator={false}
+            >
+              {Array.from(groupIndex.values())
+                .filter((g) => g.parentGroupUuid !== null)
+                .map((group) => {
+                  const isSelected =
+                    storeMeta?.entryTemplatesGroup === group.uuid;
+                  return (
+                    <Pressable
+                      key={group.uuid}
+                      style={[
+                        modalStyles.groupRow,
+                        isSelected && modalStyles.groupRowSelected,
+                      ]}
+                      onPress={async () => {
+                        await setTemplatesGroup(group.uuid);
+                        setShowGroupModal(false);
+                      }}
+                    >
+                      <Ionicons
+                        name="folder"
+                        size={20}
+                        color={
+                          isSelected ? Colors.accentMint : Colors.textMuted
+                        }
+                      />
+                      <Text
+                        style={[
+                          modalStyles.groupName,
+                          isSelected && modalStyles.groupNameSelected,
+                        ]}
+                      >
+                        {group.name}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={Colors.accentMint}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
+      {/* Recycle Bin Group Selector Modal */}
+      <Modal
+        visible={showRecycleBinGroupModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => setShowRecycleBinGroupModal(false)}
+      >
+        <Animated.View style={modalStyles.overlay}>
+          <Pressable
+            style={modalStyles.overlayPress}
+            onPress={() => setShowRecycleBinGroupModal(false)}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={modalStyles.modalContainer}
+          >
+            <View style={modalStyles.header}>
+              <View style={modalStyles.headerIcon}>
+                <Ionicons
+                  name="trash-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={modalStyles.headerTitle}>
+                Select Recycle Bin Group
+              </Text>
+              <Pressable
+                onPress={() => setShowRecycleBinGroupModal(false)}
+                hitSlop={12}
+                style={modalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={modalStyles.scrollList}
+              showsVerticalScrollIndicator={false}
+            >
+              {Array.from(groupIndex.values())
+                .filter((g) => g.parentGroupUuid !== null)
+                .map((group) => {
+                  const isSelected = storeMeta?.recycleBinUuid === group.uuid;
+                  return (
+                    <Pressable
+                      key={group.uuid}
+                      style={[
+                        modalStyles.groupRow,
+                        isSelected && modalStyles.groupRowSelected,
+                      ]}
+                      onPress={async () => {
+                        await setRecycleBinGroup(group.uuid);
+                        setShowRecycleBinGroupModal(false);
+                      }}
+                    >
+                      <Ionicons
+                        name="folder"
+                        size={20}
+                        color={
+                          isSelected ? Colors.accentMint : Colors.textMuted
+                        }
+                      />
+                      <Text
+                        style={[
+                          modalStyles.groupName,
+                          isSelected && modalStyles.groupNameSelected,
+                        ]}
+                      >
+                        {group.name}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={Colors.accentMint}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -926,5 +1809,234 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading.semiBold,
     fontSize: FontSizes.bodySmall,
     color: Colors.backgroundPrimary,
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    backgroundColor: Colors.statusErrorDim,
+    borderColor: Colors.statusError,
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  errorText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.statusError,
+    flex: 1,
+  },
+  inputLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.lg,
+    minHeight: TouchTarget.min,
+  },
+  inputIcon: {
+    marginRight: Spacing.sm,
+  },
+  input: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.body,
+    paddingVertical: Spacing.sm,
+  },
+  eyeButton: {
+    padding: Spacing.xs,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: TouchTarget.min,
+  },
+  submitButton: {
+    backgroundColor: Colors.accentMint,
+    borderRadius: Radii.md,
+    height: TouchTarget.min,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: Spacing.md,
+    ...Shadows.glow,
+  },
+  submitButtonPressed: {
+    backgroundColor: "#2BC48A",
+    transform: [{ scale: 0.98 }],
+  },
+  submitButtonDisabled: {
+    opacity: 0.5,
+  },
+  submitButtonText: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.backgroundPrimary,
+  },
+  strengthContainer: {
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.lg,
+    backgroundColor: Colors.surfaceCard,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+  },
+  strengthHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  strengthLabel: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+  },
+  strengthValue: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.bodySmall,
+  },
+  strengthBarContainer: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    height: 6,
+  },
+  strengthBar: {
+    flex: 1,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.surfaceElevated,
+  },
+
+  // History Settings
+  historyDesc: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    lineHeight: 18,
+    marginBottom: Spacing.md,
+  },
+  historyInputRow: {
+    flexDirection: "row",
+    gap: Spacing.lg,
+  },
+  historyInputGroup: {
+    flex: 1,
+    alignItems: "center",
+  },
+  historyInputLabel: {
+    fontFamily: Fonts.heading.medium,
+    fontSize: FontSizes.caption,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  historyInputContainer: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    borderRadius: Radii.md,
+    width: "100%",
+    overflow: "hidden",
+  },
+  historyInput: {
+    color: Colors.textPrimary,
+    fontFamily: Fonts.mono.regular,
+    fontSize: FontSizes.body,
+    textAlign: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    minHeight: TouchTarget.min,
+  },
+  historyInputHint: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.micro,
+    color: Colors.textMuted,
+    marginTop: Spacing.xxs,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  overlayPress: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalContainer: {
+    width: "90%",
+    maxWidth: 400,
+    maxHeight: "70%",
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    padding: Spacing.lg,
+    ...Shadows.elevated,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  headerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.accentMintDim,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.textPrimary,
+  },
+  closeBtn: {
+    width: TouchTarget.min,
+    height: TouchTarget.min,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollList: {
+    maxHeight: 350,
+  },
+  groupRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radii.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  groupRowSelected: {
+    backgroundColor: Colors.accentMintDim,
+  },
+  groupName: {
+    flex: 1,
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textSecondary,
+  },
+  groupNameSelected: {
+    fontFamily: Fonts.heading.medium,
+    color: Colors.accentMint,
   },
 });

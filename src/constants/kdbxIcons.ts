@@ -12,7 +12,7 @@ type IoniconsName = ComponentProps<typeof Ionicons>["name"];
 
 const KDBX_ICON_MAP: Record<number, IoniconsName> = {
   0: "key-outline", // Key
-  1: "globe-outline", // World
+  1: "earth-outline", // World
   2: "alert-circle-outline", // Warning
   3: "server-outline", // Server
   4: "pin-outline", // Clipboard / Pin
@@ -24,12 +24,12 @@ const KDBX_ICON_MAP: Record<number, IoniconsName> = {
   10: "document-text-outline", // Paperclip
   11: "camera-outline", // Camera
   12: "wifi-outline", // WiFi
-  13: "key-outline", // Keys
+  13: "keypad-outline", // Keys (passcode keypad for distinction)
   14: "flash-outline", // Energy
   15: "mail-outline", // Email
   16: "settings-outline", // Gear
   17: "scan-outline", // Scanner
-  18: "globe-outline", // Browser
+  18: "browsers-outline", // Browser
   19: "disc-outline", // CD
   20: "desktop-outline", // Monitor
   21: "mail-open-outline", // Email open
@@ -71,7 +71,7 @@ const KDBX_ICON_MAP: Record<number, IoniconsName> = {
   57: "card-outline", // Card
   58: "phone-portrait-outline", // Phone
   59: "home-outline", // Home
-  60: "star-outline", // Star 2
+  60: "star", // Star Alt (filled star for distinction)
   61: "laptop-outline", // Laptop
   62: "cash-outline", // Money
   63: "receipt-outline", // Certificate

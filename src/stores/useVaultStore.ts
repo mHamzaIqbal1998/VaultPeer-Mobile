@@ -15,8 +15,18 @@
 import { create } from "zustand";
 import * as kdbxweb from "kdbxweb";
 import { parseDatabase } from "../services/crypto/databaseParser";
-import type { VaultEntry, VaultGroup, VaultMeta } from "../types/kdbx";
+import type {
+  VaultEntry,
+  VaultGroup,
+  VaultMeta,
+  VaultHistorySnapshot,
+} from "../types/kdbx";
 import { base64ToArrayBuffer, arrayBufferToBase64 } from "../services/base64";
+import { createCredentials } from "../services/crypto";
+import {
+  isBiometricEnabled,
+  enableBiometric,
+} from "../services/biometricService";
 
 // ────────────────────────────────────────────
 // History Entry
@@ -104,6 +114,42 @@ interface VaultStoreState {
     action: HistoryLogEntry["action"]
   ) => void;
 
+  // Maintenance
+  cleanupDatabase: (options: { binaries?: boolean; history?: boolean }) => {
+    totalHistory: number;
+    historyToRemove: number;
+    totalBinaries: number;
+    binariesToRemove: number;
+  } | null;
+  runCleanupDatabase: (options: {
+    binaries?: boolean;
+    history?: boolean;
+  }) => boolean;
+
+  // Templates Support
+  setTemplatesEnabled: (enabled: boolean) => Promise<void>;
+  setTemplatesGroup: (groupUuid: string) => Promise<void>;
+
+  // Recycle Bin Support
+  setRecycleBinEnabled: (enabled: boolean) => Promise<void>;
+  setRecycleBinGroup: (groupUuid: string) => Promise<void>;
+  emptyRecycleBin: () => Promise<boolean>;
+
+  // Credentials / Master Password
+  changeMasterPassword: (newPassword: string) => Promise<boolean>;
+
+  // Entry History
+  getEntryHistory: (entryUuid: string) => VaultHistorySnapshot[];
+  restoreHistorySnapshot: (
+    entryUuid: string,
+    snapshotIndex: number
+  ) => Promise<VaultEntry | null>;
+  deleteHistorySnapshot: (entryUuid: string, snapshotIndex: number) => boolean;
+
+  // History Settings
+  setHistoryMaxItems: (value: number) => void;
+  setHistoryMaxSize: (value: number) => void;
+
   // Dirty state
   markClean: () => void;
 }
@@ -158,6 +204,70 @@ function findKdbxGroup(
   return null;
 }
 
+function ensureRecycleBinGroup(db: kdbxweb.Kdbx) {
+  if (!db.meta.recycleBinEnabled) return;
+
+  const root = db.getDefaultGroup();
+  let binGroup: kdbxweb.KdbxGroup | null = null;
+
+  if (
+    db.meta.recycleBinUuid &&
+    db.meta.recycleBinUuid.id &&
+    db.meta.recycleBinUuid.id !== root.uuid?.id
+  ) {
+    binGroup = findKdbxGroup(root, db.meta.recycleBinUuid.id);
+  }
+
+  if (!binGroup) {
+    const existing = root.groups.find(
+      (g) => g.name?.toLowerCase() === "recycle bin"
+    );
+    if (existing) {
+      binGroup = existing;
+      db.meta.recycleBinUuid = existing.uuid;
+    } else {
+      const newGroup = db.createGroup(root, "Recycle Bin");
+      newGroup.icon = 27;
+      binGroup = newGroup;
+      db.meta.recycleBinUuid = newGroup.uuid;
+    }
+  }
+}
+
+function ensureTemplatesGroup(db: kdbxweb.Kdbx): kdbxweb.KdbxGroup | null {
+  const customData = db.meta.customData;
+  const enabled = customData?.get("templatesEnabled")?.value === "true";
+  if (!enabled) return null;
+
+  const root = db.getDefaultGroup();
+  let templatesGroup: kdbxweb.KdbxGroup | null = null;
+
+  if (
+    db.meta.entryTemplatesGroup &&
+    db.meta.entryTemplatesGroup.id &&
+    db.meta.entryTemplatesGroup.id !== root.uuid?.id
+  ) {
+    templatesGroup = findKdbxGroup(root, db.meta.entryTemplatesGroup.id);
+  }
+
+  if (!templatesGroup) {
+    const existing = root.groups.find(
+      (g) => g.name?.toLowerCase() === "templates"
+    );
+    if (existing) {
+      templatesGroup = existing;
+      db.meta.entryTemplatesGroup = existing.uuid;
+    } else {
+      const newGroup = db.createGroup(root, "Templates");
+      newGroup.icon = 20;
+      templatesGroup = newGroup;
+      db.meta.entryTemplatesGroup = newGroup.uuid;
+    }
+  }
+
+  return templatesGroup;
+}
+
 function findKdbxEntry(
   root: kdbxweb.KdbxGroup,
   uuid: string
@@ -187,6 +297,102 @@ function isInRecycleBin(
   return false;
 }
 
+function seedDefaultTemplates(db: kdbxweb.Kdbx, group: kdbxweb.KdbxGroup) {
+  const hasCard = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Credit Card"
+  );
+  if (!hasCard) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Credit Card");
+    entry.fields.set("UserName", "");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Cardholder Name", "");
+    entry.fields.set("Card Number", "");
+    entry.fields.set("Expiry Date", "");
+    entry.fields.set("CVV", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("PIN", kdbxweb.ProtectedValue.fromString(""));
+    entry.icon = 62;
+  }
+
+  const hasEmail = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Email Account"
+  );
+  if (!hasEmail) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Email Account");
+    entry.fields.set("UserName", "");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Email Address", "");
+    entry.fields.set("Provider", "");
+    entry.icon = 19;
+  }
+
+  const hasNote = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Secure Note"
+  );
+  if (!hasNote) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Secure Note");
+    entry.fields.set("Notes", "Write your secure note here.");
+    entry.icon = 0;
+  }
+
+  const hasSsh = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "SSH Server"
+  );
+  if (!hasSsh) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "SSH Server");
+    entry.fields.set("UserName", "root");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("URL", "192.168.1.1");
+    entry.fields.set("Port", "22");
+    entry.fields.set("Private Key", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Passphrase", kdbxweb.ProtectedValue.fromString(""));
+    entry.icon = 12;
+  }
+
+  const hasWifi = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Wi-Fi Router"
+  );
+  if (!hasWifi) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Wi-Fi Router");
+    entry.fields.set("UserName", "admin");
+    entry.fields.set("Password", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("SSID", "MyHomeWiFi");
+    entry.fields.set("WPA Key", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Router IP", "192.168.1.1");
+    entry.icon = 3;
+  }
+
+  const hasIdentity = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Membership / ID"
+  );
+  if (!hasIdentity) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Membership / ID");
+    entry.fields.set("Full Name", "");
+    entry.fields.set("Document Number", "");
+    entry.fields.set("Expiry Date", "");
+    entry.fields.set("Issuing Authority", "");
+    entry.icon = 40;
+  }
+
+  const hasLicense = group.entries.some(
+    (e) => e.fields.get("Title")?.toString() === "Software License"
+  );
+  if (!hasLicense) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", "Software License");
+    entry.fields.set("UserName", "");
+    entry.fields.set("License Key", kdbxweb.ProtectedValue.fromString(""));
+    entry.fields.set("Publisher", "");
+    entry.fields.set("Version", "");
+    entry.icon = 11;
+  }
+}
+
 // ────────────────────────────────────────────
 // Store Creation
 // ────────────────────────────────────────────
@@ -209,6 +415,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
   // ────── Core Actions ──────
 
   openDatabase: (db, filePath) => {
+    ensureRecycleBinGroup(db);
+    const templatesGroup = ensureTemplatesGroup(db);
+    if (templatesGroup) {
+      seedDefaultTemplates(db, templatesGroup);
+    }
     const { meta, rootGroup } = parseDatabase(db);
     set({
       _db: db,
@@ -456,6 +667,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     // Push current state to history before modification
     entry.pushHistory();
+    pruneEntryHistory(entry, db);
 
     // Update fields
     if (data.title !== undefined) entry.fields.set("Title", data.title);
@@ -581,14 +793,21 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const found = findKdbxEntry(root, uuid);
     if (!found) return false;
 
-    const isAlreadyInBin = isInRecycleBin(found.parent, db.meta.recycleBinUuid);
+    const recycleBinEnabled = db.meta.recycleBinEnabled;
+    const recycleBinUuid = db.meta.recycleBinUuid;
+    const isAlreadyInBin = isInRecycleBin(found.parent, recycleBinUuid);
 
-    if (isAlreadyInBin) {
-      db.move(found.entry, null);
+    if (recycleBinEnabled && recycleBinUuid && !isAlreadyInBin) {
+      const recycleBinGroup = findKdbxGroup(root, recycleBinUuid.id);
+      if (recycleBinGroup) {
+        // Store the original parent group UUID in a custom field before moving
+        found.entry.fields.set("PreviousParentGroupUuid", found.parent.uuid.id);
+        db.move(found.entry, recycleBinGroup);
+      } else {
+        db.move(found.entry, null);
+      }
     } else {
-      // Store the original parent group UUID in a custom field before removing
-      found.entry.fields.set("PreviousParentGroupUuid", found.parent.uuid.id);
-      db.remove(found.entry);
+      db.move(found.entry, null);
     }
 
     // Re-parse
@@ -727,15 +946,27 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     const group = findKdbxGroup(root, uuid);
     if (!group) return false;
 
-    const isAlreadyInBin = isInRecycleBin(
-      group.parentGroup,
-      db.meta.recycleBinUuid
-    );
+    const recycleBinEnabled = db.meta.recycleBinEnabled;
+    const recycleBinUuid = db.meta.recycleBinUuid;
+    const isAlreadyInBin = isInRecycleBin(group.parentGroup, recycleBinUuid);
 
-    if (isAlreadyInBin) {
-      db.move(group, null);
+    const isRecycleBinSelf =
+      recycleBinUuid && group.uuid?.id === recycleBinUuid.id;
+
+    if (
+      recycleBinEnabled &&
+      recycleBinUuid &&
+      !isAlreadyInBin &&
+      !isRecycleBinSelf
+    ) {
+      const recycleBinGroup = findKdbxGroup(root, recycleBinUuid.id);
+      if (recycleBinGroup) {
+        db.move(group, recycleBinGroup);
+      } else {
+        db.move(group, null);
+      }
     } else {
-      db.remove(group);
+      db.move(group, null);
     }
 
     // Re-parse
@@ -793,7 +1024,513 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     }));
   },
 
+  // ────── Maintenance ──────
+
+  cleanupDatabase: (options) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return null;
+
+    let totalHistoryEntries = 0;
+    let historyEntriesToRemove = 0;
+    const historyMaxItems =
+      options.history &&
+      typeof db.meta.historyMaxItems === "number" &&
+      db.meta.historyMaxItems >= 0
+        ? db.meta.historyMaxItems
+        : 10;
+
+    const usedBinaries = new Set<string>();
+
+    // Traverse entries
+    const allEntries: kdbxweb.KdbxEntry[] = [];
+    const walkGroup = (group: kdbxweb.KdbxGroup) => {
+      allEntries.push(...(group.entries ?? []));
+      for (const subGroup of group.groups ?? []) {
+        walkGroup(subGroup);
+      }
+    };
+    walkGroup(db.getDefaultGroup());
+
+    for (const entry of allEntries) {
+      totalHistoryEntries += entry.history?.length ?? 0;
+      if (
+        options.history &&
+        entry.history &&
+        entry.history.length > historyMaxItems
+      ) {
+        historyEntriesToRemove += entry.history.length - historyMaxItems;
+      }
+
+      const processBinaries = (e: kdbxweb.KdbxEntry) => {
+        e.binaries.forEach((binVal) => {
+          if (binVal && typeof binVal === "object" && "hash" in binVal) {
+            usedBinaries.add((binVal as any).hash);
+          }
+        });
+      };
+
+      processBinaries(entry);
+      if (entry.history) {
+        const keepStartIndex = options.history
+          ? Math.max(0, entry.history.length - historyMaxItems)
+          : 0;
+        for (let i = keepStartIndex; i < entry.history.length; i++) {
+          processBinaries(entry.history[i]);
+        }
+      }
+    }
+
+    const totalBinaries = db.binaries.getAllWithHashes().length;
+    let binariesToRemove = 0;
+    if (options.binaries) {
+      for (const binary of db.binaries.getAllWithHashes()) {
+        if (!usedBinaries.has(binary.hash)) {
+          binariesToRemove++;
+        }
+      }
+    }
+
+    return {
+      totalHistory: totalHistoryEntries,
+      historyToRemove: historyEntriesToRemove,
+      totalBinaries,
+      binariesToRemove,
+    };
+  },
+
+  runCleanupDatabase: (options) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    db.cleanup({
+      binaries: options.binaries,
+      historyRules: options.history,
+    });
+
+    state.refreshParsedState();
+    set({ isDirty: true });
+    return true;
+  },
+
+  // ────── Templates Support ──────
+
+  setTemplatesEnabled: async (enabled) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    if (!db.meta.customData) {
+      (db.meta as any).customData = new Map();
+    }
+    db.meta.customData.set("templatesEnabled", {
+      value: enabled ? "true" : "false",
+      lastModified: new Date(),
+    });
+
+    if (enabled) {
+      const templatesGroupKdbx = ensureTemplatesGroup(db);
+      if (templatesGroupKdbx) {
+        seedDefaultTemplates(db, templatesGroupKdbx);
+      }
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  setTemplatesGroup: async (groupUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    const root = db.getDefaultGroup();
+    if (groupUuid === root.uuid?.id) return;
+
+    db.meta.entryTemplatesGroup = new kdbxweb.KdbxUuid(groupUuid);
+
+    const templatesGroupKdbx = findKdbxGroup(root, groupUuid);
+    if (templatesGroupKdbx) {
+      seedDefaultTemplates(db, templatesGroupKdbx);
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  // ────── Recycle Bin Support ──────
+
+  setRecycleBinEnabled: async (enabled) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.recycleBinEnabled = enabled;
+
+    if (enabled) {
+      ensureRecycleBinGroup(db);
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  setRecycleBinGroup: async (groupUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    const root = db.getDefaultGroup();
+    if (groupUuid === root.uuid?.id) return;
+
+    db.meta.recycleBinUuid = new kdbxweb.KdbxUuid(groupUuid);
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  emptyRecycleBin: async () => {
+    const state = get();
+    const db = state._db;
+    if (!db || !db.meta.recycleBinUuid) return false;
+
+    const root = db.getDefaultGroup();
+    const binGroup = findKdbxGroup(root, db.meta.recycleBinUuid.id);
+    if (!binGroup) return false;
+
+    // Purge entries inside the recycle bin group
+    const entriesToPurge = [...binGroup.entries];
+    for (const entry of entriesToPurge) {
+      db.move(entry, null);
+    }
+
+    // Purge subgroups inside the recycle bin group
+    const groupsToPurge = [...binGroup.groups];
+    for (const subgroup of groupsToPurge) {
+      db.move(subgroup, null);
+    }
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+    return true;
+  },
+
+  changeMasterPassword: async (newPassword) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    try {
+      const newCredentials = createCredentials(newPassword);
+      await newCredentials.ready;
+      db.credentials = newCredentials;
+
+      const bioActive = await isBiometricEnabled();
+      if (bioActive) {
+        const success = await enableBiometric(newPassword);
+        if (!success) {
+          console.warn(
+            "[VaultStore] Biometric sync cancelled/failed during password update."
+          );
+        }
+      }
+
+      set({ isDirty: true });
+      state.refreshParsedState();
+      return true;
+    } catch (e) {
+      console.error("[VaultStore] Error changing master password:", e);
+      return false;
+    }
+  },
+
+  // ────── Entry History ──────
+
+  getEntryHistory: (entryUuid) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return [];
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) return [];
+
+    const { entry } = found;
+    const history = entry.history ?? [];
+
+    return history.map((histEntry, index) => {
+      // Extract custom fields (exclude standard KeePass fields)
+      const standardFields = new Set([
+        "Title",
+        "UserName",
+        "Password",
+        "URL",
+        "Notes",
+        "otp",
+        "TimeOtp",
+        "totp",
+      ]);
+      const fields: Record<string, string> = {};
+      const secureFields: string[] = [];
+
+      histEntry.fields.forEach((value, key) => {
+        if (!standardFields.has(key)) {
+          const isSecure =
+            typeof value === "object" && value !== null && "getText" in value;
+          if (isSecure) {
+            secureFields.push(key);
+          }
+          fields[key] =
+            typeof value === "string"
+              ? value
+              : typeof value === "object" && "getText" in value
+                ? (value as { getText(): string }).getText()
+                : String(value);
+        }
+      });
+
+      const getVal = (field: string): string => {
+        const val = histEntry.fields.get(field);
+        if (!val) return "";
+        if (typeof val === "string") return val;
+        if (typeof val === "object" && "getText" in val) {
+          return (val as { getText(): string }).getText();
+        }
+        return String(val);
+      };
+
+      return {
+        index,
+        title: getVal("Title"),
+        username: getVal("UserName"),
+        password: getVal("Password"),
+        url: getVal("URL"),
+        notes: getVal("Notes"),
+        fields,
+        secureFields,
+        tags: histEntry.tags ?? [],
+        modifiedAt: histEntry.times?.lastModTime
+          ? histEntry.times.lastModTime.toISOString()
+          : new Date(0).toISOString(),
+        iconId: histEntry.icon ?? 0,
+        otp: getVal("otp") || getVal("TimeOtp") || getVal("totp") || undefined,
+      } satisfies VaultHistorySnapshot;
+    });
+  },
+
+  restoreHistorySnapshot: async (entryUuid, snapshotIndex) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return null;
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) return null;
+
+    const { entry } = found;
+    const history = entry.history ?? [];
+    if (snapshotIndex < 0 || snapshotIndex >= history.length) return null;
+
+    const snapshot = history[snapshotIndex];
+
+    // Push current state to history before restoring
+    entry.pushHistory();
+    pruneEntryHistory(entry, db);
+
+    // Restore fields from snapshot
+    const standardFields = new Set([
+      "Title",
+      "UserName",
+      "Password",
+      "URL",
+      "Notes",
+      "otp",
+      "TimeOtp",
+      "totp",
+    ]);
+
+    // Copy standard fields
+    for (const field of ["Title", "UserName", "Password", "URL", "Notes"]) {
+      const val = snapshot.fields.get(field);
+      if (val !== undefined) {
+        entry.fields.set(field, val);
+      }
+    }
+
+    // Handle OTP
+    const otpVal =
+      snapshot.fields.get("otp") ||
+      snapshot.fields.get("TimeOtp") ||
+      snapshot.fields.get("totp");
+    if (otpVal) {
+      entry.fields.set("otp", otpVal);
+    } else {
+      entry.fields.delete("otp");
+    }
+
+    // Remove non-standard fields from current entry that aren't in snapshot
+    const snapshotCustomKeys = new Set<string>();
+    snapshot.fields.forEach((_val, key) => {
+      if (!standardFields.has(key)) {
+        snapshotCustomKeys.add(key);
+      }
+    });
+
+    entry.fields.forEach((_val, key) => {
+      if (!standardFields.has(key) && !snapshotCustomKeys.has(key)) {
+        entry.fields.delete(key);
+      }
+    });
+
+    // Restore custom fields from snapshot
+    snapshot.fields.forEach((val, key) => {
+      if (!standardFields.has(key)) {
+        entry.fields.set(key, val);
+      }
+    });
+
+    // Restore icon and tags
+    entry.icon = snapshot.icon ?? 0;
+    entry.tags = [...(snapshot.tags ?? [])];
+
+    // Update modification time
+    entry.times.lastModTime = new Date();
+
+    // Re-parse state
+    const { meta, rootGroup } = parseDatabase(db);
+    const entryIndex = buildEntryIndex(rootGroup);
+    const groupIndex = buildGroupIndex(rootGroup);
+
+    const updatedEntry = entryIndex.get(entryUuid) ?? null;
+
+    set({
+      meta,
+      rootGroup,
+      entryIndex,
+      groupIndex,
+      isDirty: true,
+    });
+
+    return updatedEntry;
+  },
+
+  deleteHistorySnapshot: (entryUuid, snapshotIndex) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return false;
+
+    const root = db.getDefaultGroup();
+    const found = findKdbxEntry(root, entryUuid);
+    if (!found) return false;
+
+    const { entry } = found;
+    const history = entry.history ?? [];
+    if (snapshotIndex < 0 || snapshotIndex >= history.length) return false;
+
+    entry.removeHistory(snapshotIndex);
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+    return true;
+  },
+
+  // ────── History Settings ──────
+
+  setHistoryMaxItems: (value) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.historyMaxItems = value;
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
+  setHistoryMaxSize: (value) => {
+    const state = get();
+    const db = state._db;
+    if (!db) return;
+
+    db.meta.historyMaxSize = value;
+
+    set({ isDirty: true });
+    state.refreshParsedState();
+  },
+
   // ────── Dirty State ──────
 
   markClean: () => set({ isDirty: false }),
 }));
+
+/**
+ * Helper to prune entry history using the db metadata rules (max items, max size)
+ */
+function pruneEntryHistory(entry: kdbxweb.KdbxEntry, db: kdbxweb.Kdbx) {
+  const maxItems = db.meta.historyMaxItems;
+  const maxSize = db.meta.historyMaxSize;
+
+  // 1. Prune by max items
+  // Note: KeePass defaults maxItems to 10. If maxItems is undefined or invalid, we don't prune.
+  // -1 means unlimited.
+  if (maxItems !== undefined && maxItems !== -1 && maxItems >= 0) {
+    while (entry.history.length > maxItems) {
+      entry.removeHistory(0);
+    }
+  }
+
+  // 2. Prune by max size
+  // -1 means unlimited.
+  if (maxSize !== undefined && maxSize !== -1 && maxSize >= 0) {
+    let currentTotalSize = calculateEntryHistorySize(entry.history);
+    while (currentTotalSize > maxSize && entry.history.length > 0) {
+      entry.removeHistory(0);
+      currentTotalSize = calculateEntryHistorySize(entry.history);
+    }
+  }
+}
+
+/**
+ * Approximate the byte size of historical entry snapshots
+ */
+function calculateEntryHistorySize(history: kdbxweb.KdbxEntry[]): number {
+  let total = 0;
+  for (const hEntry of history) {
+    total += 200; // estimated overhead (metadata, dates, uuid, type)
+
+    // Fields
+    hEntry.fields.forEach((val, key) => {
+      total += key.length;
+      if (val) {
+        if (typeof val === "string") {
+          total += val.length;
+        } else if (val && typeof val === "object" && "byteLength" in val) {
+          total += (val as any).byteLength;
+        }
+      }
+    });
+
+    // Binaries
+    hEntry.binaries.forEach((val, key) => {
+      total += key.length;
+      if (val) {
+        if (val && typeof val === "object") {
+          if ("byteLength" in val) {
+            total += (val as any).byteLength;
+          } else if (
+            "value" in val &&
+            val.value &&
+            typeof val.value === "object" &&
+            "byteLength" in val.value
+          ) {
+            total += (val.value as any).byteLength;
+          } else {
+            total += 1024; // fallback
+          }
+        }
+      }
+    });
+  }
+  return total;
+}

@@ -93,6 +93,8 @@ export function KdfTuningModal({
   const handleBenchmark = useCallback(async () => {
     setBenchmarking(true);
     setBenchmarkResult(null);
+    // Yield to the React Native render cycle to ensure the spinner/loading UI renders first
+    await new Promise((resolve) => setTimeout(resolve, 100));
     try {
       const result = await runKdfBenchmark(kdfType);
       setParams(result.recommended);

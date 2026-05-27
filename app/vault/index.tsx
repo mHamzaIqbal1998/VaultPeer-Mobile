@@ -19,6 +19,8 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from "react-native";
 import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -120,6 +122,59 @@ function EntryRow({
   );
 }
 
+const getTemplateCardStyle = (title: string) => {
+  switch (title.toLowerCase()) {
+    case "credit card":
+      return {
+        icon: "card-outline" as const,
+        bgDim: "rgba(244, 63, 94, 0.12)",
+        color: "#F43F5E",
+      };
+    case "email account":
+      return {
+        icon: "mail-outline" as const,
+        bgDim: "rgba(79, 70, 229, 0.12)",
+        color: "#6366F1",
+      };
+    case "secure note":
+      return {
+        icon: "document-text-outline" as const,
+        bgDim: "rgba(5, 150, 105, 0.12)",
+        color: "#10B981",
+      };
+    case "ssh server":
+      return {
+        icon: "terminal-outline" as const,
+        bgDim: "rgba(6, 182, 212, 0.12)",
+        color: "#06B6D4",
+      };
+    case "wi-fi router":
+      return {
+        icon: "wifi-outline" as const,
+        bgDim: "rgba(245, 158, 11, 0.12)",
+        color: "#F59E0B",
+      };
+    case "membership / id":
+      return {
+        icon: "person-outline" as const,
+        bgDim: "rgba(236, 72, 153, 0.12)",
+        color: "#EC4899",
+      };
+    case "software license":
+      return {
+        icon: "key-outline" as const,
+        bgDim: "rgba(139, 92, 246, 0.12)",
+        color: "#8B5CF6",
+      };
+    default:
+      return {
+        icon: "shield-outline" as const,
+        bgDim: "rgba(52, 211, 153, 0.12)",
+        color: Colors.accentMint,
+      };
+  }
+};
+
 // ────────────────────────────────────────────
 // Main Screen
 // ────────────────────────────────────────────
@@ -130,6 +185,7 @@ export default function VaultBrowserScreen() {
 
   const rootGroup = useVaultStore((state) => state.rootGroup);
   const activeGroupUuid = useVaultStore((state) => state.activeGroupUuid);
+  const meta = useVaultStore((state) => state.meta);
   const breadcrumbs = useVaultStore((state) => state.breadcrumbs);
   const entryIndex = useVaultStore((state) => state.entryIndex);
   const groupIndex = useVaultStore((state) => state.groupIndex);
@@ -161,6 +217,14 @@ export default function VaultBrowserScreen() {
   const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
   const [renameGroupName, setRenameGroupName] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+
+  const templateEntries = useMemo(() => {
+    if (!meta?.entryTemplatesGroup) return [];
+    const group = groupIndex.get(meta.entryTemplatesGroup);
+    return group?.entries ?? [];
+  }, [meta, groupIndex]);
 
   const isAtRoot = breadcrumbs.length === 0;
 
@@ -213,11 +277,15 @@ export default function VaultBrowserScreen() {
 
   const handleCreateEntry = useCallback(() => {
     if (!activeGroupUuid) return;
-    router.push({
-      pathname: "/entry/edit" as const as any,
-      params: { groupId: activeGroupUuid },
-    } as any);
-  }, [activeGroupUuid, router]);
+    if (meta?.entryTemplatesEnabled) {
+      setShowTemplateModal(true);
+    } else {
+      router.push({
+        pathname: "/entry/edit" as const as any,
+        params: { groupId: activeGroupUuid },
+      } as any);
+    }
+  }, [activeGroupUuid, router, meta]);
 
   const canModifyCurrentGroup = useMemo(() => {
     return (
@@ -735,6 +803,141 @@ export default function VaultBrowserScreen() {
           </Pressable>
         </View>
       )}
+      {/* Template Selector Modal */}
+      <Modal
+        visible={showTemplateModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => setShowTemplateModal(false)}
+      >
+        <Animated.View style={templateModalStyles.overlay}>
+          <Pressable
+            style={templateModalStyles.overlayPress}
+            onPress={() => setShowTemplateModal(false)}
+          />
+          <Animated.View
+            entering={FadeIn.duration(200).springify()}
+            exiting={FadeOut.duration(150)}
+            style={templateModalStyles.modalContainer}
+          >
+            <View style={templateModalStyles.header}>
+              <View style={templateModalStyles.headerIcon}>
+                <Ionicons
+                  name="copy-outline"
+                  size={20}
+                  color={Colors.accentMint}
+                />
+              </View>
+              <Text style={templateModalStyles.headerTitle}>
+                Select Template
+              </Text>
+              <Pressable
+                onPress={() => setShowTemplateModal(false)}
+                hitSlop={12}
+                style={templateModalStyles.closeBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={templateModalStyles.gridContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Blank Entry */}
+              <Pressable
+                style={templateModalStyles.card}
+                onPress={() => {
+                  setShowTemplateModal(false);
+                  router.push({
+                    pathname: "/entry/edit" as const as any,
+                    params: { groupId: activeGroupUuid },
+                  } as any);
+                }}
+              >
+                <View
+                  style={[
+                    templateModalStyles.cardIconContainer,
+                    { backgroundColor: "rgba(148, 163, 184, 0.12)" },
+                  ]}
+                >
+                  <Ionicons
+                    name="add-outline"
+                    size={24}
+                    color={Colors.textMuted}
+                  />
+                </View>
+                <Text style={templateModalStyles.cardTitle}>Blank Entry</Text>
+                <Text
+                  style={templateModalStyles.cardSubtitle}
+                  numberOfLines={2}
+                >
+                  Create an entry with default fields
+                </Text>
+              </Pressable>
+
+              {/* Dynamic Templates */}
+              {templateEntries.map((entry) => {
+                const styleInfo = getTemplateCardStyle(entry.title);
+                const customKeys = Object.keys(entry.fields).filter(
+                  (k) =>
+                    !["Title", "UserName", "Password", "URL", "Notes"].includes(
+                      k
+                    )
+                );
+                const parts = [];
+                if (entry.username || entry.fields["UserName"] !== undefined)
+                  parts.push("Username");
+                if (entry.password || entry.fields["Password"] !== undefined)
+                  parts.push("Password");
+                parts.push(...customKeys);
+                if (entry.notes) parts.push("Notes");
+                const fieldsText = parts.join(", ") || "Standard Fields";
+
+                return (
+                  <Pressable
+                    key={entry.uuid}
+                    style={templateModalStyles.card}
+                    onPress={() => {
+                      setShowTemplateModal(false);
+                      router.push({
+                        pathname: "/entry/edit" as const as any,
+                        params: {
+                          groupId: activeGroupUuid,
+                          templateEntryId: entry.uuid,
+                        },
+                      } as any);
+                    }}
+                  >
+                    <View
+                      style={[
+                        templateModalStyles.cardIconContainer,
+                        { backgroundColor: styleInfo.bgDim },
+                      ]}
+                    >
+                      <Ionicons
+                        name={styleInfo.icon}
+                        size={24}
+                        color={styleInfo.color}
+                      />
+                    </View>
+                    <Text style={templateModalStyles.cardTitle}>
+                      {entry.title}
+                    </Text>
+                    <Text
+                      style={templateModalStyles.cardSubtitle}
+                      numberOfLines={2}
+                    >
+                      {fieldsText}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1011,5 +1214,91 @@ const styles = StyleSheet.create({
   fabPressed: {
     backgroundColor: "#2BC48A",
     transform: [{ scale: 0.95 }],
+  },
+});
+
+const templateModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  overlayPress: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalContainer: {
+    width: "92%",
+    maxWidth: 440,
+    maxHeight: "80%",
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    padding: Spacing.lg,
+    ...Shadows.elevated,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  headerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.accentMintDim,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.body,
+    color: Colors.textPrimary,
+  },
+  closeBtn: {
+    width: TouchTarget.min,
+    height: TouchTarget.min,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: Spacing.md,
+    paddingBottom: Spacing.md,
+  },
+  card: {
+    width: "47%",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderSage,
+    padding: Spacing.md,
+    marginBottom: Spacing.xs,
+    alignItems: "flex-start",
+  },
+  cardIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: Radii.md,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  cardTitle: {
+    fontFamily: Fonts.heading.semiBold,
+    fontSize: FontSizes.bodySmall,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xxs,
+  },
+  cardSubtitle: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    lineHeight: 16,
   },
 });

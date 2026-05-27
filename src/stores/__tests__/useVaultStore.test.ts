@@ -1,5 +1,10 @@
 import { useVaultStore } from "../useVaultStore";
 import { createNewDatabase, initCryptoEngine } from "../../services/crypto";
+import {
+  isBiometricEnabled,
+  enableBiometric,
+} from "../../services/biometricService";
+import * as kdbxweb from "kdbxweb";
 
 jest.mock("react-native", () => ({
   Platform: { OS: "android" },
@@ -10,6 +15,13 @@ jest.mock("react-native", () => ({
 
 jest.mock("react-native-argon2-turbo", () => ({
   argon2Hash: jest.fn(),
+}));
+
+jest.mock("../../services/biometricService", () => ({
+  isBiometricEnabled: jest.fn(),
+  enableBiometric: jest.fn(),
+  disableBiometric: jest.fn(),
+  isBiometricsSupported: jest.fn(),
 }));
 
 describe("useVaultStore", () => {
@@ -221,5 +233,39 @@ describe("useVaultStore", () => {
 
     const stateAfterPermanentDelete = useVaultStore.getState();
     expect(stateAfterPermanentDelete.groupIndex.get(groupUuid)).toBeUndefined();
+  });
+
+  it("should change the master password and update biometric settings", async () => {
+    const mockIsBiometricEnabled = isBiometricEnabled as jest.Mock;
+    const mockEnableBiometric = enableBiometric as jest.Mock;
+
+    mockIsBiometricEnabled.mockResolvedValue(true);
+    mockEnableBiometric.mockResolvedValue(true);
+
+    const db = createNewDatabase("Test Vault", "oldPassword");
+    useVaultStore.getState().openDatabase(db, "test-path.kdbx");
+
+    const success = await useVaultStore
+      .getState()
+      .changeMasterPassword("newPassword");
+    expect(success).toBe(true);
+
+    const state = useVaultStore.getState();
+    expect(state.isDirty).toBe(true);
+
+    // Verify credentials contain newPassword
+    const updatedDb = state._db;
+    expect(updatedDb).not.toBeNull();
+    const credentials = updatedDb?.credentials as any;
+    expect(credentials?.passwordHash).toBeDefined();
+
+    // Verify it matches the hash of "newPassword"
+    const expectedHash =
+      await kdbxweb.ProtectedValue.fromString("newPassword").getHash();
+    const actualHash = credentials.passwordHash.getBinary();
+    expect(new Uint8Array(actualHash)).toEqual(new Uint8Array(expectedHash));
+
+    // Verify biometric updates
+    expect(mockEnableBiometric).toHaveBeenCalledWith("newPassword");
   });
 });
