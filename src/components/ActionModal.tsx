@@ -67,7 +67,15 @@ export function ActionModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Animated.View style={styles.overlay}>
+      <View style={styles.overlay}>
+        <Animated.View
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: colors.overlay },
+          ]}
+        />
         <Pressable style={styles.overlayPress} onPress={onClose} />
         <Animated.View
           entering={FadeIn.duration(200).springify()}
@@ -185,7 +193,7 @@ export function ActionModal({
             </View>
           )}
         </Animated.View>
-      </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -194,7 +202,6 @@ function createStyles(colors: any) {
   return StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: colors.overlay,
       justifyContent: "center",
       alignItems: "center",
     },

@@ -932,7 +932,15 @@ export default function VaultBrowserScreen() {
         statusBarTranslucent
         onRequestClose={() => setShowTemplateModal(false)}
       >
-        <Animated.View style={templateModalStyles.overlay}>
+        <View style={templateModalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={templateModalStyles.overlayPress}
             onPress={() => setShowTemplateModal(false)}
@@ -1057,7 +1065,7 @@ export default function VaultBrowserScreen() {
               })}
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* Reusable Action Modal */}
@@ -1356,7 +1364,6 @@ function createTemplateModalStyles(colors: any) {
   return StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: colors.overlay,
       justifyContent: "center",
       alignItems: "center",
     },

@@ -176,7 +176,14 @@ export function KdfTuningModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Animated.View style={[styles.overlay, overlayStyle]}>
+      <View style={styles.overlay}>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: colors.overlay },
+            overlayStyle,
+          ]}
+        />
         <Pressable style={styles.overlayPress} onPress={onClose} />
         <Animated.View
           entering={FadeIn.duration(200).springify()}
@@ -386,7 +393,7 @@ export function KdfTuningModal({
             </View>
           </ScrollView>
         </Animated.View>
-      </Animated.View>
+      </View>
 
       {/* Nested validation/error modal */}
       <ActionModal
@@ -406,7 +413,6 @@ const createStyles = (colors: any) =>
   StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: colors.overlay,
       justifyContent: "center",
       alignItems: "center",
     },

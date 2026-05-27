@@ -1617,7 +1617,15 @@ export default function VaultSettingsScreen() {
           }
         }}
       >
-        <Animated.View style={modalStyles.overlay}>
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={modalStyles.overlayPress}
             onPress={() => {
@@ -1832,7 +1840,7 @@ export default function VaultSettingsScreen() {
               </Pressable>
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* Group Selector Modal */}
@@ -1843,7 +1851,15 @@ export default function VaultSettingsScreen() {
         statusBarTranslucent
         onRequestClose={() => setShowGroupModal(false)}
       >
-        <Animated.View style={modalStyles.overlay}>
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={modalStyles.overlayPress}
             onPress={() => setShowGroupModal(false)}
@@ -1919,7 +1935,7 @@ export default function VaultSettingsScreen() {
                 })}
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* Recycle Bin Group Selector Modal */}
@@ -1930,7 +1946,15 @@ export default function VaultSettingsScreen() {
         statusBarTranslucent
         onRequestClose={() => setShowRecycleBinGroupModal(false)}
       >
-        <Animated.View style={modalStyles.overlay}>
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={modalStyles.overlayPress}
             onPress={() => setShowRecycleBinGroupModal(false)}
@@ -2007,7 +2031,7 @@ export default function VaultSettingsScreen() {
                 })}
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* Reusable Action Modal */}
@@ -2342,7 +2366,6 @@ function createModalStyles(colors: any) {
   return StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: colors.overlay,
       justifyContent: "center",
       alignItems: "center",
     },
