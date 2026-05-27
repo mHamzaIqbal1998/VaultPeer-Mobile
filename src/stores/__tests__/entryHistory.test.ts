@@ -201,4 +201,67 @@ describe("History Settings", () => {
     expect(state.isDirty).toBe(true);
     expect(state._db?.meta.historyMaxSize).toBe(tenMB);
   });
+
+  it("should prune entry history to historyMaxItems limit on update", async () => {
+    const db = createNewDatabase("Test Vault", "password123");
+    useVaultStore.getState().openDatabase(db, "test.kdbx");
+
+    // Set limit to 2
+    useVaultStore.getState().setHistoryMaxItems(2);
+
+    const rootUuid = useVaultStore.getState().rootGroup!.uuid;
+    const entry = await useVaultStore.getState().createEntry(rootUuid, {
+      title: "V0",
+    });
+
+    // Perform 4 updates (which would normally produce 4 history items)
+    await useVaultStore.getState().updateEntry(entry!.uuid, { title: "V1" });
+    await useVaultStore.getState().updateEntry(entry!.uuid, { title: "V2" });
+    await useVaultStore.getState().updateEntry(entry!.uuid, { title: "V3" });
+    await useVaultStore.getState().updateEntry(entry!.uuid, { title: "V4" });
+
+    const history = useVaultStore.getState().getEntryHistory(entry!.uuid);
+    // Should be capped at 2
+    expect(history.length).toBe(2);
+
+    // Oldest should have been pruned, so we expect V2 and V3 (since V4 is the current state and V3 & V2 are the most recent history items)
+    expect(history[0].title).toBe("V2");
+    expect(history[1].title).toBe("V3");
+  });
+
+  it("should prune entry history to historyMaxSize limit on update", async () => {
+    const db = createNewDatabase("Test Vault", "password123");
+    useVaultStore.getState().openDatabase(db, "test.kdbx");
+
+    // Set size limit to 500 bytes (very small)
+    useVaultStore.getState().setHistoryMaxSize(500);
+
+    const rootUuid = useVaultStore.getState().rootGroup!.uuid;
+    const entry = await useVaultStore.getState().createEntry(rootUuid, {
+      title: "Initial",
+      notes: "Small",
+    });
+
+    // Update with massive notes that exceed 500 bytes (this will be pushed to history)
+    const longString = "A".repeat(400);
+    await useVaultStore
+      .getState()
+      .updateEntry(entry!.uuid, { notes: longString });
+
+    // Update again with another massive notes (this pushes the 400-byte version to history, making total history > 500 bytes)
+    await useVaultStore
+      .getState()
+      .updateEntry(entry!.uuid, { notes: longString + "2" });
+
+    // Update again (pushes history, triggering pruning of the older huge history snapshot)
+    await useVaultStore
+      .getState()
+      .updateEntry(entry!.uuid, { notes: "Short again" });
+
+    const history = useVaultStore.getState().getEntryHistory(entry!.uuid);
+
+    // Total history size should be <= 500 bytes
+    // Since each snapshot with 400-char notes is > 400 bytes, we should only keep the most recent ones that fit.
+    expect(history.length).toBeLessThan(3);
+  });
 });

@@ -667,6 +667,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     // Push current state to history before modification
     entry.pushHistory();
+    pruneEntryHistory(entry, db);
 
     // Update fields
     if (data.title !== undefined) entry.fields.set("Title", data.title);
@@ -1335,6 +1336,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     // Push current state to history before restoring
     entry.pushHistory();
+    pruneEntryHistory(entry, db);
 
     // Restore fields from snapshot
     const standardFields = new Set([
@@ -1461,3 +1463,74 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
   markClean: () => set({ isDirty: false }),
 }));
+
+/**
+ * Helper to prune entry history using the db metadata rules (max items, max size)
+ */
+function pruneEntryHistory(entry: kdbxweb.KdbxEntry, db: kdbxweb.Kdbx) {
+  const maxItems = db.meta.historyMaxItems;
+  const maxSize = db.meta.historyMaxSize;
+
+  // 1. Prune by max items
+  // Note: KeePass defaults maxItems to 10. If maxItems is undefined or invalid, we don't prune.
+  // -1 means unlimited.
+  if (maxItems !== undefined && maxItems !== -1 && maxItems >= 0) {
+    while (entry.history.length > maxItems) {
+      entry.removeHistory(0);
+    }
+  }
+
+  // 2. Prune by max size
+  // -1 means unlimited.
+  if (maxSize !== undefined && maxSize !== -1 && maxSize >= 0) {
+    let currentTotalSize = calculateEntryHistorySize(entry.history);
+    while (currentTotalSize > maxSize && entry.history.length > 0) {
+      entry.removeHistory(0);
+      currentTotalSize = calculateEntryHistorySize(entry.history);
+    }
+  }
+}
+
+/**
+ * Approximate the byte size of historical entry snapshots
+ */
+function calculateEntryHistorySize(history: kdbxweb.KdbxEntry[]): number {
+  let total = 0;
+  for (const hEntry of history) {
+    total += 200; // estimated overhead (metadata, dates, uuid, type)
+
+    // Fields
+    hEntry.fields.forEach((val, key) => {
+      total += key.length;
+      if (val) {
+        if (typeof val === "string") {
+          total += val.length;
+        } else if (val && typeof val === "object" && "byteLength" in val) {
+          total += (val as any).byteLength;
+        }
+      }
+    });
+
+    // Binaries
+    hEntry.binaries.forEach((val, key) => {
+      total += key.length;
+      if (val) {
+        if (val && typeof val === "object") {
+          if ("byteLength" in val) {
+            total += (val as any).byteLength;
+          } else if (
+            "value" in val &&
+            val.value &&
+            typeof val.value === "object" &&
+            "byteLength" in val.value
+          ) {
+            total += (val.value as any).byteLength;
+          } else {
+            total += 1024; // fallback
+          }
+        }
+      }
+    });
+  }
+  return total;
+}
