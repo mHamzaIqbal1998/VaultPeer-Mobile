@@ -9,6 +9,7 @@
 // Color Palette
 // ────────────────────────────────────────────
 
+import { Platform } from "react-native";
 import { useVaultStore } from "../stores/useVaultStore";
 
 export const DarkColors = {
@@ -248,7 +249,11 @@ export const Shadows = {
       shadowOffset: { width: 0, height: 0 },
       shadowOpacity: isLight ? 0.2 : 0.4,
       shadowRadius: 12,
-      elevation: 6,
+      ...Platform.select({
+        ios: { elevation: 4 },
+        android: { elevation: 0 },
+        default: { elevation: 0 },
+      }),
     };
   },
 };
