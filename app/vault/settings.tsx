@@ -1044,7 +1044,7 @@ export default function VaultSettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Unsaved Changes Banner */}
-        {isDirty && (
+        {(isDirty || isSaving) && (
           <CyberCard style={styles.warningCard}>
             <View style={styles.warningHeader}>
               <Ionicons
@@ -1060,14 +1060,16 @@ export default function VaultSettingsScreen() {
             </Text>
             <Pressable
               onPress={handleSave}
-              disabled={saving}
+              disabled={saving || isSaving || (autoSave && isDirty)}
               style={({ pressed }) => [
                 styles.saveBtn,
                 pressed && styles.saveBtnPressed,
-                saving && { opacity: 0.6 },
+                (saving || isSaving || (autoSave && isDirty)) && {
+                  opacity: 0.6,
+                },
               ]}
             >
-              {saving ? (
+              {saving || isSaving || (autoSave && isDirty) ? (
                 <ActivityIndicator
                   size="small"
                   color={colors.backgroundPrimary}

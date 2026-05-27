@@ -738,19 +738,24 @@ export default function VaultBrowserScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          {isDirty && (
+          {(isDirty || isSaving) && (
             <Animated.View
               entering={FadeIn.duration(300)}
               exiting={FadeOut.duration(200)}
             >
               <Pressable
                 onPress={handleSave}
-                disabled={saving}
-                style={[styles.iconButton, saving && { opacity: 0.6 }]}
+                disabled={saving || isSaving || (autoSave && isDirty)}
+                style={[
+                  styles.iconButton,
+                  (saving || isSaving || (autoSave && isDirty)) && {
+                    opacity: 0.6,
+                  },
+                ]}
                 hitSlop={8}
                 accessibilityLabel="Save changes"
               >
-                {saving ? (
+                {saving || isSaving || (autoSave && isDirty) ? (
                   <ActivityIndicator size="small" color={colors.accentMint} />
                 ) : (
                   <Ionicons
