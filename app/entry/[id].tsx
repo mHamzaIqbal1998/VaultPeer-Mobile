@@ -772,201 +772,253 @@ export default function EntryDetailScreen() {
                           />
                         </Pressable>
 
-                        {isExpanded && (
-                          <Animated.View
-                            entering={FadeInDown.duration(150)}
-                            style={styles.historyPreview}
-                          >
-                            {snapshot.username ? (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  Username
-                                </Text>
-                                <Text
-                                  style={styles.historyFieldValue}
-                                  numberOfLines={1}
-                                >
-                                  {snapshot.username}
-                                </Text>
-                              </View>
-                            ) : null}
-                            {snapshot.password ? (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  Password
-                                </Text>
-                                <Text
-                                  style={[
-                                    styles.historyFieldValue,
-                                    styles.historyFieldMono,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  ••••••••
-                                </Text>
-                              </View>
-                            ) : null}
-                            {snapshot.url ? (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  URL
-                                </Text>
-                                <Text
-                                  style={styles.historyFieldValue}
-                                  numberOfLines={1}
-                                >
-                                  {snapshot.url}
-                                </Text>
-                              </View>
-                            ) : null}
-                            {Object.entries(snapshot.fields).length > 0 && (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  Custom Fields
-                                </Text>
-                                <Text style={styles.historyFieldValue}>
-                                  {Object.keys(snapshot.fields).length} field
-                                  {Object.keys(snapshot.fields).length !== 1
-                                    ? "s"
-                                    : ""}
-                                </Text>
-                              </View>
-                            )}
+                        {isExpanded &&
+                          (() => {
+                            const hasContent =
+                              !!snapshot.username ||
+                              !!snapshot.password ||
+                              !!snapshot.url ||
+                              !!snapshot.notes ||
+                              (snapshot.tags && snapshot.tags.length > 0) ||
+                              (snapshot.fields &&
+                                Object.entries(snapshot.fields).some(
+                                  ([_, val]) => !!val
+                                ));
 
-                            <View style={styles.historyActions}>
-                              <Pressable
-                                onPress={() => {
-                                  if (restoringSnapshot) return;
-                                  Alert.alert(
-                                    "Restore Snapshot",
-                                    `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
-                                    [
-                                      { text: "Cancel", style: "cancel" },
-                                      {
-                                        text: "Restore",
-                                        onPress: async () => {
-                                          setRestoringSnapshot(true);
-                                          try {
-                                            const result =
-                                              await restoreHistorySnapshot(
-                                                entry.uuid,
-                                                realIndex
-                                              );
-                                            if (result) {
-                                              const updated = getEntryHistory(
-                                                entry.uuid
-                                              );
-                                              setHistorySnapshots(updated);
-                                              setExpandedSnapshot(null);
-                                              Haptics.notificationAsync(
-                                                Haptics.NotificationFeedbackType
-                                                  .Success
-                                              );
-                                              Alert.alert(
-                                                "Restored",
-                                                "Entry restored to snapshot state."
-                                              );
-                                            } else {
-                                              Alert.alert(
-                                                "Error",
-                                                "Failed to restore snapshot."
-                                              );
-                                            }
-                                          } catch (err) {
-                                            console.error(err);
-                                            Alert.alert(
-                                              "Error",
-                                              "An error occurred while restoring."
-                                            );
-                                          } finally {
-                                            setRestoringSnapshot(false);
-                                          }
-                                        },
-                                      },
-                                    ]
-                                  );
-                                }}
-                                style={({ pressed }) => [
-                                  styles.historyActionBtn,
-                                  styles.historyRestoreBtn,
-                                  pressed && { opacity: 0.7 },
-                                  restoringSnapshot && { opacity: 0.5 },
-                                ]}
-                                disabled={restoringSnapshot}
+                            return (
+                              <Animated.View
+                                entering={FadeInDown.duration(150)}
+                                style={styles.historyPreview}
                               >
-                                {restoringSnapshot ? (
-                                  <ActivityIndicator
-                                    size="small"
-                                    color={Colors.backgroundPrimary}
-                                  />
-                                ) : (
-                                  <>
-                                    <Ionicons
-                                      name="refresh-outline"
-                                      size={14}
-                                      color={Colors.backgroundPrimary}
-                                    />
-                                    <Text style={styles.historyRestoreBtnText}>
-                                      Restore
-                                    </Text>
-                                  </>
-                                )}
-                              </Pressable>
-
-                              <Pressable
-                                onPress={() => {
-                                  Alert.alert(
-                                    "Delete Snapshot",
-                                    `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
-                                    [
-                                      { text: "Cancel", style: "cancel" },
-                                      {
-                                        text: "Delete",
-                                        style: "destructive",
-                                        onPress: () => {
-                                          const success = deleteHistorySnapshot(
-                                            entry.uuid,
-                                            realIndex
-                                          );
-                                          if (success) {
-                                            const updated = getEntryHistory(
-                                              entry.uuid
-                                            );
-                                            setHistorySnapshots(updated);
-                                            setExpandedSnapshot(null);
-                                            Haptics.notificationAsync(
-                                              Haptics.NotificationFeedbackType
-                                                .Success
-                                            );
-                                          } else {
-                                            Alert.alert(
-                                              "Error",
-                                              "Failed to delete snapshot."
-                                            );
-                                          }
-                                        },
-                                      },
-                                    ]
-                                  );
-                                }}
-                                style={({ pressed }) => [
-                                  styles.historyActionBtn,
-                                  styles.historyDeleteBtn,
-                                  pressed && { opacity: 0.7 },
-                                ]}
-                              >
-                                <Ionicons
-                                  name="trash-outline"
-                                  size={14}
-                                  color={Colors.statusError}
+                                <FieldRow
+                                  label="Username"
+                                  value={snapshot.username}
+                                  iconName="person-outline"
+                                  onCopy={() =>
+                                    handleCopy(snapshot.username, "Username")
+                                  }
                                 />
-                                <Text style={styles.historyDeleteBtnText}>
-                                  Delete
-                                </Text>
-                              </Pressable>
-                            </View>
-                          </Animated.View>
-                        )}
+                                <FieldRow
+                                  label="Password"
+                                  value={snapshot.password}
+                                  iconName="key-outline"
+                                  isMasked
+                                  isMono
+                                  onCopy={() =>
+                                    handleCopy(snapshot.password, "Password")
+                                  }
+                                />
+                                <FieldRow
+                                  label="URL"
+                                  value={snapshot.url}
+                                  iconName="globe-outline"
+                                  onCopy={() => handleCopy(snapshot.url, "URL")}
+                                />
+                                <FieldRow
+                                  label="Notes"
+                                  value={snapshot.notes}
+                                  iconName="document-text-outline"
+                                  onCopy={() =>
+                                    handleCopy(snapshot.notes, "Notes")
+                                  }
+                                />
+
+                                {/* Custom Fields */}
+                                {snapshot.fields &&
+                                  Object.entries(snapshot.fields).map(
+                                    ([key, val]) => (
+                                      <FieldRow
+                                        key={key}
+                                        label={key}
+                                        value={val}
+                                        iconName="pricetag-outline"
+                                        isMasked={snapshot.secureFields?.includes(
+                                          key
+                                        )}
+                                        isMono={snapshot.secureFields?.includes(
+                                          key
+                                        )}
+                                        onCopy={() => handleCopy(val, key)}
+                                      />
+                                    )
+                                  )}
+
+                                {/* Tags */}
+                                {snapshot.tags && snapshot.tags.length > 0 && (
+                                  <View style={{ marginBottom: Spacing.lg }}>
+                                    <View
+                                      style={[
+                                        styles.fieldLabelRow,
+                                        { marginBottom: Spacing.xs },
+                                      ]}
+                                    >
+                                      <Ionicons
+                                        name="pricetag-outline"
+                                        size={16}
+                                        color={Colors.textMuted}
+                                      />
+                                      <Text style={styles.fieldLabel}>
+                                        Tags
+                                      </Text>
+                                    </View>
+                                    <View style={styles.tagsRow}>
+                                      {snapshot.tags.map((tag) => (
+                                        <View key={tag} style={styles.tag}>
+                                          <Text style={styles.tagText}>
+                                            {tag}
+                                          </Text>
+                                        </View>
+                                      ))}
+                                    </View>
+                                  </View>
+                                )}
+
+                                {/* Fallback if no content */}
+                                {!hasContent && (
+                                  <Text style={styles.historyEmptyFieldsText}>
+                                    No fields populated in this version
+                                  </Text>
+                                )}
+
+                                <View style={styles.historyActions}>
+                                  <Pressable
+                                    onPress={() => {
+                                      if (restoringSnapshot) return;
+                                      Alert.alert(
+                                        "Restore Snapshot",
+                                        `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
+                                        [
+                                          { text: "Cancel", style: "cancel" },
+                                          {
+                                            text: "Restore",
+                                            onPress: async () => {
+                                              setRestoringSnapshot(true);
+                                              try {
+                                                const result =
+                                                  await restoreHistorySnapshot(
+                                                    entry.uuid,
+                                                    realIndex
+                                                  );
+                                                if (result) {
+                                                  const updated =
+                                                    getEntryHistory(entry.uuid);
+                                                  setHistorySnapshots(updated);
+                                                  setExpandedSnapshot(null);
+                                                  Haptics.notificationAsync(
+                                                    Haptics
+                                                      .NotificationFeedbackType
+                                                      .Success
+                                                  );
+                                                  Alert.alert(
+                                                    "Restored",
+                                                    "Entry restored to snapshot state."
+                                                  );
+                                                } else {
+                                                  Alert.alert(
+                                                    "Error",
+                                                    "Failed to restore snapshot."
+                                                  );
+                                                }
+                                              } catch (err) {
+                                                console.error(err);
+                                                Alert.alert(
+                                                  "Error",
+                                                  "An error occurred while restoring."
+                                                );
+                                              } finally {
+                                                setRestoringSnapshot(false);
+                                              }
+                                            },
+                                          },
+                                        ]
+                                      );
+                                    }}
+                                    style={({ pressed }) => [
+                                      styles.historyActionBtn,
+                                      styles.historyRestoreBtn,
+                                      pressed && { opacity: 0.7 },
+                                      restoringSnapshot && { opacity: 0.5 },
+                                    ]}
+                                    disabled={restoringSnapshot}
+                                  >
+                                    {restoringSnapshot ? (
+                                      <ActivityIndicator
+                                        size="small"
+                                        color={Colors.backgroundPrimary}
+                                      />
+                                    ) : (
+                                      <>
+                                        <Ionicons
+                                          name="refresh-outline"
+                                          size={14}
+                                          color={Colors.backgroundPrimary}
+                                        />
+                                        <Text
+                                          style={styles.historyRestoreBtnText}
+                                        >
+                                          Restore
+                                        </Text>
+                                      </>
+                                    )}
+                                  </Pressable>
+
+                                  <Pressable
+                                    onPress={() => {
+                                      Alert.alert(
+                                        "Delete Snapshot",
+                                        `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
+                                        [
+                                          { text: "Cancel", style: "cancel" },
+                                          {
+                                            text: "Delete",
+                                            style: "destructive",
+                                            onPress: () => {
+                                              const success =
+                                                deleteHistorySnapshot(
+                                                  entry.uuid,
+                                                  realIndex
+                                                );
+                                              if (success) {
+                                                const updated = getEntryHistory(
+                                                  entry.uuid
+                                                );
+                                                setHistorySnapshots(updated);
+                                                setExpandedSnapshot(null);
+                                                Haptics.notificationAsync(
+                                                  Haptics
+                                                    .NotificationFeedbackType
+                                                    .Success
+                                                );
+                                              } else {
+                                                Alert.alert(
+                                                  "Error",
+                                                  "Failed to delete snapshot."
+                                                );
+                                              }
+                                            },
+                                          },
+                                        ]
+                                      );
+                                    }}
+                                    style={({ pressed }) => [
+                                      styles.historyActionBtn,
+                                      styles.historyDeleteBtn,
+                                      pressed && { opacity: 0.7 },
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name="trash-outline"
+                                      size={14}
+                                      color={Colors.statusError}
+                                    />
+                                    <Text style={styles.historyDeleteBtnText}>
+                                      Delete
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                              </Animated.View>
+                            );
+                          })()}
                       </View>
                     );
                   })
@@ -1424,7 +1476,14 @@ const styles = StyleSheet.create({
   historyPreview: {
     padding: Spacing.md,
     backgroundColor: Colors.surfaceCard,
-    gap: Spacing.sm,
+  },
+  historyEmptyFieldsText: {
+    fontFamily: Fonts.body.regular,
+    fontSize: FontSizes.caption,
+    color: Colors.textMuted,
+    textAlign: "center",
+    paddingVertical: Spacing.md,
+    fontStyle: "italic",
   },
   historyFieldRow: {
     flexDirection: "row",
