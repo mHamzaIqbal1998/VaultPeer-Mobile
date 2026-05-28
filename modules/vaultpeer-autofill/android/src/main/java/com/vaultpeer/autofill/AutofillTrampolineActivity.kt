@@ -29,6 +29,20 @@ class AutofillTrampolineActivity : Activity() {
         super.onResume()
         Log.d("VaultPeerAutofill", "AutofillTrampolineActivity onResume, launched=$launched")
 
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+            Log.d("VaultPeerAutofill", "AutofillTrampolineActivity launched from history. Redirecting to main launcher.")
+            val cleanIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                action = Intent.ACTION_MAIN
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            if (cleanIntent != null) {
+                startActivity(cleanIntent)
+            }
+            finish()
+            return
+        }
+
         if (!launched) {
             launched = true
             // Launch MainActivity

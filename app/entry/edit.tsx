@@ -24,6 +24,7 @@ import {
   Shadows,
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useFilePicker } from "@/src/context/FilePickerContext";
 import { CyberCard } from "@/src/components/CyberCard";
 import { IconPickerModal } from "@/src/components/IconPickerModal";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
@@ -38,6 +39,7 @@ import {
 } from "@/src/services/passwordGenerator";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { cancelRequest } from "@/modules/vaultpeer-autofill";
+import * as SecureStore from "expo-secure-store";
 
 interface CustomFieldState {
   id: string;
@@ -239,6 +241,7 @@ export default function EntryEditScreen() {
     autofillDomain?: string;
   }>();
   const router = useRouter();
+  const { saveVault } = useFilePicker();
   const { getEntry, createEntry, updateEntry, logAccess } = useVaultStore();
 
   const isNew = !entryId;
@@ -561,7 +564,34 @@ export default function EntryEditScreen() {
           if (entry) {
             logAccess(entry.uuid, entry.title, "created");
             if (autofillUsername || autofillPassword || autofillPackageName) {
-              await cancelRequest();
+              const db = useVaultStore.getState()._db;
+              if (db) {
+                try {
+                  await saveVault(db);
+                } catch (saveErr) {
+                  console.error(
+                    "Autofill Save - Failed to save vault:",
+                    saveErr
+                  );
+                }
+              }
+              try {
+                await SecureStore.setItemAsync(
+                  "last_processed_save",
+                  JSON.stringify({
+                    username: autofillUsername || "",
+                    password: autofillPassword || "",
+                    packageName: autofillPackageName || "",
+                    timestamp: Date.now(),
+                  })
+                );
+              } catch (storeErr) {
+                console.error("Failed to write SecureStore in save:", storeErr);
+              }
+              router.replace("/vault");
+              setTimeout(async () => {
+                await cancelRequest();
+              }, 100);
             } else {
               router.back();
             }
@@ -571,7 +601,34 @@ export default function EntryEditScreen() {
           if (entry) {
             logAccess(entry.uuid, entry.title, "updated");
             if (autofillUsername || autofillPassword || autofillPackageName) {
-              await cancelRequest();
+              const db = useVaultStore.getState()._db;
+              if (db) {
+                try {
+                  await saveVault(db);
+                } catch (saveErr) {
+                  console.error(
+                    "Autofill Save - Failed to save vault:",
+                    saveErr
+                  );
+                }
+              }
+              try {
+                await SecureStore.setItemAsync(
+                  "last_processed_save",
+                  JSON.stringify({
+                    username: autofillUsername || "",
+                    password: autofillPassword || "",
+                    packageName: autofillPackageName || "",
+                    timestamp: Date.now(),
+                  })
+                );
+              } catch (storeErr) {
+                console.error("Failed to write SecureStore in save:", storeErr);
+              }
+              router.replace("/vault");
+              setTimeout(async () => {
+                await cancelRequest();
+              }, 100);
             } else {
               router.back();
             }
@@ -613,6 +670,7 @@ export default function EntryEditScreen() {
     autofillUsername,
     autofillPassword,
     autofillPackageName,
+    saveVault,
   ]);
 
   const handleDiscard = useCallback(() => {
@@ -669,7 +727,25 @@ export default function EntryEditScreen() {
             onPress: () => {
               hideModal();
               if (autofillUsername || autofillPassword || autofillPackageName) {
-                cancelRequest();
+                try {
+                  SecureStore.setItemAsync(
+                    "last_processed_save",
+                    JSON.stringify({
+                      username: autofillUsername || "",
+                      password: autofillPassword || "",
+                      packageName: autofillPackageName || "",
+                      timestamp: Date.now(),
+                    })
+                  ).catch((err) =>
+                    console.error("SecureStore discard error:", err)
+                  );
+                } catch (e) {
+                  console.error("SecureStore catch discard error:", e);
+                }
+                router.replace("/vault");
+                setTimeout(() => {
+                  cancelRequest();
+                }, 100);
               } else {
                 router.back();
               }
@@ -679,7 +755,23 @@ export default function EntryEditScreen() {
       });
     } else {
       if (autofillUsername || autofillPassword || autofillPackageName) {
-        cancelRequest();
+        try {
+          SecureStore.setItemAsync(
+            "last_processed_save",
+            JSON.stringify({
+              username: autofillUsername || "",
+              password: autofillPassword || "",
+              packageName: autofillPackageName || "",
+              timestamp: Date.now(),
+            })
+          ).catch((err) => console.error("SecureStore discard error:", err));
+        } catch (e) {
+          console.error("SecureStore catch discard error:", e);
+        }
+        router.replace("/vault");
+        setTimeout(() => {
+          cancelRequest();
+        }, 100);
       } else {
         router.back();
       }

@@ -55,6 +55,7 @@ function withVaultPeerAutofill(config) {
           "android:name": "com.vaultpeer.autofill.AutofillTrampolineActivity",
           "android:theme": "@android:style/Theme.Translucent.NoTitleBar",
           "android:exported": "true",
+          "android:excludeFromRecents": "true",
         },
       });
     }

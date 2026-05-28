@@ -10,6 +10,8 @@ import {
 } from "@/src/constants/theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as SecureStore from "expo-secure-store";
+import { cancelRequest } from "@/modules/vaultpeer-autofill";
 
 export default function AutofillSaveScreen() {
   const router = useRouter();
@@ -24,33 +26,70 @@ export default function AutofillSaveScreen() {
   const { _db: db, setPendingAutofillSave } = useVaultStore();
 
   useEffect(() => {
-    const username = params.username || "";
-    const password = params.password || "";
-    const packageName = params.packageName || "";
-    const domain = params.domain || "";
+    const checkAndRoute = async () => {
+      const username = params.username || "";
+      const password = params.password || "";
+      const packageName = params.packageName || "";
+      const domain = params.domain || "";
 
-    if (db) {
-      // Vault is already unlocked, navigate straight to the new entry creation screen
-      router.replace({
-        pathname: "/entry/edit",
-        params: {
-          groupId: db.getDefaultGroup().uuid.id,
-          autofillUsername: username,
-          autofillPassword: password,
-          autofillPackageName: packageName,
-          autofillDomain: domain,
-        },
-      });
-    } else {
-      // Vault is locked. Store the credentials payload as pending and navigate to unlock
-      setPendingAutofillSave({
-        username,
-        password,
-        packageName,
-        domain,
-      });
-      router.replace("/");
-    }
+      try {
+        const storedStr = await SecureStore.getItemAsync("last_processed_save");
+        if (storedStr) {
+          const stored = JSON.parse(storedStr);
+          const isMatch =
+            stored.username === username &&
+            stored.password === password &&
+            stored.packageName === packageName &&
+            Date.now() - stored.timestamp < 300000; // 5 minutes
+
+          if (isMatch) {
+            console.log(
+              "Autofill Save - Duplicate launch from Recents history. Redirecting to safety."
+            );
+            if (db) {
+              router.replace("/vault");
+            } else {
+              router.replace("/");
+            }
+            setTimeout(async () => {
+              try {
+                await cancelRequest();
+              } catch (e) {
+                console.error("Autofill Save - cancelRequest failed:", e);
+              }
+            }, 100);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Autofill Save - Error checking SecureStore:", err);
+      }
+
+      if (db) {
+        // Vault is already unlocked, navigate straight to the new entry creation screen
+        router.replace({
+          pathname: "/entry/edit",
+          params: {
+            groupId: db.getDefaultGroup().uuid.id,
+            autofillUsername: username,
+            autofillPassword: password,
+            autofillPackageName: packageName,
+            autofillDomain: domain,
+          },
+        });
+      } else {
+        // Vault is locked. Store the credentials payload as pending and navigate to unlock
+        setPendingAutofillSave({
+          username,
+          password,
+          packageName,
+          domain,
+        });
+        router.replace("/");
+      }
+    };
+
+    checkAndRoute();
   }, [db, params, router, setPendingAutofillSave]);
 
   return (
