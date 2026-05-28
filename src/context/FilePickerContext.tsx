@@ -121,6 +121,15 @@ export function FilePickerProvider({
   useEffect(() => {
     async function restoreSavedVault() {
       try {
+        const savedUri = await SecureStore.getItemAsync(KEY_VAULT_URI);
+        const savedBookmark =
+          await SecureStore.getItemAsync(KEY_VAULT_BOOKMARK);
+        if (savedUri) {
+          setFileUri(savedUri);
+          setBookmark(savedBookmark || null);
+          setHasSavedVault(true);
+        }
+
         const savedRecents = await SecureStore.getItemAsync(KEY_RECENT_VAULTS);
         if (savedRecents) {
           setRecentVaults(JSON.parse(savedRecents));

@@ -48,6 +48,7 @@ import {
 } from "@/src/services/biometricService";
 import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
 import * as kdbxweb from "kdbxweb";
+import * as AutofillBridge from "@/modules/vaultpeer-autofill";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -382,6 +383,17 @@ export default function VaultSettingsScreen() {
     null
   );
   const [changingPassword, setChangingPassword] = useState(false);
+  const [autofillEnabled, setAutofillEnabled] = useState(false);
+
+  const checkAutofillStatus = useCallback(async () => {
+    try {
+      const enabled = await AutofillBridge.isAutofillServiceEnabled();
+      setAutofillEnabled(enabled);
+    } catch {
+      setAutofillEnabled(false);
+    }
+  }, []);
+
   const [historyMaxItemsInput, setHistoryMaxItemsInput] = useState("");
   const [historyMaxSizeInput, setHistoryMaxSizeInput] = useState("");
   const [historySettingsInitialized, setHistorySettingsInitialized] =
@@ -732,6 +744,12 @@ export default function VaultSettingsScreen() {
     }
     checkBiometrics();
   }, [fileUri]);
+
+  useEffect(() => {
+    checkAutofillStatus();
+    const interval = setInterval(checkAutofillStatus, 3000);
+    return () => clearInterval(interval);
+  }, [checkAutofillStatus]);
 
   // Initialize history settings inputs from storeMeta
   useEffect(() => {
@@ -1618,6 +1636,59 @@ export default function VaultSettingsScreen() {
                     </View>
                   }
                 />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Android Autofill Service */}
+            <Animated.View entering={FadeInDown.duration(200).delay(120)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="color-wand-outline"
+                    size={18}
+                    color={colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Android Autofill</Text>
+                </View>
+
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>
+                      {autofillEnabled ? "Service Active" : "Service Inactive"}
+                    </Text>
+                    <Text style={rowStyles.subtitle}>
+                      {autofillEnabled
+                        ? "VaultPeer is registered as your system autofill provider"
+                        : "Enable VaultPeer to automatically fill passwords in other apps"}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        await AutofillBridge.openAutofillSettings();
+                      } catch {
+                        showErrorModal(
+                          "Error",
+                          "Could not open Autofill settings."
+                        );
+                      }
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        autofillEnabled
+                          ? "checkmark-circle"
+                          : "arrow-forward-circle-outline"
+                      }
+                      size={28}
+                      color={
+                        autofillEnabled ? colors.accentMint : colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
               </CyberCard>
             </Animated.View>
 
