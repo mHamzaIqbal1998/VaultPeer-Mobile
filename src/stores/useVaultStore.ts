@@ -171,6 +171,22 @@ interface VaultStoreState {
   // Saving state
   isSaving: boolean;
   setIsSaving: (isSaving: boolean) => void;
+
+  // ── Autofill Save ──
+  pendingAutofillSave: {
+    username?: string;
+    password?: string;
+    packageName?: string;
+    domain?: string;
+  } | null;
+  setPendingAutofillSave: (
+    payload: {
+      username?: string;
+      password?: string;
+      packageName?: string;
+      domain?: string;
+    } | null
+  ) => void;
 }
 
 // ────────────────────────────────────────────
@@ -460,6 +476,11 @@ export const useVaultStore = create<VaultStoreState>((rawSet, get) => {
     isDirty: false,
     isSaving: false,
     vaultRevision: 0,
+
+    pendingAutofillSave: null,
+    setPendingAutofillSave: (payload) => {
+      set({ pendingAutofillSave: payload });
+    },
 
     // App Settings default values
     theme: "dark",

@@ -324,3 +324,19 @@ Integrates VaultPeer as a native Android Autofill Service, allowing the user to 
 - [x] Add Autofill configuration options to App Settings (`app/vault/settings.tsx`):
   - Add a toggle row to check status and redirect the user to Android's Autofill system Settings screen to enable VaultPeer.
 - [x] Write integration and unit tests to verify deep link arguments parsing, entry domain matching, and native bridge APIs.
+
+### Phase 19: Autofill Save Credentials & Dataset Capture
+
+Enables native Android system save prompts when entering credentials manually, automatically capturing username, password, package names, or web domains, and pre-filling the entry creation flow upon validation.
+
+- [x] Update `VaultPeerAutofillService.kt` to trigger the save workflow:
+  - Configure `SaveInfo` during `onFillRequest` indicating interest in capturing username and password fields when user transitions or submits.
+  - Implement `onSaveRequest` callback to extract entered username, password, and package name/domain from the system's `AssistStructure`.
+  - Pass the captured credentials and app/web context back to the main app via a targeted save Intent or deep link (`vaultpeer://autofill-save`).
+- [x] Implement pre-fill entry creation flow inside React Native (`app/entry/create.tsx` or similar):
+  - Configure routing to handle incoming autofill-save query parameters (`username`, `password`, `packageName`, `domain`).
+  - If the database is currently locked, redirect to the database unlock screen first, retaining the pre-fill payload.
+  - Pre-populate standard entry fields: Username, Password, Title (derived from package/domain), and URL.
+  - Automatically add a custom field `"ANDROIDAPP"` containing the calling package name (e.g. `com.instagram.android`).
+  - Redirect user to this pre-populated creation screen so they can choose a folder/group and confirm saving.
+- [x] Write tests to verify save request node parsing, payload URL parameter generation, and pre-fill state mapping.

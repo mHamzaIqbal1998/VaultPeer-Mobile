@@ -37,6 +37,7 @@ import {
   estimatePasswordStrength,
 } from "@/src/services/passwordGenerator";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { cancelRequest } from "@/modules/vaultpeer-autofill";
 
 interface CustomFieldState {
   id: string;
@@ -220,10 +221,22 @@ function QrScannerView({
 export default function EntryEditScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { entryId, groupId, templateEntryId } = useLocalSearchParams<{
+  const {
+    entryId,
+    groupId,
+    templateEntryId,
+    autofillUsername,
+    autofillPassword,
+    autofillPackageName,
+    autofillDomain,
+  } = useLocalSearchParams<{
     entryId?: string;
     groupId?: string;
     templateEntryId?: string;
+    autofillUsername?: string;
+    autofillPassword?: string;
+    autofillPackageName?: string;
+    autofillDomain?: string;
   }>();
   const router = useRouter();
   const { getEntry, createEntry, updateEntry, logAccess } = useVaultStore();
@@ -274,21 +287,38 @@ export default function EntryEditScreen() {
   const [title, setTitle] = useState(() => {
     if (existing) return existing.title;
     if (template) return template.title;
+    if (autofillDomain) {
+      const mainPart = autofillDomain.split(".")[0];
+      return mainPart.charAt(0).toUpperCase() + mainPart.slice(1);
+    }
+    if (autofillPackageName) {
+      const parts = autofillPackageName.split(".");
+      if (parts.length >= 2) {
+        const name = parts[parts.length - 2];
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+      return autofillPackageName;
+    }
     return "";
   });
   const [username, setUsername] = useState(() => {
     if (existing) return existing.username;
     if (template) return template.username;
-    return "";
+    return autofillUsername || "";
   });
   const [password, setPassword] = useState(() => {
     if (existing) return existing.password;
     if (template) return template.password;
-    return "";
+    return autofillPassword || "";
   });
   const [url, setUrl] = useState(() => {
     if (existing) return existing.url;
     if (template) return template.url;
+    if (autofillDomain) {
+      return autofillDomain.startsWith("http")
+        ? autofillDomain
+        : `https://${autofillDomain}`;
+    }
     return "";
   });
   const [notes, setNotes] = useState(() => {
@@ -371,7 +401,16 @@ export default function EntryEditScreen() {
         isSecure: template.secureFields?.includes(key) ?? false,
       }));
     }
-    return [];
+    const initialFields: CustomFieldState[] = [];
+    if (autofillPackageName) {
+      initialFields.push({
+        id: Math.random().toString(),
+        key: "ANDROIDAPP",
+        value: autofillPackageName,
+        isSecure: false,
+      });
+    }
+    return initialFields;
   });
 
   const [attachments, setAttachments] = useState<VaultAttachment[]>(() => {
@@ -521,13 +560,21 @@ export default function EntryEditScreen() {
           const entry = await createEntry(parentUuid, payload);
           if (entry) {
             logAccess(entry.uuid, entry.title, "created");
-            router.back();
+            if (autofillUsername || autofillPassword || autofillPackageName) {
+              await cancelRequest();
+            } else {
+              router.back();
+            }
           }
         } else if (entryId) {
           const entry = await updateEntry(entryId, payload);
           if (entry) {
             logAccess(entry.uuid, entry.title, "updated");
-            router.back();
+            if (autofillUsername || autofillPassword || autofillPackageName) {
+              await cancelRequest();
+            } else {
+              router.back();
+            }
           }
         }
       } catch (err: any) {
@@ -563,6 +610,9 @@ export default function EntryEditScreen() {
     router,
     iconId,
     showErrorModal,
+    autofillUsername,
+    autofillPassword,
+    autofillPackageName,
   ]);
 
   const handleDiscard = useCallback(() => {
@@ -618,13 +668,21 @@ export default function EntryEditScreen() {
             variant: "destructive",
             onPress: () => {
               hideModal();
-              router.back();
+              if (autofillUsername || autofillPassword || autofillPackageName) {
+                cancelRequest();
+              } else {
+                router.back();
+              }
             },
           },
         ],
       });
     } else {
-      router.back();
+      if (autofillUsername || autofillPassword || autofillPackageName) {
+        cancelRequest();
+      } else {
+        router.back();
+      }
     }
   }, [
     isNew,
@@ -643,6 +701,9 @@ export default function EntryEditScreen() {
     router,
     colors.statusWarning,
     hideModal,
+    autofillUsername,
+    autofillPassword,
+    autofillPackageName,
   ]);
 
   const strength = estimatePasswordStrength(password);

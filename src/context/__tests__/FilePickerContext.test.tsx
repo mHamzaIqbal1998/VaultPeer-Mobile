@@ -1,4 +1,5 @@
 import React from "react";
+// @ts-ignore
 import { act, create } from "react-test-renderer";
 import { FilePickerProvider, useFilePicker } from "../FilePickerContext";
 import * as SecureStore from "expo-secure-store";
@@ -90,8 +91,6 @@ describe("FilePickerContext - Recent Vaults & Multi-vault", () => {
       { uri: "file://2.kdbx", bookmark: "bm2", name: "2", lastOpened: 2000 },
     ];
     await SecureStore.setItemAsync("recent_vaults", JSON.stringify(mockRecent));
-    await SecureStore.setItemAsync("vault_file_uri", "file://2.kdbx");
-    await SecureStore.setItemAsync("vault_file_bookmark", "bm2");
 
     await act(async () => {
       renderProvider();

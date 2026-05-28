@@ -37,7 +37,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as kdbxweb from "kdbxweb";
 import { ActionModal } from "@/src/components/ActionModal";
 import {
   useThemeColors,
@@ -159,16 +158,29 @@ export default function FileSetupScreen() {
 
   // Unlocked State
   const storeDb = useVaultStore((state) => state._db);
-  const [activeDb, setActiveDb] = useState<kdbxweb.Kdbx | null>(null);
   const [dbStats, setDbStats] = useState<VaultMeta | null>(null);
   const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    setActiveDb(storeDb);
     if (storeDb) {
       setDbStats(parseMeta(storeDb));
       setRedirecting(true);
-      router.replace("/vault");
+      const pendingSave = useVaultStore.getState().pendingAutofillSave;
+      if (pendingSave) {
+        useVaultStore.getState().setPendingAutofillSave(null);
+        router.replace({
+          pathname: "/entry/edit",
+          params: {
+            groupId: storeDb.getDefaultGroup().uuid.id,
+            autofillUsername: pendingSave.username,
+            autofillPassword: pendingSave.password,
+            autofillPackageName: pendingSave.packageName,
+            autofillDomain: pendingSave.domain,
+          },
+        });
+      } else {
+        router.replace("/vault");
+      }
     } else {
       setDbStats(null);
       setRedirecting(false);
@@ -211,7 +223,7 @@ export default function FileSetupScreen() {
 
   // Auto-transition depending on active vault or recent vaults list
   useEffect(() => {
-    if (activeDb) return;
+    if (storeDb) return;
     if (fileUri) {
       setMode("unlock");
     } else if (recentVaults.length > 0) {
@@ -219,7 +231,7 @@ export default function FileSetupScreen() {
     } else {
       setMode("select");
     }
-  }, [fileUri, recentVaults.length, activeDb]);
+  }, [fileUri, recentVaults.length, storeDb]);
 
   // Clear file errors and form errors on screen mode transition
   useEffect(() => {
@@ -267,7 +279,7 @@ export default function FileSetupScreen() {
         if (
           enabled &&
           mode === "unlock" &&
-          !activeDb &&
+          !storeDb &&
           !hasAutoTriggeredBioRef.current
         ) {
           hasAutoTriggeredBioRef.current = true;
@@ -281,7 +293,7 @@ export default function FileSetupScreen() {
       }
     }
     checkBio();
-  }, [hasSavedVault, mode, activeDb, fileUri, handleBiometricUnlock]);
+  }, [hasSavedVault, mode, storeDb, fileUri, handleBiometricUnlock]);
 
   // Combined Loading state
   const isLoading = isFsLoading || localLoading;
@@ -373,7 +385,6 @@ export default function FileSetupScreen() {
 
   const handleLockVault = () => {
     closeDatabase();
-    setActiveDb(null);
     setDbStats(null);
     setPassword("");
     if (fileUri) {
@@ -402,7 +413,6 @@ export default function FileSetupScreen() {
           onPress: async () => {
             hideModal();
             await removeRecentVault(fileUri);
-            setActiveDb(null);
             setDbStats(null);
             setPassword("");
             setFormError(null);
@@ -482,7 +492,7 @@ export default function FileSetupScreen() {
                 </Text>
               </CyberCard>
             </Animated.View>
-          ) : activeDb && dbStats ? (
+          ) : storeDb && dbStats ? (
             <Animated.View entering={FadeInDown.duration(400)}>
               <CyberCard
                 style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
