@@ -12,9 +12,12 @@ import android.service.autofill.FillRequest
 import android.service.autofill.FillResponse
 import android.service.autofill.Dataset
 import android.service.autofill.AutofillService
+import android.service.autofill.InlinePresentation
 import android.view.View
 import android.view.autofill.AutofillId
+import android.widget.inline.InlinePresentationSpec
 import android.widget.RemoteViews
+import androidx.autofill.inline.v1.InlineSuggestionUi
 import com.vaultpeer.autofill.R
 
 class ActiveAutofillRequest(
@@ -85,15 +88,38 @@ class VaultPeerAutofillService : AutofillService() {
                 setTextViewText(R.id.autofill_title, "VaultPeer")
             }
 
+            var inlinePresentation: InlinePresentation? = null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val inlineSuggestionsRequest = request.inlineSuggestionsRequest
+                if (inlineSuggestionsRequest != null) {
+                    val specs = inlineSuggestionsRequest.inlinePresentationSpecs
+                    if (specs.isNotEmpty()) {
+                        inlinePresentation = createInlinePresentation(specs[0], pendingIntent)
+                    }
+                }
+            }
+
             val datasetBuilder = Dataset.Builder()
-            if (requestData.usernameId != null) {
-                datasetBuilder.setValue(requestData.usernameId, null, remoteViews)
-            }
-            if (requestData.passwordId != null) {
-                datasetBuilder.setValue(requestData.passwordId, null, remoteViews)
-            }
-            if (requestData.focusedId != null && requestData.focusedId != requestData.usernameId && requestData.focusedId != requestData.passwordId) {
-                datasetBuilder.setValue(requestData.focusedId, null, remoteViews)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && inlinePresentation != null) {
+                if (requestData.usernameId != null) {
+                    datasetBuilder.setValue(requestData.usernameId, null, remoteViews, inlinePresentation)
+                }
+                if (requestData.passwordId != null) {
+                    datasetBuilder.setValue(requestData.passwordId, null, remoteViews, inlinePresentation)
+                }
+                if (requestData.focusedId != null && requestData.focusedId != requestData.usernameId && requestData.focusedId != requestData.passwordId) {
+                    datasetBuilder.setValue(requestData.focusedId, null, remoteViews, inlinePresentation)
+                }
+            } else {
+                if (requestData.usernameId != null) {
+                    datasetBuilder.setValue(requestData.usernameId, null, remoteViews)
+                }
+                if (requestData.passwordId != null) {
+                    datasetBuilder.setValue(requestData.passwordId, null, remoteViews)
+                }
+                if (requestData.focusedId != null && requestData.focusedId != requestData.usernameId && requestData.focusedId != requestData.passwordId) {
+                    datasetBuilder.setValue(requestData.focusedId, null, remoteViews)
+                }
             }
 
             datasetBuilder.setAuthentication(pendingIntent.intentSender)
@@ -106,6 +132,33 @@ class VaultPeerAutofillService : AutofillService() {
             callback.onSuccess(response)
         } else {
             callback.onSuccess(null)
+        }
+    }
+
+    private fun createInlinePresentation(
+        spec: InlinePresentationSpec,
+        pendingIntent: PendingIntent
+    ): InlinePresentation? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        try {
+            val contentBuilder = InlineSuggestionUi.newContentBuilder(pendingIntent)
+            contentBuilder.setTitle("VaultPeer")
+            
+            try {
+                val appIconId = resources.getIdentifier("ic_launcher", "mipmap", packageName)
+                if (appIconId != 0) {
+                    val icon = android.graphics.drawable.Icon.createWithResource(packageName, appIconId)
+                    contentBuilder.setStartIcon(icon)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("VaultPeerAutofill", "Could not load app launcher icon", e)
+            }
+            
+            val content = contentBuilder.build()
+            return InlinePresentation(content.slice, spec, false)
+        } catch (e: Exception) {
+            android.util.Log.e("VaultPeerAutofill", "Error creating inline presentation", e)
+            return null
         }
     }
 
