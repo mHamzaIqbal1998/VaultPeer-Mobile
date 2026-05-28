@@ -674,6 +674,15 @@ export default function VaultBrowserScreen() {
         );
       }
 
+      if (item.type === "search-result") {
+        return (
+          <EntryRow
+            entry={item.data as VaultEntry}
+            onPress={() => handleEntryPress(item.data as VaultEntry)}
+          />
+        );
+      }
+
       return (
         <Animated.View entering={FadeInDown.delay(index * 30).duration(200)}>
           <EntryRow
