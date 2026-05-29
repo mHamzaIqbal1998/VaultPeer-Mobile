@@ -242,7 +242,8 @@ export default function EntryEditScreen() {
   }>();
   const router = useRouter();
   const { saveVault } = useFilePicker();
-  const { getEntry, createEntry, updateEntry, logAccess } = useVaultStore();
+  const { getEntry, createEntry, updateEntry, logAccess, markClean } =
+    useVaultStore();
 
   const isNew = !entryId;
   const existing = entryId ? getEntry(entryId) : null;
@@ -568,6 +569,7 @@ export default function EntryEditScreen() {
               if (db) {
                 try {
                   await saveVault(db);
+                  markClean();
                 } catch (saveErr) {
                   console.error(
                     "Autofill Save - Failed to save vault:",
@@ -605,6 +607,7 @@ export default function EntryEditScreen() {
               if (db) {
                 try {
                   await saveVault(db);
+                  markClean();
                 } catch (saveErr) {
                   console.error(
                     "Autofill Save - Failed to save vault:",
@@ -671,6 +674,7 @@ export default function EntryEditScreen() {
     autofillPassword,
     autofillPackageName,
     saveVault,
+    markClean,
   ]);
 
   const handleDiscard = useCallback(() => {
