@@ -168,6 +168,7 @@ export function ActionModal({
                     disabled={btn.disabled}
                     style={({ pressed }) => [
                       styles.btn,
+                      buttons.length > 2 && styles.btnVertical,
                       isPrimary && styles.btnPrimary,
                       isSecondary && styles.btnSecondary,
                       isDestructive && styles.btnDestructive,
@@ -303,6 +304,7 @@ function createStyles(colors: any) {
     },
     buttonsContainerVertical: {
       flexDirection: "column",
+      alignItems: "stretch",
     },
     btn: {
       flex: 1,
@@ -311,6 +313,9 @@ function createStyles(colors: any) {
       justifyContent: "center",
       alignItems: "center",
       paddingHorizontal: Spacing.md,
+    },
+    btnVertical: {
+      flex: 0,
     },
     btnPrimary: {
       backgroundColor: colors.accentMint,
