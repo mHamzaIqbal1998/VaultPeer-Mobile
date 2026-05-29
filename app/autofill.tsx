@@ -899,47 +899,7 @@ export default function AutofillScreen() {
                   </View>
                 </Pressable>
 
-                <Pressable
-                  onPress={async () => {
-                    if (!selectedEntryForMenu) return;
-                    const entry = selectedEntryForMenu;
-                    setSelectedEntryForMenu(null);
-                    setIsLoading(true);
-                    try {
-                      const success = await AutofillBridge.submitCredentials(
-                        entry.username,
-                        entry.password
-                      );
-                      if (!success) {
-                        setLocalError("Autofill fill all failed.");
-                        setIsLoading(false);
-                      }
-                    } catch (e: any) {
-                      setLocalError(
-                        "Failed to fill all fields: " + (e?.message || "")
-                      );
-                      setIsLoading(false);
-                    }
-                  }}
-                  style={({ pressed }) => [
-                    styles.modalOptionBtn,
-                    pressed && styles.modalOptionBtnPressed,
-                  ]}
-                >
-                  <View style={styles.modalOptionIcon}>
-                    <Ionicons
-                      name="shield-checkmark-outline"
-                      size={18}
-                      color={colors.accentMint}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalOptionText}>Fill Both Fields</Text>
-                    <Text style={styles.modalOptionSubtext}>
-                      Attempt to fill both username and password
-                    </Text>
-                  </View>
-                </Pressable>
+                {/* The 'Fill Both Fields' option was removed because the modal is only shown when username and password fields are both undetected, meaning we only have a single focused field. */}
               </View>
             </Pressable>
           </Modal>

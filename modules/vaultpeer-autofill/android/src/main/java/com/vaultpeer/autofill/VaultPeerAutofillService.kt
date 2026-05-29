@@ -105,7 +105,10 @@ class VaultPeerAutofillService : AutofillService() {
             return
         }
 
-        if (requestData.usernameId != null || requestData.passwordId != null || requestData.focusedId != null) {
+        val hasCredentialField = requestData.usernameId != null || requestData.passwordId != null
+        val shouldTrigger = hasCredentialField || (requestData.focusedId != null && !requestData.isFocusedNodeNonCredential)
+
+        if (shouldTrigger) {
             // Store the request info statically so the native module can retrieve it
             activeRequest = ActiveAutofillRequest(
                 packageName = requestData.packageName,
@@ -482,6 +485,7 @@ class VaultPeerAutofillService : AutofillService() {
         val usernameId: AutofillId?,
         val passwordId: AutofillId?,
         val focusedId: AutofillId?,
+        val isFocusedNodeNonCredential: Boolean,
         val allInputIds: List<AutofillId>
     )
 
@@ -490,6 +494,7 @@ class VaultPeerAutofillService : AutofillService() {
         var usernameId: AutofillId? = null
         var passwordId: AutofillId? = null
         var focusedId: AutofillId? = null
+        var isFocusedNodeNonCredential = false
         val packageName = structure.activityComponent?.packageName ?: ""
 
         android.util.Log.d(TAG, "Traversing AssistStructure for package: $packageName, windowCount: ${structure.windowNodeCount}")
@@ -513,6 +518,7 @@ class VaultPeerAutofillService : AutofillService() {
 
                 if (node.isFocused) {
                     focusedId = node.autofillId
+                    isFocusedNodeNonCredential = isNonCredentialField(node, packageName)
                 }
 
                 // Collect all input fields
@@ -544,7 +550,7 @@ class VaultPeerAutofillService : AutofillService() {
                             val key = pair.first?.lowercase()
                             val value = pair.second?.lowercase()
                             if (key == "type" && value == "password") {
-                                isPasswordHtml = true
+                                  isPasswordHtml = true
                             }
                             if (value != null && (value.contains("password") || value.contains("pass"))) {
                                 if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
@@ -601,9 +607,73 @@ class VaultPeerAutofillService : AutofillService() {
             }
         }
 
-        android.util.Log.d(TAG, "Traverse Done: domain=$webDomain, usernameId=$usernameId, passwordId=$passwordId, focusedId=$focusedId, inputNodes=${inputNodes.size}")
+        android.util.Log.d(TAG, "Traverse Done: domain=$webDomain, usernameId=$usernameId, passwordId=$passwordId, focusedId=$focusedId, isFocusedNonCredential=$isFocusedNodeNonCredential, inputNodes=${inputNodes.size}")
         val allInputIds = inputNodes.mapNotNull { it.autofillId }
-        return AutofillRequestData(packageName, webDomain, usernameId, passwordId, focusedId, allInputIds)
+        return AutofillRequestData(packageName, webDomain, usernameId, passwordId, focusedId, isFocusedNodeNonCredential, allInputIds)
+    }
+
+    private fun isNonCredentialField(node: AssistStructure.ViewNode, packageName: String): Boolean {
+        val inputType = node.inputType
+        val classType = inputType and android.text.InputType.TYPE_MASK_CLASS
+        val variation = inputType and android.text.InputType.TYPE_MASK_VARIATION
+        val flags = inputType and android.text.InputType.TYPE_MASK_FLAGS
+
+        // 1. Check if it's a known chat package
+        val chatPackages = setOf(
+            "com.whatsapp",
+            "org.telegram.messenger",
+            "org.thunderdog.challegram",
+            "com.facebook.orca",
+            "com.facebook.mlite",
+            "org.thoughtcrime.securesms", // Signal
+            "com.slack",
+            "com.discord",
+            "com.viber.voip",
+            "com.tencent.mm", // WeChat
+            "com.skype.raider",
+            "com.microsoft.teams"
+        )
+        
+        if (chatPackages.contains(packageName)) {
+            // In messaging apps, default to non-credential for focused fields unless it's explicitly a password field
+            return !isPasswordInputType(inputType)
+        }
+
+        // 2. Check InputType flags for multiline text
+        if (classType == android.text.InputType.TYPE_CLASS_TEXT &&
+            (flags and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0) {
+            return true
+        }
+
+        // 3. Check InputType variations for chat messages, filters, search
+        if (classType == android.text.InputType.TYPE_CLASS_TEXT) {
+            if (variation == android.text.InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE ||
+                variation == android.text.InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE ||
+                variation == android.text.InputType.TYPE_TEXT_VARIATION_FILTER ||
+                variation == android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT) {
+                return true
+            }
+        }
+
+        // 4. Check resource IDs, hints, or text values for non-credential keywords
+        val idEntry = node.idEntry?.lowercase()
+        val hintText = node.hint?.toString()?.lowercase()
+        val textVal = node.text?.toString()?.lowercase()
+
+        val nonCredentialKeywords = arrayOf(
+            "message", "chat", "search", "query", "filter", "find", "comment",
+            "tweet", "post", "body", "note", "editor", "compose", "textinput",
+            "reply", "status", "feedback", "description", "search_src_text",
+            "search_bar", "search_button"
+        )
+
+        for (keyword in nonCredentialKeywords) {
+            if (idEntry?.contains(keyword) == true || hintText?.contains(keyword) == true || textVal?.contains(keyword) == true) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private fun isPasswordInputType(inputType: Int): Boolean {
