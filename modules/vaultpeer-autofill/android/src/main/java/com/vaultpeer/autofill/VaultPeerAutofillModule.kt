@@ -54,7 +54,23 @@ class VaultPeerAutofillModule : Module() {
 
     AsyncFunction("getActiveRequest") { promise: Promise ->
       try {
-        val active = VaultPeerAutofillService.activeRequest
+        var active = VaultPeerAutofillService.activeRequest
+
+        // Fallback: if the static reference is lost, try to reconstruct from the bridge cache
+        if (active == null && AutofillResultBridge.cachedPackageName != null) {
+          android.util.Log.w("VaultPeerAutofill", "activeRequest was null, recovering from AutofillResultBridge cache")
+          active = ActiveAutofillRequest(
+            packageName = AutofillResultBridge.cachedPackageName ?: "",
+            webDomain = AutofillResultBridge.cachedWebDomain,
+            usernameId = AutofillResultBridge.cachedUsernameId,
+            passwordId = AutofillResultBridge.cachedPasswordId,
+            focusedId = AutofillResultBridge.cachedFocusedId,
+            callback = null
+          )
+          // Restore the static reference so submitCredentials can use it
+          VaultPeerAutofillService.activeRequest = active
+        }
+
         if (active == null) {
           promise.resolve(null)
           return@AsyncFunction
@@ -76,7 +92,22 @@ class VaultPeerAutofillModule : Module() {
 
     AsyncFunction("submitCredentials") { usernameString: String?, passwordString: String?, promise: Promise ->
       try {
-        val active = VaultPeerAutofillService.activeRequest
+        var active = VaultPeerAutofillService.activeRequest
+
+        // Fallback: recover from bridge cache if static reference was lost
+        if (active == null && AutofillResultBridge.cachedPackageName != null) {
+          android.util.Log.w("VaultPeerAutofill", "submitCredentials: activeRequest was null, recovering from AutofillResultBridge cache")
+          active = ActiveAutofillRequest(
+            packageName = AutofillResultBridge.cachedPackageName ?: "",
+            webDomain = AutofillResultBridge.cachedWebDomain,
+            usernameId = AutofillResultBridge.cachedUsernameId,
+            passwordId = AutofillResultBridge.cachedPasswordId,
+            focusedId = AutofillResultBridge.cachedFocusedId,
+            callback = null
+          )
+          VaultPeerAutofillService.activeRequest = active
+        }
+
         if (active == null) {
           promise.reject("ERR_NO_ACTIVE_REQUEST", "No active autofill request found", null)
           return@AsyncFunction
@@ -171,10 +202,12 @@ class VaultPeerAutofillModule : Module() {
         currentActivity.finish()
 
         VaultPeerAutofillService.activeRequest = null
+        AutofillResultBridge.clearCache()
         promise.resolve(true)
       } catch (e: Exception) {
         android.util.Log.e("VaultPeerAutofill", "Error in submitCredentials", e)
         VaultPeerAutofillService.activeRequest = null
+        AutofillResultBridge.clearCache()
         promise.reject("ERR_SUBMIT_FAILED", "Failed to submit credentials: ${e.message}", e)
       }
     }
@@ -182,6 +215,7 @@ class VaultPeerAutofillModule : Module() {
     AsyncFunction("cancelRequest") { promise: Promise ->
       AutofillResultBridge.pendingResult = null
       AutofillResultBridge.hasSubmitted = false
+      AutofillResultBridge.clearCache()
       val currentActivity = appContext.currentActivity
       if (currentActivity != null) {
         currentActivity.finish()

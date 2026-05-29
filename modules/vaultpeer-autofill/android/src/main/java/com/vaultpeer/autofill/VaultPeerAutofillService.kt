@@ -53,10 +53,16 @@ class VaultPeerAutofillService : AutofillService() {
 
     override fun onDisconnected() {
         super.onDisconnected()
-        // Clear stale request when the system disconnects the autofill service
-        // to avoid dangling references and stale callback objects.
-        activeRequest = null
-        android.util.Log.d(TAG, "AutofillService disconnected, cleared activeRequest")
+        // NOTE: Do NOT clear activeRequest here! The system unbinds the autofill
+        // service shortly after onFillRequest responds with callback.onSuccess(),
+        // but the user hasn't selected a credential yet. The activeRequest data
+        // (containing AutofillIds) must survive until submitCredentials is called
+        // from the React Native module after the user selects an entry.
+        //
+        // Only the callback reference becomes stale after disconnect, but we don't
+        // use it after onFillRequest anyway (the result goes back via setResult on
+        // AutofillTrampolineActivity).
+        android.util.Log.d(TAG, "AutofillService disconnected (activeRequest preserved)")
     }
 
     override fun onFillRequest(
@@ -108,6 +114,17 @@ class VaultPeerAutofillService : AutofillService() {
                 passwordId = requestData.passwordId,
                 focusedId = requestData.focusedId,
                 callback = callback
+            )
+
+            // Also cache in AutofillResultBridge as defense-in-depth.
+            // If the static activeRequest is lost (e.g., process death between
+            // onFillRequest and submitCredentials), the module can recover from this.
+            AutofillResultBridge.cacheRequest(
+                packageName = requestData.packageName,
+                webDomain = requestData.webDomain,
+                usernameId = requestData.usernameId,
+                passwordId = requestData.passwordId,
+                focusedId = requestData.focusedId
             )
 
             // Start AutofillTrampolineActivity to authenticate/unlock/select

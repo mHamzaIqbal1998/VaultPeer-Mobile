@@ -4,11 +4,49 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import android.view.autofill.AutofillManager
+import android.view.autofill.AutofillId
 
+/**
+ * Static bridge for passing autofill data between the AutofillTrampolineActivity
+ * and the VaultPeerAutofillModule across the Activity lifecycle.
+ *
+ * This also serves as a defense-in-depth cache for AutofillId data:
+ * If the static [VaultPeerAutofillService.activeRequest] is lost (e.g., process
+ * death or unexpected service lifecycle events), the module can reconstruct
+ * the request from these cached values.
+ */
 object AutofillResultBridge {
     var pendingResult: Intent? = null
     var hasSubmitted: Boolean = false
+
+    // Cached autofill request data (populated by the autofill service as backup)
+    var cachedPackageName: String? = null
+    var cachedWebDomain: String? = null
+    var cachedUsernameId: AutofillId? = null
+    var cachedPasswordId: AutofillId? = null
+    var cachedFocusedId: AutofillId? = null
+
+    fun cacheRequest(
+        packageName: String,
+        webDomain: String?,
+        usernameId: AutofillId?,
+        passwordId: AutofillId?,
+        focusedId: AutofillId?
+    ) {
+        cachedPackageName = packageName
+        cachedWebDomain = webDomain
+        cachedUsernameId = usernameId
+        cachedPasswordId = passwordId
+        cachedFocusedId = focusedId
+    }
+
+    fun clearCache() {
+        cachedPackageName = null
+        cachedWebDomain = null
+        cachedUsernameId = null
+        cachedPasswordId = null
+        cachedFocusedId = null
+    }
 }
 
 class AutofillTrampolineActivity : Activity() {
