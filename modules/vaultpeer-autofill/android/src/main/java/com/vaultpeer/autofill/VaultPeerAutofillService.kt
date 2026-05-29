@@ -22,6 +22,8 @@ import android.widget.inline.InlinePresentationSpec
 import android.widget.RemoteViews
 import androidx.autofill.inline.v1.InlineSuggestionUi
 import com.vaultpeer.autofill.R
+import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicInteger
 
 class ActiveAutofillRequest(
     val packageName: String,
@@ -34,7 +36,50 @@ class ActiveAutofillRequest(
 
 class VaultPeerAutofillService : AutofillService() {
 
+    companion object {
+        private const val TAG = "VaultPeerAutofill"
+        /**
+         * Maximum number of view nodes to visit during structure traversal.
+         * Prevents runaway traversals on deeply nested or extremely large view trees
+         * (e.g., Chrome WebViews on Samsung One UI which can have 1000+ nodes).
+         */
+        private const val MAX_NODE_VISIT_COUNT = 2000
+
+        var activeRequest: ActiveAutofillRequest? = null
+
+        /** Monotonically increasing request code for unique PendingIntents */
+        private val pendingIntentCounter = AtomicInteger(1000)
+    }
+
+    override fun onDisconnected() {
+        super.onDisconnected()
+        // Clear stale request when the system disconnects the autofill service
+        // to avoid dangling references and stale callback objects.
+        activeRequest = null
+        android.util.Log.d(TAG, "AutofillService disconnected, cleared activeRequest")
+    }
+
     override fun onFillRequest(
+        request: FillRequest,
+        cancellationSignal: CancellationSignal,
+        callback: FillCallback
+    ) {
+        try {
+            onFillRequestInternal(request, cancellationSignal, callback)
+        } catch (e: Exception) {
+            // CRITICAL: Any unhandled exception in the autofill service can crash the
+            // system_server process, leading to a full device reboot. We must catch
+            // everything and respond gracefully.
+            android.util.Log.e(TAG, "FATAL: Unhandled exception in onFillRequest", e)
+            try {
+                callback.onSuccess(null)
+            } catch (callbackError: Exception) {
+                android.util.Log.e(TAG, "Failed to send null response after error", callbackError)
+            }
+        }
+    }
+
+    private fun onFillRequestInternal(
         request: FillRequest,
         cancellationSignal: CancellationSignal,
         callback: FillCallback
@@ -49,7 +94,7 @@ class VaultPeerAutofillService : AutofillService() {
         val requestData = traverseStructure(structure)
 
         if (requestData.packageName == this.packageName) {
-            android.util.Log.d("VaultPeerAutofill", "Ignoring fill request for our own application")
+            android.util.Log.d(TAG, "Ignoring fill request for our own application")
             callback.onSuccess(null)
             return
         }
@@ -68,7 +113,10 @@ class VaultPeerAutofillService : AutofillService() {
             // Start AutofillTrampolineActivity to authenticate/unlock/select
             val intent = Intent(this, AutofillTrampolineActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
-                data = Uri.parse("vaultpeermobile://autofill?packageName=${Uri.encode(requestData.packageName)}&webDomain=${Uri.encode(requestData.webDomain ?: "")}")
+                data = Uri.parse(
+                    "vaultpeermobile://autofill?packageName=${Uri.encode(requestData.packageName)}" +
+                    "&webDomain=${Uri.encode(requestData.webDomain ?: "")}"
+                )
                 putExtra("autofill_request", true)
                 putExtra("caller_package", requestData.packageName)
                 putExtra("caller_domain", requestData.webDomain)
@@ -80,9 +128,13 @@ class VaultPeerAutofillService : AutofillService() {
                 PendingIntent.FLAG_CANCEL_CURRENT
             }
 
+            // Use a unique request code per invocation to prevent canceling a prior
+            // PendingIntent when the user taps multiple fields in quick succession.
+            val requestCode = pendingIntentCounter.getAndIncrement()
+
             val pendingIntent = PendingIntent.getActivity(
                 this,
-                1001,
+                requestCode,
                 intent,
                 flags
             )
@@ -93,12 +145,19 @@ class VaultPeerAutofillService : AutofillService() {
 
             var inlinePresentation: InlinePresentation? = null
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val inlineSuggestionsRequest = request.inlineSuggestionsRequest
-                if (inlineSuggestionsRequest != null) {
-                    val specs = inlineSuggestionsRequest.inlinePresentationSpecs
-                    if (specs.isNotEmpty()) {
-                        inlinePresentation = createInlinePresentation(specs[0], pendingIntent)
-                    }
+                inlinePresentation = try {
+                    val inlineSuggestionsRequest = request.inlineSuggestionsRequest
+                    if (inlineSuggestionsRequest != null) {
+                        val specs = inlineSuggestionsRequest.inlinePresentationSpecs
+                        if (specs.isNotEmpty()) {
+                            createInlinePresentation(specs[0], pendingIntent)
+                        } else null
+                    } else null
+                } catch (e: Exception) {
+                    // Samsung One UI keyboards can provide malformed InlinePresentationSpecs
+                    // that cause crashes. Gracefully fall back to dropdown-only presentation.
+                    android.util.Log.w(TAG, "Failed to create inline presentation, falling back to dropdown", e)
+                    null
                 }
             }
 
@@ -126,7 +185,14 @@ class VaultPeerAutofillService : AutofillService() {
             }
 
             datasetBuilder.setAuthentication(pendingIntent.intentSender)
-            val dataset = datasetBuilder.build()
+
+            val dataset = try {
+                datasetBuilder.build()
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to build autofill dataset", e)
+                callback.onSuccess(null)
+                return
+            }
 
             val responseBuilder = FillResponse.Builder()
                 .addDataset(dataset)
@@ -175,13 +241,13 @@ class VaultPeerAutofillService : AutofillService() {
                     contentBuilder.setStartIcon(icon)
                 }
             } catch (e: Exception) {
-                android.util.Log.w("VaultPeerAutofill", "Could not load app launcher icon", e)
+                android.util.Log.w(TAG, "Could not load app launcher icon", e)
             }
             
             val content = contentBuilder.build()
             return InlinePresentation(content.slice, spec, false)
         } catch (e: Exception) {
-            android.util.Log.e("VaultPeerAutofill", "Error creating inline presentation", e)
+            android.util.Log.e(TAG, "Error creating inline presentation", e)
             return null
         }
     }
@@ -197,94 +263,92 @@ class VaultPeerAutofillService : AutofillService() {
         var webDomain: String? = null
         var usernameVal = ""
         var passwordVal = ""
-        val packageName = structure.activityComponent.packageName
+        val packageName = structure.activityComponent?.packageName ?: ""
 
         var passwordId: AutofillId? = null
         val inputNodes = mutableListOf<AssistStructure.ViewNode>()
 
         for (i in 0 until structure.windowNodeCount) {
             val windowNode = structure.getWindowNodeAt(i)
-            val rootNode = windowNode.rootViewNode
-            if (rootNode != null) {
-                traverseNode(rootNode) { node ->
-                    val idEntry = node.idEntry?.lowercase()
-                    val hintText = node.hint?.toString()?.lowercase()
-                    val className = node.className
-                    val hints = node.autofillHints
-                    val inputType = node.inputType
-                    val autofillType = node.autofillType
+            val rootNode = windowNode.rootViewNode ?: continue
+            traverseNodeIterative(rootNode) { node ->
+                val idEntry = node.idEntry?.lowercase()
+                val hintText = node.hint?.toString()?.lowercase()
+                val className = node.className
+                val hints = node.autofillHints
+                val inputType = node.inputType
+                val autofillType = node.autofillType
 
-                    if (node.webDomain != null) {
-                        webDomain = node.webDomain
-                    }
+                if (node.webDomain != null) {
+                    webDomain = node.webDomain
+                }
 
-                    // Collect all input fields
-                    val isEditText = (className != null && className.contains("EditText", ignoreCase = true)) ||
-                                     autofillType == View.AUTOFILL_TYPE_TEXT
-                    if (isEditText) {
-                        inputNodes.add(node)
-                    }
+                // Collect all input fields
+                val isEditText = (className != null && className.contains("EditText", ignoreCase = true)) ||
+                                 autofillType == View.AUTOFILL_TYPE_TEXT
+                if (isEditText) {
+                    inputNodes.add(node)
+                }
 
-                    if (hints != null) {
-                        for (hint in hints) {
-                            if (hint.equals(View.AUTOFILL_HINT_PASSWORD, ignoreCase = true)) {
-                                passwordId = node.autofillId
-                                val txt = node.text?.toString() ?: ""
-                                if (txt.isNotEmpty()) passwordVal = txt
-                            } else if (hint.equals(View.AUTOFILL_HINT_USERNAME, ignoreCase = true) ||
-                                       hint.equals(View.AUTOFILL_HINT_EMAIL_ADDRESS, ignoreCase = true)) {
-                                val txt = node.text?.toString() ?: ""
-                                if (txt.isNotEmpty()) usernameVal = txt
-                            }
+                if (hints != null) {
+                    for (hint in hints) {
+                        if (hint.equals(View.AUTOFILL_HINT_PASSWORD, ignoreCase = true)) {
+                            passwordId = node.autofillId
+                            val txt = node.text?.toString() ?: ""
+                            if (txt.isNotEmpty()) passwordVal = txt
+                        } else if (hint.equals(View.AUTOFILL_HINT_USERNAME, ignoreCase = true) ||
+                                   hint.equals(View.AUTOFILL_HINT_EMAIL_ADDRESS, ignoreCase = true)) {
+                            val txt = node.text?.toString() ?: ""
+                            if (txt.isNotEmpty()) usernameVal = txt
                         }
                     }
+                }
 
-                    // HTML attributes
-                    val htmlInfo = node.htmlInfo
-                    if (htmlInfo != null) {
-                        val attrs = htmlInfo.attributes
-                        if (attrs != null) {
-                            var isPasswordHtml = false
-                            var isUsernameHtml = false
-                            for (pair in attrs) {
-                                val key = pair.first?.lowercase()
-                                val value = pair.second?.lowercase()
-                                if (key == "type" && value == "password") {
+                // HTML attributes
+                val htmlInfo = node.htmlInfo
+                if (htmlInfo != null) {
+                    val attrs = htmlInfo.attributes
+                    if (attrs != null) {
+                        var isPasswordHtml = false
+                        var isUsernameHtml = false
+                        for (pair in attrs) {
+                            val key = pair.first?.lowercase()
+                            val value = pair.second?.lowercase()
+                            if (key == "type" && value == "password") {
+                                isPasswordHtml = true
+                            }
+                            if (value != null && (value.contains("password") || value.contains("pass"))) {
+                                if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
                                     isPasswordHtml = true
                                 }
-                                if (value != null && (value.contains("password") || value.contains("pass"))) {
-                                    if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
-                                        isPasswordHtml = true
-                                    }
-                                }
-                                if (value != null && (value.contains("username") || value.contains("email") || value.contains("login") || value.contains("usr"))) {
-                                    if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
-                                        isUsernameHtml = true
-                                    }
-                                }
                             }
-                            if (isPasswordHtml) {
-                                passwordId = node.autofillId
-                                val txt = node.text?.toString() ?: ""
-                                if (txt.isNotEmpty()) passwordVal = txt
-                            }
-                            if (isUsernameHtml) {
-                                val txt = node.text?.toString() ?: ""
-                                if (txt.isNotEmpty()) usernameVal = txt
+                            if (value != null && (value.contains("username") || value.contains("email") || value.contains("login") || value.contains("usr"))) {
+                                if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
+                                    isUsernameHtml = true
+                                }
                             }
                         }
-                    }
-
-                    if (className != null && className.contains("EditText", ignoreCase = true)) {
-                        if ((idEntry?.contains("password") == true || idEntry?.contains("pass") == true || hintText?.contains("password") == true || hintText?.contains("pass") == true)) {
+                        if (isPasswordHtml) {
                             passwordId = node.autofillId
                             val txt = node.text?.toString() ?: ""
                             if (txt.isNotEmpty()) passwordVal = txt
                         }
-                        if ((idEntry?.contains("username") == true || idEntry?.contains("email") == true || idEntry?.contains("login") == true || hintText?.contains("username") == true || hintText?.contains("email") == true || hintText?.contains("login") == true)) {
+                        if (isUsernameHtml) {
                             val txt = node.text?.toString() ?: ""
                             if (txt.isNotEmpty()) usernameVal = txt
                         }
+                    }
+                }
+
+                if (className != null && className.contains("EditText", ignoreCase = true)) {
+                    if ((idEntry?.contains("password") == true || idEntry?.contains("pass") == true || hintText?.contains("password") == true || hintText?.contains("pass") == true)) {
+                        passwordId = node.autofillId
+                        val txt = node.text?.toString() ?: ""
+                        if (txt.isNotEmpty()) passwordVal = txt
+                    }
+                    if ((idEntry?.contains("username") == true || idEntry?.contains("email") == true || idEntry?.contains("login") == true || hintText?.contains("username") == true || hintText?.contains("email") == true || hintText?.contains("login") == true)) {
+                        val txt = node.text?.toString() ?: ""
+                        if (txt.isNotEmpty()) usernameVal = txt
                     }
                 }
             }
@@ -321,8 +385,7 @@ class VaultPeerAutofillService : AutofillService() {
             }
         }
 
-        // Absolute fallback: if we have any inputs and couldn't match username/password specifically:
-        // Assume the first one with text is username (if not password type) and the second is password (if password type).
+        // Absolute fallback
         if (passwordVal.isEmpty()) {
             for (node in inputNodes) {
                 if (isPasswordInputType(node.inputType)) {
@@ -342,7 +405,7 @@ class VaultPeerAutofillService : AutofillService() {
             }
         }
 
-        android.util.Log.d("VaultPeerAutofill", "traverseStructureForSave Done: domain=$webDomain, username=$usernameVal, password=$passwordVal")
+        android.util.Log.d(TAG, "traverseStructureForSave Done: domain=$webDomain, hasUsername=${usernameVal.isNotEmpty()}, hasPassword=${passwordVal.isNotEmpty()}")
         return AutofillSaveData(
             username = usernameVal,
             password = passwordVal,
@@ -352,6 +415,19 @@ class VaultPeerAutofillService : AutofillService() {
     }
 
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
+        try {
+            onSaveRequestInternal(request, callback)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "FATAL: Unhandled exception in onSaveRequest", e)
+            try {
+                callback.onSuccess()
+            } catch (callbackError: Exception) {
+                android.util.Log.e(TAG, "Failed to send success after error in onSaveRequest", callbackError)
+            }
+        }
+    }
+
+    private fun onSaveRequestInternal(request: SaveRequest, callback: SaveCallback) {
         val contexts = request.fillContexts
         if (contexts.isEmpty()) {
             callback.onSuccess()
@@ -361,7 +437,7 @@ class VaultPeerAutofillService : AutofillService() {
         val structure = contexts[contexts.size - 1].structure
         val savePayload = traverseStructureForSave(structure)
 
-        android.util.Log.d("VaultPeerAutofill", "onSaveRequest: username=${savePayload.username}, password=${savePayload.password}, package=${savePayload.packageName}, domain=${savePayload.domain}")
+        android.util.Log.d(TAG, "onSaveRequest: hasUsername=${savePayload.username.isNotEmpty()}, hasPassword=${savePayload.password.isNotEmpty()}, package=${savePayload.packageName}, domain=${savePayload.domain}")
 
         if (savePayload.password.isNotEmpty()) {
             // Trigger deep link to our save screen
@@ -397,103 +473,88 @@ class VaultPeerAutofillService : AutofillService() {
         var usernameId: AutofillId? = null
         var passwordId: AutofillId? = null
         var focusedId: AutofillId? = null
-        val packageName = structure.activityComponent.packageName
+        val packageName = structure.activityComponent?.packageName ?: ""
 
-        android.util.Log.d("VaultPeerAutofill", "Traversing AssistStructure for package: $packageName")
+        android.util.Log.d(TAG, "Traversing AssistStructure for package: $packageName, windowCount: ${structure.windowNodeCount}")
 
         val inputNodes = mutableListOf<AssistStructure.ViewNode>()
 
         for (i in 0 until structure.windowNodeCount) {
             val windowNode = structure.getWindowNodeAt(i)
-            val rootNode = windowNode.rootViewNode
-            if (rootNode != null) {
-                traverseNode(rootNode) { node ->
-                    val idEntry = node.idEntry?.lowercase()
-                    val hintText = node.hint?.toString()?.lowercase()
-                    val className = node.className
-                    val hints = node.autofillHints
-                    val inputType = node.inputType
-                    val autofillType = node.autofillType
+            val rootNode = windowNode.rootViewNode ?: continue
+            traverseNodeIterative(rootNode) { node ->
+                val idEntry = node.idEntry?.lowercase()
+                val hintText = node.hint?.toString()?.lowercase()
+                val className = node.className
+                val hints = node.autofillHints
+                val inputType = node.inputType
+                val autofillType = node.autofillType
 
-                    android.util.Log.d("VaultPeerAutofill", "Node: class=$className, idEntry=$idEntry, hint=$hintText, autofillId=${node.autofillId}, hints=${hints?.joinToString()}, inputType=$inputType, autofillType=$autofillType")
+                if (node.webDomain != null) {
+                    webDomain = node.webDomain
+                }
 
-                    if (node.webDomain != null) {
-                        webDomain = node.webDomain
-                        android.util.Log.d("VaultPeerAutofill", "Found Web Domain: $webDomain")
-                    }
+                if (node.isFocused) {
+                    focusedId = node.autofillId
+                }
 
-                    if (node.isFocused) {
-                        focusedId = node.autofillId
-                        android.util.Log.d("VaultPeerAutofill", "Found Focused Node: $focusedId")
-                    }
+                // Collect all input fields
+                val isEditText = (className != null && className.contains("EditText", ignoreCase = true)) ||
+                                 autofillType == View.AUTOFILL_TYPE_TEXT
+                if (isEditText) {
+                    inputNodes.add(node)
+                }
 
-                    // Collect all input fields
-                    val isEditText = (className != null && className.contains("EditText", ignoreCase = true)) ||
-                                     autofillType == View.AUTOFILL_TYPE_TEXT
-                    if (isEditText) {
-                        inputNodes.add(node)
-                    }
-
-                    if (hints != null) {
-                        for (hint in hints) {
-                            if (hint.equals(View.AUTOFILL_HINT_PASSWORD, ignoreCase = true)) {
-                                passwordId = node.autofillId
-                                android.util.Log.d("VaultPeerAutofill", "Matched PasswordId by hint: $passwordId")
-                            } else if (hint.equals(View.AUTOFILL_HINT_USERNAME, ignoreCase = true) ||
-                                       hint.equals(View.AUTOFILL_HINT_EMAIL_ADDRESS, ignoreCase = true)) {
-                                usernameId = node.autofillId
-                                android.util.Log.d("VaultPeerAutofill", "Matched UsernameId by hint: $usernameId")
-                            }
+                if (hints != null) {
+                    for (hint in hints) {
+                        if (hint.equals(View.AUTOFILL_HINT_PASSWORD, ignoreCase = true)) {
+                            passwordId = node.autofillId
+                        } else if (hint.equals(View.AUTOFILL_HINT_USERNAME, ignoreCase = true) ||
+                                   hint.equals(View.AUTOFILL_HINT_EMAIL_ADDRESS, ignoreCase = true)) {
+                            usernameId = node.autofillId
                         }
                     }
+                }
 
-                    // Parse HTML info if available (critical for WebViews/browsers)
-                    val htmlInfo = node.htmlInfo
-                    if (htmlInfo != null) {
-                        val tag = htmlInfo.tag
-                        val attrs = htmlInfo.attributes
-                        android.util.Log.d("VaultPeerAutofill", "HTML Tag: $tag, Attributes Count: ${attrs?.size ?: 0}")
-                        if (attrs != null) {
-                            var isPasswordHtml = false
-                            var isUsernameHtml = false
-                            for (pair in attrs) {
-                                val key = pair.first?.lowercase()
-                                val value = pair.second?.lowercase()
-                                android.util.Log.d("VaultPeerAutofill", "HTML Attr: $key = $value")
-                                if (key == "type" && value == "password") {
+                // Parse HTML info if available (critical for WebViews/browsers)
+                val htmlInfo = node.htmlInfo
+                if (htmlInfo != null) {
+                    val attrs = htmlInfo.attributes
+                    if (attrs != null) {
+                        var isPasswordHtml = false
+                        var isUsernameHtml = false
+                        for (pair in attrs) {
+                            val key = pair.first?.lowercase()
+                            val value = pair.second?.lowercase()
+                            if (key == "type" && value == "password") {
+                                isPasswordHtml = true
+                            }
+                            if (value != null && (value.contains("password") || value.contains("pass"))) {
+                                if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
                                     isPasswordHtml = true
                                 }
-                                if (value != null && (value.contains("password") || value.contains("pass"))) {
-                                    if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
-                                        isPasswordHtml = true
-                                    }
-                                }
-                                if (value != null && (value.contains("username") || value.contains("email") || value.contains("login") || value.contains("usr"))) {
-                                    if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
-                                        isUsernameHtml = true
-                                    }
+                            }
+                            if (value != null && (value.contains("username") || value.contains("email") || value.contains("login") || value.contains("usr"))) {
+                                if (key == "name" || key == "id" || key == "placeholder" || key == "autocomplete") {
+                                    isUsernameHtml = true
                                 }
                             }
-                            if (isPasswordHtml && passwordId == null) {
-                                passwordId = node.autofillId
-                                android.util.Log.d("VaultPeerAutofill", "Matched PasswordId by HTML attribute: $passwordId")
-                            }
-                            if (isUsernameHtml && usernameId == null) {
-                                usernameId = node.autofillId
-                                android.util.Log.d("VaultPeerAutofill", "Matched UsernameId by HTML attribute: $usernameId")
-                            }
+                        }
+                        if (isPasswordHtml && passwordId == null) {
+                            passwordId = node.autofillId
+                        }
+                        if (isUsernameHtml && usernameId == null) {
+                            usernameId = node.autofillId
                         }
                     }
+                }
 
-                    if (className != null && className.contains("EditText", ignoreCase = true)) {
-                        if (passwordId == null && (idEntry?.contains("password") == true || idEntry?.contains("pass") == true || hintText?.contains("password") == true || hintText?.contains("pass") == true)) {
-                            passwordId = node.autofillId
-                            android.util.Log.d("VaultPeerAutofill", "Matched PasswordId by ID/Hint text: $passwordId")
-                        }
-                        if (usernameId == null && (idEntry?.contains("username") == true || idEntry?.contains("email") == true || idEntry?.contains("login") == true || hintText?.contains("username") == true || hintText?.contains("email") == true || hintText?.contains("login") == true)) {
-                            usernameId = node.autofillId
-                            android.util.Log.d("VaultPeerAutofill", "Matched UsernameId by ID/Hint text: $usernameId")
-                        }
+                if (className != null && className.contains("EditText", ignoreCase = true)) {
+                    if (passwordId == null && (idEntry?.contains("password") == true || idEntry?.contains("pass") == true || hintText?.contains("password") == true || hintText?.contains("pass") == true)) {
+                        passwordId = node.autofillId
+                    }
+                    if (usernameId == null && (idEntry?.contains("username") == true || idEntry?.contains("email") == true || idEntry?.contains("login") == true || hintText?.contains("username") == true || hintText?.contains("email") == true || hintText?.contains("login") == true)) {
+                        usernameId = node.autofillId
                     }
                 }
             }
@@ -504,7 +565,6 @@ class VaultPeerAutofillService : AutofillService() {
             for (node in inputNodes) {
                 if (isPasswordInputType(node.inputType)) {
                     passwordId = node.autofillId
-                    android.util.Log.d("VaultPeerAutofill", "Matched PasswordId by inputType heuristic: $passwordId")
                     break
                 }
             }
@@ -518,14 +578,13 @@ class VaultPeerAutofillService : AutofillService() {
                     val prevNode = inputNodes[j]
                     if (!isPasswordInputType(prevNode.inputType)) {
                         usernameId = prevNode.autofillId
-                        android.util.Log.d("VaultPeerAutofill", "Matched UsernameId by proximity heuristic: $usernameId")
                         break
                     }
                 }
             }
         }
 
-        android.util.Log.d("VaultPeerAutofill", "Traverse Done: domain=$webDomain, usernameId=$usernameId, passwordId=$passwordId, focusedId=$focusedId")
+        android.util.Log.d(TAG, "Traverse Done: domain=$webDomain, usernameId=$usernameId, passwordId=$passwordId, focusedId=$focusedId, inputNodes=${inputNodes.size}")
         val allInputIds = inputNodes.mapNotNull { it.autofillId }
         return AutofillRequestData(packageName, webDomain, usernameId, passwordId, focusedId, allInputIds)
     }
@@ -542,17 +601,58 @@ class VaultPeerAutofillService : AutofillService() {
         )
     }
 
-    private fun traverseNode(node: AssistStructure.ViewNode, action: (AssistStructure.ViewNode) -> Unit) {
-        action(node)
-        for (i in 0 until node.childCount) {
-            val child = node.getChildAt(i)
-            if (child != null) {
-                traverseNode(child, action)
+    /**
+     * Iterative (stack-based) traversal of the AssistStructure view tree.
+     *
+     * This replaces the previous recursive traverseNode() implementation which
+     * could cause StackOverflowError on deeply nested view trees — particularly
+     * Chrome WebViews on Samsung One UI devices where the tree can easily exceed
+     * 200+ levels deep due to Shadow DOM, nested iframes, and Samsung's own
+     * accessibility injection layer.
+     *
+     * A StackOverflowError in the autofill service (which runs in system_server
+     * process context) triggers the system watchdog and causes a full device reboot.
+     *
+     * We also cap the total number of visited nodes at MAX_NODE_VISIT_COUNT to
+     * prevent the traversal from taking too long on extremely large pages.
+     */
+    private fun traverseNodeIterative(
+        root: AssistStructure.ViewNode,
+        action: (AssistStructure.ViewNode) -> Unit
+    ) {
+        val stack = ArrayDeque<AssistStructure.ViewNode>()
+        stack.push(root)
+        var visitCount = 0
+
+        while (stack.isNotEmpty()) {
+            if (visitCount >= MAX_NODE_VISIT_COUNT) {
+                android.util.Log.w(TAG, "Node visit limit reached ($MAX_NODE_VISIT_COUNT). Stopping traversal early.")
+                break
+            }
+
+            val node = stack.pop()
+            visitCount++
+
+            try {
+                action(node)
+            } catch (e: Exception) {
+                // Don't let a single bad node crash the entire traversal
+                android.util.Log.w(TAG, "Error processing node: ${e.message}")
+                continue
+            }
+
+            // Push children in reverse order so left-most children are processed first
+            val childCount = node.childCount
+            for (i in (childCount - 1) downTo 0) {
+                try {
+                    val child = node.getChildAt(i)
+                    if (child != null) {
+                        stack.push(child)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Error accessing child node at index $i: ${e.message}")
+                }
             }
         }
-    }
-
-    companion object {
-        var activeRequest: ActiveAutofillRequest? = null
     }
 }

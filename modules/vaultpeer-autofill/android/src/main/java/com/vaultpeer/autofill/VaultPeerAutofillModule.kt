@@ -53,119 +53,130 @@ class VaultPeerAutofillModule : Module() {
     }
 
     AsyncFunction("getActiveRequest") { promise: Promise ->
-      val active = VaultPeerAutofillService.activeRequest
-      if (active == null) {
-        promise.resolve(null)
-        return@AsyncFunction
-      }
+      try {
+        val active = VaultPeerAutofillService.activeRequest
+        if (active == null) {
+          promise.resolve(null)
+          return@AsyncFunction
+        }
 
-      val result = Arguments.createMap().apply {
-        putString("packageName", active.packageName)
-        putString("webDomain", active.webDomain)
-        putBoolean("hasUsernameField", active.usernameId != null)
-        putBoolean("hasPasswordField", active.passwordId != null)
-        putBoolean("hasFocusedField", active.focusedId != null)
+        val result = Arguments.createMap().apply {
+          putString("packageName", active.packageName)
+          putString("webDomain", active.webDomain)
+          putBoolean("hasUsernameField", active.usernameId != null)
+          putBoolean("hasPasswordField", active.passwordId != null)
+          putBoolean("hasFocusedField", active.focusedId != null)
+        }
+        promise.resolve(result)
+      } catch (e: Exception) {
+        android.util.Log.e("VaultPeerAutofill", "Error in getActiveRequest", e)
+        promise.resolve(null)
       }
-      promise.resolve(result)
     }
 
     AsyncFunction("submitCredentials") { usernameString: String?, passwordString: String?, promise: Promise ->
-      val active = VaultPeerAutofillService.activeRequest
-      if (active == null) {
-        promise.reject("ERR_NO_ACTIVE_REQUEST", "No active autofill request found", null)
-        return@AsyncFunction
-      }
-
-      val rContext = appContext.reactContext ?: throw Exception("Context not found")
-      val pkg = rContext.packageName
-      val datasetBuilder = Dataset.Builder()
-      var hasData = false
-
-      val username = usernameString ?: ""
-      val password = passwordString ?: ""
-
-      if (usernameString != null && active.usernameId != null) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          datasetBuilder.setValue(
-            active.usernameId,
-            AutofillValue.forText(username)
-          )
-        } else {
-          val usernamePresentation = RemoteViews(pkg, R.layout.autofill_entry_presentation).apply {
-            setTextViewText(R.id.autofill_text, username)
-          }
-          datasetBuilder.setValue(
-            active.usernameId,
-            AutofillValue.forText(username),
-            usernamePresentation
-          )
+      try {
+        val active = VaultPeerAutofillService.activeRequest
+        if (active == null) {
+          promise.reject("ERR_NO_ACTIVE_REQUEST", "No active autofill request found", null)
+          return@AsyncFunction
         }
-        hasData = true
-      }
 
-      if (passwordString != null && active.passwordId != null) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          datasetBuilder.setValue(
-            active.passwordId,
-            AutofillValue.forText(password)
-          )
-        } else {
-          val passwordPresentation = RemoteViews(pkg, R.layout.autofill_entry_presentation).apply {
-            setTextViewText(R.id.autofill_text, "••••••••")
+        val rContext = appContext.reactContext ?: throw Exception("Context not found")
+        val pkg = rContext.packageName
+        val datasetBuilder = Dataset.Builder()
+        var hasData = false
+
+        val username = usernameString ?: ""
+        val password = passwordString ?: ""
+
+        if (usernameString != null && active.usernameId != null) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            datasetBuilder.setValue(
+              active.usernameId,
+              AutofillValue.forText(username)
+            )
+          } else {
+            val usernamePresentation = RemoteViews(pkg, R.layout.autofill_entry_presentation).apply {
+              setTextViewText(R.id.autofill_text, username)
+            }
+            datasetBuilder.setValue(
+              active.usernameId,
+              AutofillValue.forText(username),
+              usernamePresentation
+            )
           }
-          datasetBuilder.setValue(
-            active.passwordId,
-            AutofillValue.forText(password),
-            passwordPresentation
-          )
+          hasData = true
         }
-        hasData = true
-      }
 
-      if (!hasData && active.focusedId != null) {
-        val fillValue = usernameString ?: passwordString ?: ""
-        val isPassword = passwordString != null && usernameString == null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          datasetBuilder.setValue(
-            active.focusedId,
-            AutofillValue.forText(fillValue)
-          )
-        } else {
-          val presentationText = if (isPassword) "••••••••" else fillValue
-          val focusedPresentation = RemoteViews(pkg, R.layout.autofill_entry_presentation).apply {
-            setTextViewText(R.id.autofill_text, presentationText)
+        if (passwordString != null && active.passwordId != null) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            datasetBuilder.setValue(
+              active.passwordId,
+              AutofillValue.forText(password)
+            )
+          } else {
+            val passwordPresentation = RemoteViews(pkg, R.layout.autofill_entry_presentation).apply {
+              setTextViewText(R.id.autofill_text, "••••••••")
+            }
+            datasetBuilder.setValue(
+              active.passwordId,
+              AutofillValue.forText(password),
+              passwordPresentation
+            )
           }
-          datasetBuilder.setValue(
-            active.focusedId,
-            AutofillValue.forText(fillValue),
-            focusedPresentation
-          )
+          hasData = true
         }
-        hasData = true
-      }
 
-      if (!hasData) {
-        promise.reject("ERR_NO_FIELDS", "No username or password field found to autofill", null)
-        return@AsyncFunction
-      }
+        if (!hasData && active.focusedId != null) {
+          val fillValue = usernameString ?: passwordString ?: ""
+          val isPassword = passwordString != null && usernameString == null
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            datasetBuilder.setValue(
+              active.focusedId,
+              AutofillValue.forText(fillValue)
+            )
+          } else {
+            val presentationText = if (isPassword) "••••••••" else fillValue
+            val focusedPresentation = RemoteViews(pkg, R.layout.autofill_entry_presentation).apply {
+              setTextViewText(R.id.autofill_text, presentationText)
+            }
+            datasetBuilder.setValue(
+              active.focusedId,
+              AutofillValue.forText(fillValue),
+              focusedPresentation
+            )
+          }
+          hasData = true
+        }
 
-      val dataset = datasetBuilder.build()
-      val currentActivity = appContext.currentActivity
-      if (currentActivity == null) {
-        promise.reject("ERR_NO_ACTIVITY", "Current activity is not available", null)
-        return@AsyncFunction
-      }
+        if (!hasData) {
+          promise.reject("ERR_NO_FIELDS", "No username or password field found to autofill", null)
+          return@AsyncFunction
+        }
 
-      val replyIntent = Intent().apply {
-        putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, dataset)
-      }
-      
-      AutofillResultBridge.pendingResult = replyIntent
-      AutofillResultBridge.hasSubmitted = true
-      currentActivity.finish()
+        val dataset = datasetBuilder.build()
+        val currentActivity = appContext.currentActivity
+        if (currentActivity == null) {
+          promise.reject("ERR_NO_ACTIVITY", "Current activity is not available", null)
+          return@AsyncFunction
+        }
 
-      VaultPeerAutofillService.activeRequest = null
-      promise.resolve(true)
+        val replyIntent = Intent().apply {
+          putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, dataset)
+        }
+        
+        AutofillResultBridge.pendingResult = replyIntent
+        AutofillResultBridge.hasSubmitted = true
+        currentActivity.finish()
+
+        VaultPeerAutofillService.activeRequest = null
+        promise.resolve(true)
+      } catch (e: Exception) {
+        android.util.Log.e("VaultPeerAutofill", "Error in submitCredentials", e)
+        VaultPeerAutofillService.activeRequest = null
+        promise.reject("ERR_SUBMIT_FAILED", "Failed to submit credentials: ${e.message}", e)
+      }
     }
 
     AsyncFunction("cancelRequest") { promise: Promise ->

@@ -14,9 +14,13 @@ object AutofillResultBridge {
 class AutofillTrampolineActivity : Activity() {
     private var launched = false
 
+    companion object {
+        private const val TAG = "VaultPeerAutofill"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("VaultPeerAutofill", "AutofillTrampolineActivity onCreate")
+        Log.d(TAG, "AutofillTrampolineActivity onCreate")
         launched = savedInstanceState?.getBoolean("launched", false) ?: false
     }
 
@@ -27,14 +31,35 @@ class AutofillTrampolineActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        Log.d("VaultPeerAutofill", "AutofillTrampolineActivity onResume, launched=$launched")
+        Log.d(TAG, "AutofillTrampolineActivity onResume, launched=$launched")
 
+        try {
+            handleResume()
+        } catch (e: Exception) {
+            // CRITICAL: Any unhandled crash here can cascade into the autofill framework
+            // and potentially crash the system process. Catch everything and fail gracefully.
+            Log.e(TAG, "FATAL: Unhandled exception in AutofillTrampolineActivity onResume", e)
+            try {
+                setResult(RESULT_CANCELED)
+                AutofillResultBridge.pendingResult = null
+                AutofillResultBridge.hasSubmitted = false
+            } catch (ignored: Exception) {}
+            finish()
+        }
+    }
+
+    private fun handleResume() {
         if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
-            Log.d("VaultPeerAutofill", "AutofillTrampolineActivity launched from history. Redirecting to main launcher.")
-            val cleanIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                action = Intent.ACTION_MAIN
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            Log.d(TAG, "AutofillTrampolineActivity launched from history. Redirecting to main launcher.")
+            val cleanIntent = try {
+                packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to create clean intent", e)
+                null
             }
             if (cleanIntent != null) {
                 startActivity(cleanIntent)
@@ -46,21 +71,26 @@ class AutofillTrampolineActivity : Activity() {
         if (!launched) {
             launched = true
             // Launch MainActivity
-            val targetIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                action = intent.action
-                data = intent.data
-                // Forward only explicit primitive autofill extras to prevent binder serialization crashes
-                putExtra("autofill_request", intent.getBooleanExtra("autofill_request", false))
-                intent.getStringExtra("caller_package")?.let { putExtra("caller_package", it) }
-                intent.getStringExtra("caller_domain")?.let { putExtra("caller_domain", it) }
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val targetIntent = try {
+                packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                    action = intent.action
+                    data = intent.data
+                    // Forward only explicit primitive autofill extras to prevent binder serialization crashes
+                    putExtra("autofill_request", intent.getBooleanExtra("autofill_request", false))
+                    intent.getStringExtra("caller_package")?.let { putExtra("caller_package", it) }
+                    intent.getStringExtra("caller_domain")?.let { putExtra("caller_domain", it) }
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to build target intent", e)
+                null
             }
 
             if (targetIntent != null) {
-                Log.d("VaultPeerAutofill", "AutofillTrampolineActivity starting MainActivity")
+                Log.d(TAG, "AutofillTrampolineActivity starting MainActivity")
                 startActivity(targetIntent)
             } else {
-                Log.e("VaultPeerAutofill", "AutofillTrampolineActivity: targetIntent is null")
+                Log.e(TAG, "AutofillTrampolineActivity: targetIntent is null")
                 setResult(RESULT_CANCELED)
                 finish()
             }
@@ -68,14 +98,14 @@ class AutofillTrampolineActivity : Activity() {
             // We have returned from MainActivity
             val hasSubmitted = AutofillResultBridge.hasSubmitted
             val pending = AutofillResultBridge.pendingResult
-            Log.d("VaultPeerAutofill", "AutofillTrampolineActivity returned: hasSubmitted=$hasSubmitted, pending=$pending")
+            Log.d(TAG, "AutofillTrampolineActivity returned: hasSubmitted=$hasSubmitted, pending=$pending")
 
             if (hasSubmitted && pending != null) {
                 setResult(RESULT_OK, pending)
-                Log.d("VaultPeerAutofill", "AutofillTrampolineActivity setResult RESULT_OK")
+                Log.d(TAG, "AutofillTrampolineActivity setResult RESULT_OK")
             } else {
                 setResult(RESULT_CANCELED)
-                Log.d("VaultPeerAutofill", "AutofillTrampolineActivity setResult RESULT_CANCELED")
+                Log.d(TAG, "AutofillTrampolineActivity setResult RESULT_CANCELED")
             }
             AutofillResultBridge.pendingResult = null
             AutofillResultBridge.hasSubmitted = false
@@ -83,4 +113,3 @@ class AutofillTrampolineActivity : Activity() {
         }
     }
 }
-
