@@ -106,7 +106,13 @@ class VaultPeerAutofillService : AutofillService() {
         }
 
         val hasCredentialField = requestData.usernameId != null || requestData.passwordId != null
-        val shouldTrigger = hasCredentialField || (requestData.focusedId != null && !requestData.isFocusedNodeNonCredential)
+        // Only trigger when we found explicit credential fields on the page.
+        // When no credential fields are found, only trigger if the focused field
+        // itself has positive credential signals (autofill hints, HTML type=password,
+        // credential-related id/hint keywords, etc.).
+        // This prevents the popup from appearing on search bars, URL bars, chat
+        // text fields, and other non-credential inputs.
+        val shouldTrigger = hasCredentialField || requestData.isFocusedNodeCredential
 
         if (shouldTrigger) {
             // Store the request info statically so the native module can retrieve it
@@ -486,6 +492,7 @@ class VaultPeerAutofillService : AutofillService() {
         val passwordId: AutofillId?,
         val focusedId: AutofillId?,
         val isFocusedNodeNonCredential: Boolean,
+        val isFocusedNodeCredential: Boolean,
         val allInputIds: List<AutofillId>
     )
 
@@ -495,6 +502,8 @@ class VaultPeerAutofillService : AutofillService() {
         var passwordId: AutofillId? = null
         var focusedId: AutofillId? = null
         var isFocusedNodeNonCredential = false
+        var isFocusedNodeCredential = false
+        var focusedNode: AssistStructure.ViewNode? = null
         val packageName = structure.activityComponent?.packageName ?: ""
 
         android.util.Log.d(TAG, "Traversing AssistStructure for package: $packageName, windowCount: ${structure.windowNodeCount}")
@@ -516,8 +525,19 @@ class VaultPeerAutofillService : AutofillService() {
                     webDomain = node.webDomain
                 }
 
+                // Respect importantForAutofill=no on individual nodes
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val importance = node.importantForAutofill
+                    if (importance == View.IMPORTANT_FOR_AUTOFILL_NO ||
+                        importance == View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS) {
+                        // Skip this node entirely — the app explicitly opted it out
+                        return@traverseNodeIterative
+                    }
+                }
+
                 if (node.isFocused) {
                     focusedId = node.autofillId
+                    focusedNode = node
                     isFocusedNodeNonCredential = isNonCredentialField(node, packageName)
                 }
 
@@ -607,9 +627,17 @@ class VaultPeerAutofillService : AutofillService() {
             }
         }
 
-        android.util.Log.d(TAG, "Traverse Done: domain=$webDomain, usernameId=$usernameId, passwordId=$passwordId, focusedId=$focusedId, isFocusedNonCredential=$isFocusedNodeNonCredential, inputNodes=${inputNodes.size}")
+        // Determine if the focused node itself has credential signals.
+        // This is used as a fallback trigger when no credential fields were found
+        // on the page (e.g., single-field login forms or when the user taps a
+        // credential field before the full form is parsed).
+        if (focusedNode != null && !isFocusedNodeNonCredential) {
+            isFocusedNodeCredential = isCredentialField(focusedNode!!, packageName)
+        }
+
+        android.util.Log.d(TAG, "Traverse Done: domain=$webDomain, usernameId=$usernameId, passwordId=$passwordId, focusedId=$focusedId, isFocusedNonCredential=$isFocusedNodeNonCredential, isFocusedCredential=$isFocusedNodeCredential, inputNodes=${inputNodes.size}")
         val allInputIds = inputNodes.mapNotNull { it.autofillId }
-        return AutofillRequestData(packageName, webDomain, usernameId, passwordId, focusedId, isFocusedNodeNonCredential, allInputIds)
+        return AutofillRequestData(packageName, webDomain, usernameId, passwordId, focusedId, isFocusedNodeNonCredential, isFocusedNodeCredential, allInputIds)
     }
 
     private fun isNonCredentialField(node: AssistStructure.ViewNode, packageName: String): Boolean {
@@ -618,7 +646,7 @@ class VaultPeerAutofillService : AutofillService() {
         val variation = inputType and android.text.InputType.TYPE_MASK_VARIATION
         val flags = inputType and android.text.InputType.TYPE_MASK_FLAGS
 
-        // 1. Check if it's a known chat package
+        // 1. Check if it's a known chat/messaging package
         val chatPackages = setOf(
             "com.whatsapp",
             "org.telegram.messenger",
@@ -631,7 +659,10 @@ class VaultPeerAutofillService : AutofillService() {
             "com.viber.voip",
             "com.tencent.mm", // WeChat
             "com.skype.raider",
-            "com.microsoft.teams"
+            "com.microsoft.teams",
+            "com.snapchat.android",
+            "com.instagram.android",
+            "jp.naver.line.android"
         )
         
         if (chatPackages.contains(packageName)) {
@@ -645,17 +676,24 @@ class VaultPeerAutofillService : AutofillService() {
             return true
         }
 
-        // 3. Check InputType variations for chat messages, filters, search
+        // 3. Check InputType variations for chat messages, filters, search, URI
         if (classType == android.text.InputType.TYPE_CLASS_TEXT) {
             if (variation == android.text.InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE ||
                 variation == android.text.InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE ||
                 variation == android.text.InputType.TYPE_TEXT_VARIATION_FILTER ||
-                variation == android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT) {
+                variation == android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT ||
+                variation == android.text.InputType.TYPE_TEXT_VARIATION_URI) {
                 return true
             }
         }
 
-        // 4. Check resource IDs, hints, or text values for non-credential keywords
+        // 4. Non-text input classes are never credentials
+        if (classType == android.text.InputType.TYPE_CLASS_PHONE ||
+            classType == android.text.InputType.TYPE_CLASS_DATETIME) {
+            return true
+        }
+
+        // 5. Check resource IDs, hints, or text values for non-credential keywords
         val idEntry = node.idEntry?.lowercase()
         val hintText = node.hint?.toString()?.lowercase()
         val textVal = node.text?.toString()?.lowercase()
@@ -664,11 +702,107 @@ class VaultPeerAutofillService : AutofillService() {
             "message", "chat", "search", "query", "filter", "find", "comment",
             "tweet", "post", "body", "note", "editor", "compose", "textinput",
             "reply", "status", "feedback", "description", "search_src_text",
-            "search_bar", "search_button"
+            "search_bar", "search_button", "url", "url_bar", "address",
+            "address_bar", "omnibox", "location_bar", "toolbar", "navigation",
+            "caption", "title", "subject", "name_prefix", "name_suffix",
+            "phone", "tel", "fax", "zip", "postal", "city", "state", "country",
+            "street", "apt", "suite", "region", "province"
         )
 
         for (keyword in nonCredentialKeywords) {
-            if (idEntry?.contains(keyword) == true || hintText?.contains(keyword) == true || textVal?.contains(keyword) == true) {
+            if (idEntry?.contains(keyword) == true || hintText?.contains(keyword) == true) {
+                return true
+            }
+        }
+
+        // 6. Check autofillHints for non-credential types
+        val hints = node.autofillHints
+        if (hints != null) {
+            val nonCredentialHints = setOf(
+                View.AUTOFILL_HINT_PHONE,
+                View.AUTOFILL_HINT_NAME,
+                View.AUTOFILL_HINT_POSTAL_ADDRESS,
+                View.AUTOFILL_HINT_POSTAL_CODE,
+                View.AUTOFILL_HINT_CREDIT_CARD_NUMBER,
+                View.AUTOFILL_HINT_CREDIT_CARD_EXPIRATION_DATE,
+                View.AUTOFILL_HINT_CREDIT_CARD_SECURITY_CODE
+            )
+            for (hint in hints) {
+                if (nonCredentialHints.contains(hint)) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Positive check: does this field look like a credential input?
+     * Used as the fallback trigger when no credential fields were found on the page.
+     * Must have strong credential signals to avoid false positives on search bars etc.
+     */
+    private fun isCredentialField(node: AssistStructure.ViewNode, packageName: String): Boolean {
+        val inputType = node.inputType
+
+        // 1. Password input type is a strong signal
+        if (isPasswordInputType(inputType)) {
+            return true
+        }
+
+        // 2. Autofill hints explicitly declare credential intent
+        val hints = node.autofillHints
+        if (hints != null) {
+            for (hint in hints) {
+                if (hint.equals(View.AUTOFILL_HINT_PASSWORD, ignoreCase = true) ||
+                    hint.equals(View.AUTOFILL_HINT_USERNAME, ignoreCase = true) ||
+                    hint.equals(View.AUTOFILL_HINT_EMAIL_ADDRESS, ignoreCase = true)) {
+                    return true
+                }
+            }
+        }
+
+        // 3. HTML attributes indicate credential field
+        val htmlInfo = node.htmlInfo
+        if (htmlInfo != null) {
+            val attrs = htmlInfo.attributes
+            if (attrs != null) {
+                for (pair in attrs) {
+                    val key = pair.first?.lowercase()
+                    val value = pair.second?.lowercase()
+                    if (key == "type" && value == "password") {
+                        return true
+                    }
+                    if (key == "autocomplete" && value != null) {
+                        if (value.contains("password") || value.contains("username") ||
+                            value == "current-password" || value == "new-password") {
+                            return true
+                        }
+                    }
+                    if (value != null && (key == "name" || key == "id")) {
+                        if (value.contains("password") || value.contains("passwd") ||
+                            value.contains("pass") || value.contains("login") ||
+                            value.contains("signin") || value.contains("credential")) {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Resource ID or hint text with credential keywords
+        val idEntry = node.idEntry?.lowercase()
+        val hintText = node.hint?.toString()?.lowercase()
+
+        val credentialKeywords = arrayOf(
+            "password", "passwd", "pass_word", "passwort",
+            "username", "user_name", "userid", "user_id",
+            "login", "signin", "sign_in", "credential",
+            "email", "e_mail"
+        )
+
+        for (keyword in credentialKeywords) {
+            if (idEntry?.contains(keyword) == true || hintText?.contains(keyword) == true) {
                 return true
             }
         }
