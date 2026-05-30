@@ -36,6 +36,7 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
@@ -216,6 +217,7 @@ export default function VaultBrowserScreen() {
   const isGroupInRecycleBin = useVaultStore(
     (state) => state.isGroupInRecycleBin
   );
+  const { syncMode, connectionStatus } = useSignalingStore();
 
   const activeGroup = useVaultStore((state) => {
     if (!state.activeGroupUuid || !state.groupIndex) return null;
@@ -775,6 +777,34 @@ export default function VaultBrowserScreen() {
                 )}
               </Pressable>
             </Animated.View>
+          )}
+          {syncMode === "network" && (
+            <Pressable
+              onPress={() => {
+                router.push("/vault/settings");
+              }}
+              style={styles.iconButton}
+              hitSlop={8}
+              accessibilityLabel="Sync status"
+            >
+              <Ionicons
+                name={
+                  connectionStatus === "connected"
+                    ? "link"
+                    : connectionStatus === "connecting"
+                      ? "git-network-outline"
+                      : "link-outline"
+                }
+                size={22}
+                color={
+                  connectionStatus === "connected"
+                    ? colors.accentMint
+                    : connectionStatus === "connecting"
+                      ? "#F59E0B"
+                      : colors.statusError
+                }
+              />
+            </Pressable>
           )}
           <Pressable
             onPress={handleLock}

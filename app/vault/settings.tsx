@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   Modal,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -49,6 +50,9 @@ import {
 import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
 import * as kdbxweb from "kdbxweb";
 import * as AutofillBridge from "@/modules/vaultpeer-autofill";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useClipboard } from "@/src/hooks/useClipboard";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -348,6 +352,34 @@ export default function VaultSettingsScreen() {
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
+  const {
+    syncMode,
+    setSyncMode,
+    serverUrl,
+    setServerUrl,
+    roomId,
+    connectionStatus,
+    setIsConfigured,
+    connect,
+    disconnect,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    lastError,
+  } = useSignalingStore();
+
+  const { copyToClipboard } = useClipboard();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showServerEditModal, setShowServerEditModal] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [newServerUrl, setNewServerUrl] = useState(serverUrl);
+  const [newRoomId, setNewRoomId] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<SettingsTab>("database");
 
   const themeIndicatorX = useSharedValue(theme === "dark" ? 0 : 1);
@@ -461,6 +493,50 @@ export default function VaultSettingsScreen() {
     },
     [colors.statusError]
   );
+
+  const handleTestConnection = useCallback(() => {
+    if (isTestingConnection) return;
+    setIsTestingConnection(true);
+
+    connect();
+
+    setTimeout(() => {
+      setIsTestingConnection(false);
+      const newStatus = useSignalingStore.getState().connectionStatus;
+      const errorMsg = useSignalingStore.getState().lastError;
+      if (newStatus === "connected") {
+        showNotificationModal(
+          "Connection Successful",
+          `Successfully connected to the signaling server at:\n${useSignalingStore.getState().serverUrl}`,
+          "wifi-outline"
+        );
+      } else {
+        showErrorModal(
+          "Connection Failed",
+          `Could not connect to the signaling server at:\n${useSignalingStore.getState().serverUrl}\n\nDetails: ${errorMsg || "Verify server URL and network connection"}\n\nCurrent Status: ${newStatus}\n\nPlease verify that the server is online.`
+        );
+      }
+    }, 2500);
+  }, [isTestingConnection, connect, showNotificationModal, showErrorModal]);
+
+  const handleStartScan = useCallback(async () => {
+    if (!cameraPermission) {
+      const status = await requestCameraPermission();
+      if (!status.granted) {
+        setFormError("Camera permission is required to scan QR codes.");
+        return;
+      }
+    } else if (!cameraPermission.granted) {
+      const status = await requestCameraPermission();
+      if (!status.granted) {
+        setFormError("Camera permission is required to scan QR codes.");
+        return;
+      }
+    }
+    setFormError(null);
+    setIsScanning(true);
+    setShowJoinModal(false);
+  }, [cameraPermission, requestCameraPermission]);
 
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
@@ -1692,6 +1768,199 @@ export default function VaultSettingsScreen() {
               </CyberCard>
             </Animated.View>
 
+            {/* Network & Peer Sync */}
+            <Animated.View entering={FadeInDown.duration(200).delay(130)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="wifi-outline"
+                    size={18}
+                    color={colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Network & Peer Sync</Text>
+                </View>
+
+                {/* Enable/Disable Sync */}
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>
+                      {syncMode === "network"
+                        ? "Sync Mode: Network Sync"
+                        : "Sync Mode: Offline Local"}
+                    </Text>
+                    <Text style={rowStyles.subtitle}>
+                      {syncMode === "network"
+                        ? "Real-time vault syncing with other devices"
+                        : "Vault remains strictly on this local device"}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      const nextMode =
+                        syncMode === "network" ? "offline" : "network";
+                      await setSyncMode(nextMode);
+                      await setIsConfigured(nextMode === "network");
+                      if (nextMode === "offline") {
+                        disconnect();
+                      }
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        syncMode === "network" ? "toggle" : "toggle-outline"
+                      }
+                      size={38}
+                      color={
+                        syncMode === "network"
+                          ? colors.accentMint
+                          : colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+
+                {syncMode === "network" && (
+                  <>
+                    <View style={styles.divider} />
+                    {/* Server URL */}
+                    <SettingsRow
+                      icon="server-outline"
+                      title="Signaling Server"
+                      subtitle="Endpoint for secure peer negotiation"
+                      value={serverUrl}
+                      onPress={() => {
+                        setNewServerUrl(serverUrl);
+                        setShowServerEditModal(true);
+                      }}
+                    />
+
+                    <View style={styles.divider} />
+                    {/* Connection Status & Test Connection */}
+                    <View style={rowStyles.row}>
+                      <Ionicons
+                        name="link-outline"
+                        size={20}
+                        color={
+                          connectionStatus === "connected"
+                            ? colors.accentMint
+                            : connectionStatus === "connecting"
+                              ? colors.statusWarning
+                              : colors.statusError
+                        }
+                      />
+                      <View style={rowStyles.textCol}>
+                        <Text style={rowStyles.title}>Connection Status</Text>
+                        <Text style={rowStyles.subtitle}>
+                          {connectionStatus === "connected" && "Connected"}
+                          {connectionStatus === "connecting" && "Connecting..."}
+                          {connectionStatus === "disconnected" &&
+                            "Disconnected / Reconnecting"}
+                          {connectionStatus === "offline" && "Offline"}
+                        </Text>
+                        {connectionStatus !== "connected" && lastError ? (
+                          <Text
+                            style={[
+                              rowStyles.subtitle,
+                              {
+                                color: colors.statusError,
+                                marginTop: 2,
+                                fontSize: 11,
+                              },
+                            ]}
+                          >
+                            {lastError}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Pressable
+                        onPress={handleTestConnection}
+                        style={[
+                          styles.testButton,
+                          isTestingConnection && { opacity: 0.6 },
+                        ]}
+                        disabled={isTestingConnection}
+                      >
+                        {isTestingConnection ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accentMint}
+                          />
+                        ) : (
+                          <Text style={styles.testButtonText}>
+                            Test Connection
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.divider} />
+                    {/* Room ID and options */}
+                    {roomId ? (
+                      <>
+                        <SettingsRow
+                          icon="qr-code-outline"
+                          title="Show Sync QR Code"
+                          subtitle="Scan this from another device to sync"
+                          value={roomId.substring(0, 8) + "..."}
+                          onPress={() => setShowQrModal(true)}
+                        />
+                        <View style={styles.divider} />
+                        <SettingsRow
+                          icon="swap-horizontal-outline"
+                          title="Change Sync Channel"
+                          subtitle="Connect to a different channel"
+                          onPress={() => {
+                            setNewRoomId(roomId);
+                            setShowJoinModal(true);
+                          }}
+                        />
+                        <View style={styles.divider} />
+                        <SettingsRow
+                          icon="exit-outline"
+                          title="Leave Sync Channel"
+                          subtitle="Disconnect from the active channel"
+                          onPress={async () => {
+                            await leaveRoom();
+                            showNotificationModal(
+                              "Channel Left",
+                              "Successfully left the sync channel."
+                            );
+                          }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <SettingsRow
+                          icon="add-circle-outline"
+                          title="Create Sync Channel"
+                          subtitle="Generate a new secure peer sync channel"
+                          onPress={async () => {
+                            const genId = await createRoom();
+                            showNotificationModal(
+                              "Channel Created",
+                              `Sync Channel generated successfully:\n\n${genId}`
+                            );
+                          }}
+                        />
+                        <View style={styles.divider} />
+                        <SettingsRow
+                          icon="enter-outline"
+                          title="Join Sync Channel"
+                          subtitle="Scan a QR code or input manual channel ID"
+                          onPress={() => {
+                            setNewRoomId("");
+                            setShowJoinModal(true);
+                          }}
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+              </CyberCard>
+            </Animated.View>
+
             {/* About */}
             <Animated.View entering={FadeInDown.duration(200).delay(150)}>
               <CyberCard style={styles.card}>
@@ -2168,6 +2437,320 @@ export default function VaultSettingsScreen() {
         </View>
       </Modal>
 
+      {/* Edit Server URL Modal */}
+      <Modal
+        visible={showServerEditModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowServerEditModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="server-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>Signaling Server URL</Text>
+            </View>
+
+            <View style={styles.modalInputContainer}>
+              <Text style={styles.inputLabel}>Server URL</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newServerUrl}
+                onChangeText={(text) => {
+                  setNewServerUrl(text);
+                  setFormError(null);
+                }}
+                placeholder="ws://... or wss://..."
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {formError && (
+                <Text style={{ color: colors.statusError, fontSize: 12 }}>
+                  {formError}
+                </Text>
+              )}
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={async () => {
+                if (!newServerUrl.trim()) {
+                  setFormError("Server URL cannot be empty");
+                  return;
+                }
+                if (
+                  !newServerUrl.startsWith("ws://") &&
+                  !newServerUrl.startsWith("wss://")
+                ) {
+                  setFormError("URL must start with ws:// or wss://");
+                  return;
+                }
+                setServerUrl(newServerUrl.trim());
+                setShowServerEditModal(false);
+                setFormError(null);
+                // Trigger reconnection
+                connect();
+              }}
+            >
+              <Text style={styles.modalButtonText}>Save URL</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.modalButtonSecondary}
+              onPress={() => {
+                setShowServerEditModal(false);
+                setFormError(null);
+              }}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* QR Code Modal */}
+      <Modal
+        visible={showQrModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowQrModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="qr-code-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>Scan to Sync</Text>
+            </View>
+
+            <Text
+              style={{
+                fontFamily: Fonts.body.regular,
+                fontSize: FontSizes.bodySmall,
+                color: colors.textSecondary,
+                textAlign: "center",
+                marginBottom: Spacing.sm,
+              }}
+            >
+              Scan this QR code from another VaultPeer device to securely join
+              this channel.
+            </Text>
+
+            <View style={styles.qrContainer}>
+              {roomId ? (
+                <Image
+                  source={{
+                    uri: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(roomId)}`,
+                  }}
+                  style={styles.qrImage}
+                  resizeMode="contain"
+                />
+              ) : null}
+            </View>
+
+            <Text style={styles.qrCodeText}>{roomId}</Text>
+
+            <View style={styles.qrButtonsRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  { flex: 1 },
+                  pressed && { opacity: 0.8 },
+                ]}
+                onPress={() => {
+                  copyToClipboard(roomId);
+                  showNotificationModal(
+                    "Copied",
+                    "Sync Channel ID copied to clipboard."
+                  );
+                }}
+              >
+                <Text style={styles.modalButtonText}>Copy ID</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalButtonSecondary,
+                  { flex: 1, marginTop: 0 },
+                  pressed && { opacity: 0.8 },
+                ]}
+                onPress={() => setShowQrModal(false)}
+              >
+                <Text style={styles.modalButtonSecondaryText}>Close</Text>
+              </Pressable>
+            </View>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* Join / Change Channel Modal */}
+      <Modal
+        visible={showJoinModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowJoinModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="enter-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>Join Sync Channel</Text>
+            </View>
+
+            <View style={styles.modalInputContainer}>
+              <Text style={styles.inputLabel}>Channel / Room ID</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newRoomId}
+                onChangeText={(text) => {
+                  setNewRoomId(text);
+                  setFormError(null);
+                }}
+                placeholder="Enter room ID or scan QR code"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {formError && (
+                <Text
+                  style={{
+                    color: colors.statusError,
+                    fontSize: 12,
+                    marginBottom: Spacing.xs,
+                  }}
+                >
+                  {formError}
+                </Text>
+              )}
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={async () => {
+                if (!newRoomId.trim()) {
+                  setFormError("Room ID cannot be empty");
+                  return;
+                }
+                await joinRoom(newRoomId.trim());
+                setShowJoinModal(false);
+                setFormError(null);
+                showNotificationModal(
+                  "Channel Joined",
+                  `Successfully joined sync channel:\n\n${newRoomId.trim()}`
+                );
+              }}
+            >
+              <Text style={styles.modalButtonText}>Join Channel</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButtonSecondary,
+                { borderStyle: "dashed", borderColor: colors.accentMint },
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={handleStartScan}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: Spacing.xs,
+                }}
+              >
+                <Ionicons
+                  name="camera-outline"
+                  size={16}
+                  color={colors.accentMint}
+                />
+                <Text
+                  style={[
+                    styles.modalButtonSecondaryText,
+                    { color: colors.accentMint },
+                  ]}
+                >
+                  Scan QR Code
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={[styles.modalButtonSecondary, { marginTop: Spacing.xs }]}
+              onPress={() => {
+                setShowJoinModal(false);
+                setFormError(null);
+              }}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* Full screen Camera QR Scanner overlay */}
+      {isScanning && (
+        <View style={styles.scannerOverlay}>
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            barcodeScannerSettings={{
+              barcodeTypes: ["qr"],
+            }}
+            onBarcodeScanned={async ({ data }) => {
+              if (data) {
+                setIsScanning(false);
+                await joinRoom(data);
+                showNotificationModal(
+                  "Channel Joined",
+                  `Successfully joined sync channel:\n\n${data}`
+                );
+              }
+            }}
+          />
+          <View
+            style={{
+              alignItems: "center",
+              position: "absolute",
+              bottom: 60,
+              left: 20,
+              right: 20,
+            }}
+          >
+            <View style={styles.scannerCutout} />
+            <Text style={styles.scannerText}>
+              Position the sync QR code inside the frame
+            </Text>
+            <Pressable
+              style={styles.cancelScanButton}
+              onPress={() => {
+                setIsScanning(false);
+                setShowJoinModal(true);
+              }}
+            >
+              <Text style={styles.cancelScanButtonText}>Cancel Scan</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Reusable Action Modal */}
       <ActionModal
         visible={modalConfig.visible}
@@ -2492,6 +3075,133 @@ function createStyles(colors: any) {
       fontSize: FontSizes.micro,
       color: colors.textMuted,
       marginTop: Spacing.xxs,
+    },
+    testButton: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.xs,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    testButtonText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+    },
+    qrContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+      marginVertical: Spacing.md,
+      padding: Spacing.md,
+      backgroundColor: "#ffffff",
+      borderRadius: Radii.md,
+    },
+    qrImage: {
+      width: 200,
+      height: 200,
+    },
+    qrCodeText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      textAlign: "center",
+      marginTop: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      padding: Spacing.sm,
+      borderRadius: Radii.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    qrButtonsRow: {
+      flexDirection: "row",
+      gap: Spacing.md,
+      marginTop: Spacing.md,
+      justifyContent: "center",
+    },
+    scannerOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.85)",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 1000,
+    },
+    scannerCutout: {
+      width: 250,
+      height: 250,
+      borderWidth: 2,
+      borderColor: colors.accentMint,
+      backgroundColor: "transparent",
+      borderRadius: Radii.lg,
+      marginBottom: Spacing.lg,
+    },
+    scannerText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: "#ffffff",
+      textAlign: "center",
+      marginBottom: Spacing.lg,
+    },
+    cancelScanButton: {
+      backgroundColor: colors.statusError,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.md,
+    },
+    cancelScanButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: "#ffffff",
+    },
+    modalInputContainer: {
+      marginBottom: Spacing.md,
+    },
+    modalInput: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      color: colors.textPrimary,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.bodySmall,
+      height: TouchTarget.min,
+      marginBottom: Spacing.sm,
+    },
+    modalButton: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: Spacing.xs,
+    },
+    modalButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    modalButtonSecondary: {
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: Spacing.sm,
+    },
+    modalButtonSecondaryText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
     },
   });
 }

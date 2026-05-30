@@ -9,6 +9,7 @@ import { initCryptoEngine } from "@/src/services/crypto";
 import { FilePickerProvider } from "@/src/context/FilePickerContext";
 import { AppSecurityWrapper } from "@/src/components/AppSecurityWrapper";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
 
 /* eslint-disable */
 // Silence expo-keep-awake unhandled promise rejections on Android dev builds
@@ -104,6 +105,9 @@ export default function RootLayout() {
 
         // Load persisted app settings (theme, timeouts)
         await useVaultStore.getState().loadAppSettings();
+
+        // Load persisted signaling settings
+        await useSignalingStore.getState().loadSettings();
       } catch (error) {
         console.warn("[RootLayout] Initialization error:", error);
       } finally {

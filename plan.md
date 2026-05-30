@@ -340,3 +340,26 @@ Enables native Android system save prompts when entering credentials manually, a
   - Automatically add a custom field `"ANDROIDAPP"` containing the calling package name (e.g. `com.instagram.android`).
   - Redirect user to this pre-populated creation screen so they can choose a folder/group and confirm saving.
 - [x] Write tests to verify save request node parsing, payload URL parameter generation, and pre-fill state mapping.
+
+### Phase 20: WebRTC Signaling Server Connection Handling
+
+Integrates signaling server connection states, persistent room creation/joining flows, background connection heartbeats, and database header connection indicators.
+
+- [x] Create a global signaling store `src/stores/useSignalingStore.ts`:
+  - Manage state properties: `serverUrl`, `roomId`, `connectionStatus` (`"offline" | "disconnected" | "connecting" | "connected"`), and `isConfigured` (whether network mode is selected).
+  - Implement dynamic WebSocket lifecycle handling: connection setup, event handlers (`onopen`, `onmessage`, `onclose`, `onerror`), and automatic retry backoff.
+  - Implement heartbeat logic: reply to `{ type: 'ping' }` with `{ type: 'pong' }` packets to keep connection alive.
+  - Implement room management actions: `joinRoom(roomId)` sends `{ type: 'join', roomId }` payload, and `createRoom()` generates a new UUID and joins.
+  - Persist connection configurations (`serverUrl`, `roomId`, `isConfigured`) to local storage on modification.
+- [x] Add an onboarding protocol selector screen in `app/index.tsx` (shown on first run or if not configured):
+  - Provide cards to choose between "Offline Mode" (default/local-only) and "Network Sync Mode" (P2P).
+  - If "Network Sync Mode" is chosen:
+    - Input fields for WebSocket server URL and port with "Connect" button.
+    - Post-connection flow: "Create Vault Channel" (generates room ID and joins) vs "Join Vault Channel".
+    - "Join Vault Channel" must support launching `expo-camera` via `CameraView` to scan room ID QR code, or manual text ID inputs.
+- [x] Update settings controls in `app/vault/settings.tsx`:
+  - Add a network/sync settings card: enable/disable sync, change server URL, test connection button, view/copy active room ID, show QR code modal.
+  - Provide options to create or join a new sync channel if the client is active.
+- [x] Add connection state indicators to the database file header in `app/vault/index.tsx`:
+  - Beside the filename, show a glowing green WiFi/Check icon (if connected), a red alert icon (if disconnected/reconnecting), or hide it entirely (if offline).
+- [x] Write unit tests (`src/stores/__tests__/useSignalingStore.test.ts`) to verify connection state machines, ping/pong reply loops, and message parsing.
