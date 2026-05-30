@@ -5,7 +5,7 @@
  * sliders/inputs and a "Benchmark for 1.0s" button.
  */
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -26,7 +25,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -35,6 +34,7 @@ import {
   TouchTarget,
 } from "@/src/constants/theme";
 import { CyberCard } from "./CyberCard";
+import { ActionModal } from "./ActionModal";
 import type {
   KdfType,
   KdfTuningParams,
@@ -71,10 +71,49 @@ export function KdfTuningModal({
   cipherName,
   initialParams,
 }: KdfTuningModalProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [params, setParams] = useState<KdfTuningParams>(initialParams);
   const [benchmarking, setBenchmarking] = useState(false);
   const [benchmarkResult, setBenchmarkResult] = useState<string | null>(null);
   const overlayOpacity = useSharedValue(0);
+
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
 
   useEffect(() => {
     if (visible) {
@@ -102,21 +141,21 @@ export function KdfTuningModal({
         `Completed in ${result.elapsedMs}ms — parameters calibrated for ~1.0s`
       );
     } catch (e: any) {
-      Alert.alert("Benchmark Failed", e?.message || "Unknown error");
+      showErrorModal("Benchmark Failed", e?.message || "Unknown error");
     } finally {
       setBenchmarking(false);
     }
-  }, [kdfType]);
+  }, [kdfType, showErrorModal]);
 
   const handleApply = useCallback(() => {
     const validation = validateKdfParams(kdfType, params);
     if (!validation.valid) {
-      Alert.alert("Invalid Parameters", validation.errors.join("\n"));
+      showErrorModal("Invalid Parameters", validation.errors.join("\n"));
       return;
     }
     onApply(params);
     onClose();
-  }, [params, kdfType, onApply, onClose]);
+  }, [params, kdfType, onApply, onClose, showErrorModal]);
 
   const updateParam = (key: keyof KdfTuningParams, value: string) => {
     const num = parseInt(value.replace(/[^0-9]/g, ""), 10);
@@ -137,7 +176,14 @@ export function KdfTuningModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Animated.View style={[styles.overlay, overlayStyle]}>
+      <View style={styles.overlay}>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: colors.overlay },
+            overlayStyle,
+          ]}
+        />
         <Pressable style={styles.overlayPress} onPress={onClose} />
         <Animated.View
           entering={FadeIn.duration(200).springify()}
@@ -155,12 +201,12 @@ export function KdfTuningModal({
                 <Ionicons
                   name="shield-checkmark"
                   size={24}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={styles.headerTitle}>Security & KDF Tuning</Text>
               <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -231,7 +277,7 @@ export function KdfTuningModal({
                     keyboardType="number-pad"
                     value={String(params.iterations ?? 2)}
                     onChangeText={(v) => updateParam("iterations", v)}
-                    placeholderTextColor={Colors.textDisabled}
+                    placeholderTextColor={colors.textDisabled}
                     maxLength={3}
                   />
                 </View>
@@ -244,7 +290,7 @@ export function KdfTuningModal({
                     keyboardType="number-pad"
                     value={String(params.parallelism ?? 2)}
                     onChangeText={(v) => updateParam("parallelism", v)}
-                    placeholderTextColor={Colors.textDisabled}
+                    placeholderTextColor={colors.textDisabled}
                     maxLength={2}
                   />
                 </View>
@@ -258,7 +304,7 @@ export function KdfTuningModal({
                   keyboardType="number-pad"
                   value={String(params.rounds ?? 60000)}
                   onChangeText={(v) => updateParam("rounds", v)}
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   maxLength={9}
                 />
               </View>
@@ -277,14 +323,14 @@ export function KdfTuningModal({
               {benchmarking ? (
                 <ActivityIndicator
                   size="small"
-                  color={Colors.backgroundPrimary}
+                  color={colors.backgroundPrimary}
                 />
               ) : (
                 <>
                   <Ionicons
                     name="speedometer-outline"
                     size={18}
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                   />
                   <Text style={styles.benchmarkBtnText}>
                     Benchmark for 1.0s
@@ -298,7 +344,7 @@ export function KdfTuningModal({
                 <Ionicons
                   name="checkmark-circle"
                   size={16}
-                  color={Colors.statusSuccess}
+                  color={colors.statusSuccess}
                 />
                 <Text style={styles.benchmarkResultText}>
                   {benchmarkResult}
@@ -311,7 +357,7 @@ export function KdfTuningModal({
               <Ionicons
                 name="information-circle-outline"
                 size={16}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
               <Text style={styles.noticeText}>
                 Higher parameters increase security but slow down unlock time.
@@ -340,247 +386,258 @@ export function KdfTuningModal({
                 <Ionicons
                   name="checkmark"
                   size={18}
-                  color={Colors.backgroundPrimary}
+                  color={colors.backgroundPrimary}
                 />
                 <Text style={styles.applyBtnText}>Apply</Text>
               </Pressable>
             </View>
           </ScrollView>
         </Animated.View>
-      </Animated.View>
+      </View>
+
+      {/* Nested validation/error modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        buttons={modalConfig.buttons}
+      />
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: Colors.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  overlayPress: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContainer: {
-    width: "90%",
-    maxWidth: 420,
-    maxHeight: "85%",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    ...Shadows.elevated,
-  },
-  scrollContent: {
-    padding: Spacing.xl,
-    gap: Spacing.md,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
-  },
-  headerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMintDim,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  infoCard: {
-    padding: Spacing.md,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.xs,
-  },
-  infoLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  infoBadge: {
-    backgroundColor: "rgba(52, 211, 153, 0.12)",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xxs,
-    borderRadius: Radii.sm,
-  },
-  infoBadgeKdf: {
-    backgroundColor: "rgba(99, 102, 241, 0.12)",
-  },
-  infoBadgeText: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textPrimary,
-  },
-  infoDivider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.xxs,
-  },
-  sectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginTop: Spacing.xs,
-  },
-  paramGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.xs,
-  },
-  paramLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    flex: 1,
-  },
-  paramValue: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.accentMint,
-  },
-  paramInput: {
-    width: 90,
-    height: 38,
-    backgroundColor: Colors.backgroundPrimary,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.sm,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.bodySmall,
-    textAlign: "center",
-    paddingHorizontal: Spacing.sm,
-  },
-  presetRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
-  presetPill: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radii.full,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  presetPillActive: {
-    borderColor: Colors.accentMint,
-    backgroundColor: Colors.accentMintDim,
-  },
-  presetPillText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  presetPillTextActive: {
-    color: Colors.accentMint,
-  },
-  benchmarkBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.sm,
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    height: TouchTarget.min,
-    marginTop: Spacing.xs,
-    ...Shadows.glow,
-  },
-  benchmarkBtnPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  benchmarkBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
-  benchmarkResult: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.xs,
-  },
-  benchmarkResultText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.statusSuccess,
-    flex: 1,
-  },
-  noticeCard: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.sm,
-    padding: Spacing.md,
-    alignItems: "flex-start",
-  },
-  noticeText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    flex: 1,
-    lineHeight: 18,
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  cancelBtn: {
-    flex: 1,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  cancelBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  applyBtn: {
-    flex: 1,
-    flexDirection: "row",
-    gap: Spacing.xs,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMint,
-  },
-  applyBtnPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  applyBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
-});
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    overlayPress: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    modalContainer: {
+      width: "90%",
+      maxWidth: 420,
+      maxHeight: "85%",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      ...Shadows.elevated,
+    },
+    scrollContent: {
+      padding: Spacing.xl,
+      gap: Spacing.md,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+    headerIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    closeBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    infoCard: {
+      padding: Spacing.md,
+    },
+    infoRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: Spacing.xs,
+    },
+    infoLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    infoBadge: {
+      backgroundColor: "rgba(52, 211, 153, 0.12)",
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: Spacing.xxs,
+      borderRadius: Radii.sm,
+    },
+    infoBadgeKdf: {
+      backgroundColor: "rgba(99, 102, 241, 0.12)",
+    },
+    infoBadgeText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textPrimary,
+    },
+    infoDivider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.xxs,
+    },
+    sectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+      textTransform: "uppercase",
+      letterSpacing: 0.8,
+      marginTop: Spacing.xs,
+    },
+    paramGroup: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.xs,
+    },
+    paramLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      flex: 1,
+    },
+    paramValue: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.accentMint,
+    },
+    paramInput: {
+      width: 90,
+      height: 38,
+      backgroundColor: colors.backgroundPrimary,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.sm,
+      color: colors.textPrimary,
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.bodySmall,
+      textAlign: "center",
+      paddingHorizontal: Spacing.sm,
+    },
+    presetRow: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      paddingVertical: Spacing.xs,
+    },
+    presetPill: {
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.xs,
+      borderRadius: Radii.full,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      backgroundColor: colors.surfaceElevated,
+    },
+    presetPillActive: {
+      borderColor: colors.accentMint,
+      backgroundColor: colors.accentMintDim,
+    },
+    presetPillText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    presetPillTextActive: {
+      color: colors.accentMint,
+    },
+    benchmarkBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.sm,
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      marginTop: Spacing.xs,
+      ...Shadows.glow,
+    },
+    benchmarkBtnPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    benchmarkBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    benchmarkResult: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.xs,
+    },
+    benchmarkResultText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.statusSuccess,
+      flex: 1,
+    },
+    noticeCard: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.sm,
+      padding: Spacing.md,
+      alignItems: "flex-start",
+    },
+    noticeText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      flex: 1,
+      lineHeight: 18,
+    },
+    actionRow: {
+      flexDirection: "row",
+      gap: Spacing.md,
+      marginTop: Spacing.sm,
+    },
+    cancelBtn: {
+      flex: 1,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    cancelBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    applyBtn: {
+      flex: 1,
+      flexDirection: "row",
+      gap: Spacing.xs,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMint,
+    },
+    applyBtnPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    applyBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+  });

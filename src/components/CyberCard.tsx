@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -6,7 +6,7 @@ import {
   ViewStyle,
   StyleProp,
 } from "react-native";
-import { Colors, Radii, Shadows } from "../constants/theme";
+import { useThemeColors, Radii, Shadows } from "../constants/theme";
 
 interface CyberCardProps {
   children: React.ReactNode;
@@ -23,6 +23,9 @@ export function CyberCard({
   accessibilityLabel,
   accessibilityRole,
 }: CyberCardProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   if (onPress) {
     return (
       <Pressable
@@ -39,18 +42,26 @@ export function CyberCard({
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: "rgba(35, 46, 42, 0.5)", // Thin glass border
-    padding: 16,
-    ...Shadows.card,
-  },
-  pressed: {
-    backgroundColor: Colors.surfaceElevated,
-    borderColor: "rgba(52, 211, 153, 0.3)", // Glow tint on press
-    transform: [{ scale: 0.99 }],
-  },
-});
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor:
+        colors.theme === "light"
+          ? "rgba(208, 219, 214, 0.6)"
+          : "rgba(35, 46, 42, 0.5)", // Thin glass border adapted to theme
+      padding: 16,
+      ...Shadows.card,
+    },
+    pressed: {
+      backgroundColor: colors.surfaceElevated,
+      borderColor:
+        colors.theme === "light"
+          ? "rgba(5, 150, 105, 0.3)"
+          : "rgba(52, 211, 153, 0.3)", // Glow tint on press
+      transform: [{ scale: 0.99 }],
+    },
+  });
+}

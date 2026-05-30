@@ -274,3 +274,69 @@ Integrates database history settings matching KeePassDX, allowing users to limit
   - Implement a "Restore" button that copies the snapshot's state back into the active entry's fields, updating the entry and marking the database as dirty.
   - Implement a "Delete" button that splices out a specific snapshot using `entry.removeHistory(index)`.
 - [x] Write unit tests to verify database configuration parsing, snapshot creation, history item deletion, and restore capabilities.
+
+### Phase 16: Multi-File Database Support & File-Specific Biometrics
+
+Enables opening and maintaining a list of multiple database files on the initial setup screen, and allows configuring and executing biometric unlock independently for each listed vault.
+
+- [x] Update `biometricService.ts` to support file-specific keys:
+  - Add an optional `fileUri` parameter to all biometric check, enable, disable, and retrieve functions.
+  - Derivate secure keys using a sanitized suffix from the URI: `vault_biometric_enabled_${sanitizedUri}` and `vault_master_password_${sanitizedUri}`.
+- [x] Extend `FilePickerContext.tsx` to manage a list of recently opened vaults:
+  - Add `RecentVault` type and a `recentVaults` array to the context state, storing bookmarks, names, URIs, and last-opened timestamps.
+  - Automatically add/update entries in the list when picking, creating, or opening a vault file.
+  - Add `selectRecentVault(uri: string)` and `removeRecentVault(uri: string)` methods.
+- [x] Redesign the file setup entry screen in `app/index.tsx` using modern cyber aesthetics:
+  - Display a scrollable list of recently opened files if any exist, showing their filenames, last-opened relative dates, and indicator icon for saved fingerprint.
+  - Tapping a card prompts for the master password (and triggers biometric unlock automatically if enabled for that file).
+  - Provide a "Delete" or "Forget" button on each card to remove the file reference and purge its biometric data from SecureStore.
+  - Include clean actions for "Open Another Database" and "Create New Database" to support adding more vault files.
+- [x] Write unit tests to verify list persistence, file-specific biometric key routing, and multi-vault unlocking flows.
+
+### Phase 17: Light Theme Support & App Security Customizations
+
+Implements dual-theme (light/dark) mode capabilities matching the cyber-sage aesthetic, and makes the auto-lock and clipboard clear timeouts fully editable from App Settings.
+
+- [x] Define the Light Theme color palette in `src/constants/theme.ts` that complements the existing dark cyber aesthetic with high contrast and light green/mint elements.
+- [x] Add `theme`, `autoLockTimeout`, and `clipboardClearTime` states and actions to `useVaultStore.ts` with local persistence.
+- [x] Refactor styles across screens and components (such as `app/index.tsx`, `app/vault/settings.tsx`, `app/vault/index.tsx`, etc.) to dynamically compute using the active theme colors.
+- [x] Update settings controls in the App Settings tab (`app/vault/settings.tsx`):
+  - Add theme selection segment or switch control (Light vs. Dark).
+  - Convert the "Auto-lock Timeout" and "Clipboard Clear Time" settings from readonly labels into editable inputs or selection picker menus.
+- [x] Update `AppSecurityWrapper.tsx` and `useClipboard.ts` to dynamically retrieve and enforce user-configured values from the store.
+- [x] Write unit tests to verify theme preference updates, editable settings synchronization, and dynamic timeout checks.
+
+### Phase 18: Android Autofill Service Integration
+
+Integrates VaultPeer as a native Android Autofill Service, allowing the user to select credentials from their vault and fill forms in external web browsers and native apps.
+
+- [x] Scaffold a local Expo module `modules/vaultpeer-autofill` to bridge native Android Autofill APIs:
+  - Implement `VaultPeerAutofillService.kt` extending Android's `AutofillService` to intercept system fill requests.
+  - Parse the requesting app package name and website domain from the Android screen node structure.
+  - Setup an authentication callback `Intent` that launches VaultPeer in a targeted mode.
+  - Implement `VaultPeerAutofillModule.kt` exposing methods to fetch the active request details and submit the selected username/password dataset.
+- [x] Create the Autofill React Native screen (`app/autofill.tsx`):
+  - Setup routing and URL scheme deep links (e.g. `vaultpeer://autofill`) to handle system invocation.
+  - Prompt the user to unlock the database (via Master Password or Biometrics) if it is locked.
+  - Automatically filter and display matching entries matching the caller's package name or domain.
+  - Provide a fallback text search/browse option to select any entry if no automatic match is found.
+  - Call the native module helper to fill fields and exit the screen on selection.
+- [x] Add Autofill configuration options to App Settings (`app/vault/settings.tsx`):
+  - Add a toggle row to check status and redirect the user to Android's Autofill system Settings screen to enable VaultPeer.
+- [x] Write integration and unit tests to verify deep link arguments parsing, entry domain matching, and native bridge APIs.
+
+### Phase 19: Autofill Save Credentials & Dataset Capture
+
+Enables native Android system save prompts when entering credentials manually, automatically capturing username, password, package names, or web domains, and pre-filling the entry creation flow upon validation.
+
+- [x] Update `VaultPeerAutofillService.kt` to trigger the save workflow:
+  - Configure `SaveInfo` during `onFillRequest` indicating interest in capturing username and password fields when user transitions or submits.
+  - Implement `onSaveRequest` callback to extract entered username, password, and package name/domain from the system's `AssistStructure`.
+  - Pass the captured credentials and app/web context back to the main app via a targeted save Intent or deep link (`vaultpeer://autofill-save`).
+- [x] Implement pre-fill entry creation flow inside React Native (`app/entry/create.tsx` or similar):
+  - Configure routing to handle incoming autofill-save query parameters (`username`, `password`, `packageName`, `domain`).
+  - If the database is currently locked, redirect to the database unlock screen first, retaining the pre-fill payload.
+  - Pre-populate standard entry fields: Username, Password, Title (derived from package/domain), and URL.
+  - Automatically add a custom field `"ANDROIDAPP"` containing the calling package name (e.g. `com.instagram.android`).
+  - Redirect user to this pre-populated creation screen so they can choose a folder/group and confirm saving.
+- [x] Write tests to verify save request node parsing, payload URL parameter generation, and pre-fill state mapping.

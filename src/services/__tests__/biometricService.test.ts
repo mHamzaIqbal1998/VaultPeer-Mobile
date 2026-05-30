@@ -139,4 +139,74 @@ describe("BiometricService", () => {
       expect(result).toBeNull();
     });
   });
+
+  describe("File-specific Keys", () => {
+    const fileUri =
+      "content://com.android.providers.downloads.documents/document/raw%3A%2Fstorage%2Femulated%2F0%2FDownload%2Ftest.kdbx";
+    const sanitizedSuffix =
+      "_content___com.android.providers.downloads.documents_document_raw_3A_2Fstorage_2Femulated_2F0_2FDownload_2Ftest.kdbx";
+
+    it("should use suffix key when checking isBiometricEnabled with fileUri", async () => {
+      (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("true");
+      const result = await isBiometricEnabled(fileUri);
+      expect(result).toBe(true);
+      expect(SecureStore.getItemAsync).toHaveBeenCalledWith(
+        `vault_biometric_enabled${sanitizedSuffix}`
+      );
+    });
+
+    it("should use suffix keys when enabling biometric with fileUri", async () => {
+      (LocalAuthentication.hasHardwareAsync as jest.Mock).mockResolvedValue(
+        true
+      );
+      (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(
+        true
+      );
+      (LocalAuthentication.authenticateAsync as jest.Mock).mockResolvedValue({
+        success: true,
+      });
+
+      const result = await enableBiometric("file-pwd", fileUri);
+      expect(result).toBe(true);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+        `vault_biometric_enabled${sanitizedSuffix}`,
+        "true"
+      );
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+        `vault_master_password${sanitizedSuffix}`,
+        "file-pwd",
+        expect.any(Object)
+      );
+    });
+
+    it("should use suffix keys when disabling biometric with fileUri", async () => {
+      await disableBiometric(fileUri);
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(
+        `vault_biometric_enabled${sanitizedSuffix}`
+      );
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(
+        `vault_master_password${sanitizedSuffix}`
+      );
+    });
+
+    it("should retrieve file-specific stored password when fileUri is provided", async () => {
+      (SecureStore.getItemAsync as jest.Mock).mockImplementation((key) => {
+        if (key === `vault_biometric_enabled${sanitizedSuffix}`)
+          return Promise.resolve("true");
+        if (key === `vault_master_password${sanitizedSuffix}`)
+          return Promise.resolve("file-specific-pwd");
+        return Promise.resolve(null);
+      });
+
+      const result = await getStoredPassword(fileUri);
+      expect(result).toBe("file-specific-pwd");
+      expect(SecureStore.getItemAsync).toHaveBeenCalledWith(
+        `vault_biometric_enabled${sanitizedSuffix}`
+      );
+      expect(SecureStore.getItemAsync).toHaveBeenCalledWith(
+        `vault_master_password${sanitizedSuffix}`,
+        expect.any(Object)
+      );
+    });
+  });
 });

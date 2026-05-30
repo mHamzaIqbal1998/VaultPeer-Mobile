@@ -1,0 +1,10 @@
+{
+  "name": "vaultpeer-autofill",
+  "version": "0.1.0",
+  "description": "Android Autofill Service Integration for VaultPeer",
+  "main": "index.ts",
+  "types": "index.ts",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  Alert,
   TextInput,
   ActivityIndicator,
   Modal,
@@ -22,7 +21,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -40,6 +39,7 @@ import {
 import type { KdfTuningParams } from "@/src/services/crypto/kdfBenchmark";
 import { CyberCard } from "@/src/components/CyberCard";
 import { KdfTuningModal } from "@/src/components/KdfTuningModal";
+import { ActionModal } from "@/src/components/ActionModal";
 import {
   isBiometricsSupported,
   isBiometricEnabled,
@@ -48,6 +48,7 @@ import {
 } from "@/src/services/biometricService";
 import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
 import * as kdbxweb from "kdbxweb";
+import * as AutofillBridge from "@/modules/vaultpeer-autofill";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -69,6 +70,22 @@ function getFilenameFromUri(uri?: string): string {
   }
 }
 
+// ────────────────────────────────────────────
+// Format Helpers
+// ────────────────────────────────────────────
+
+function formatAutoLock(ms: number) {
+  if (ms === 0) return "Never";
+  if (ms < 60000) return `${ms / 1000}s`;
+  return `${ms / 60000}m`;
+}
+
+function formatClipboard(ms: number) {
+  if (ms === 0) return "Never";
+  if (ms < 60000) return `${ms / 1000}s`;
+  return `${ms / 60000}m`;
+}
+
 type SettingsTab = "database" | "app";
 
 // ────────────────────────────────────────────
@@ -82,6 +99,8 @@ function SegmentedControl({
   activeTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
 }) {
+  const colors = useThemeColors();
+  const segStyles = useMemo(() => createSegStyles(colors), [colors]);
   const indicatorX = useSharedValue(activeTab === "database" ? 0 : 1);
 
   useEffect(() => {
@@ -108,8 +127,8 @@ function SegmentedControl({
           size={15}
           color={
             activeTab === "database"
-              ? Colors.backgroundPrimary
-              : Colors.textMuted
+              ? colors.backgroundPrimary
+              : colors.textMuted
           }
         />
         <Text
@@ -130,7 +149,7 @@ function SegmentedControl({
           name="phone-portrait-outline"
           size={15}
           color={
-            activeTab === "app" ? Colors.backgroundPrimary : Colors.textMuted
+            activeTab === "app" ? colors.backgroundPrimary : colors.textMuted
           }
         />
         <Text
@@ -146,40 +165,42 @@ function SegmentedControl({
   );
 }
 
-const segStyles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    padding: 3,
-    position: "relative",
-  },
-  indicator: {
-    position: "absolute",
-    top: 3,
-    bottom: 3,
-    width: "50%",
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.sm,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    zIndex: 1,
-  },
-  tabText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-  },
-  tabTextActive: {
-    color: Colors.backgroundPrimary,
-  },
-});
+function createSegStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: "row",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      padding: 3,
+      position: "relative",
+    },
+    indicator: {
+      position: "absolute",
+      top: 3,
+      bottom: 3,
+      width: "50%",
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.sm,
+    },
+    tab: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.sm,
+      zIndex: 1,
+    },
+    tabText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+    },
+    tabTextActive: {
+      color: colors.backgroundPrimary,
+    },
+  });
+}
 
 // ────────────────────────────────────────────
 // Settings Row Component
@@ -204,20 +225,23 @@ function SettingsRow({
   rightElement?: React.ReactNode;
   destructive?: boolean;
 }) {
+  const colors = useThemeColors();
+  const rowStyles = useMemo(() => createRowStyles(colors), [colors]);
+
   const content = (
     <View style={rowStyles.row}>
       <Ionicons
         name={icon as any}
         size={20}
         color={
-          iconColor || (destructive ? Colors.statusError : Colors.textPrimary)
+          iconColor || (destructive ? colors.statusError : colors.textPrimary)
         }
       />
       <View style={rowStyles.textCol}>
         <Text
           style={[
             rowStyles.title,
-            destructive && { color: Colors.statusError },
+            destructive && { color: colors.statusError },
           ]}
         >
           {title}
@@ -231,7 +255,7 @@ function SettingsRow({
       )}
       {rightElement}
       {onPress && !rightElement && (
-        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
       )}
     </View>
   );
@@ -249,35 +273,37 @@ function SettingsRow({
   return content;
 }
 
-const rowStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-    minHeight: TouchTarget.min,
-    gap: Spacing.md,
-  },
-  textCol: {
-    flex: 1,
-  },
-  title: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  value: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    maxWidth: 140,
-  },
-});
+function createRowStyles(colors: any) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.sm,
+      minHeight: TouchTarget.min,
+      gap: Spacing.md,
+    },
+    textCol: {
+      flex: 1,
+    },
+    title: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    subtitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    value: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+      maxWidth: 140,
+    },
+  });
+}
 
 // ────────────────────────────────────────────
 // Main Settings Screen
@@ -285,6 +311,11 @@ const rowStyles = StyleSheet.create({
 
 export default function VaultSettingsScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const modalStyles = useMemo(() => createModalStyles(colors), [colors]);
+  const prefStyles = useMemo(() => createPrefStyles(colors), [colors]);
+  const rowStyles = useMemo(() => createRowStyles(colors), [colors]);
   const {
     closeDatabase,
     _db: db,
@@ -304,10 +335,33 @@ export default function VaultSettingsScreen() {
     changeMasterPassword,
     setHistoryMaxItems,
     setHistoryMaxSize,
+    theme,
+    setTheme,
+    autoLockTimeout,
+    setAutoLockTimeout,
+    clipboardClearTime,
+    setClipboardClearTime,
+    autoSave,
+    setAutoSave,
+    isSaving,
+    setIsSaving,
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("database");
+
+  const themeIndicatorX = useSharedValue(theme === "dark" ? 0 : 1);
+
+  useEffect(() => {
+    themeIndicatorX.value = withSpring(theme === "dark" ? 0 : 1, {
+      damping: 18,
+      stiffness: 200,
+    });
+  }, [theme, themeIndicatorX]);
+
+  const themeIndicatorStyle = useAnimatedStyle(() => ({
+    left: `${themeIndicatorX.value * 50}%` as any,
+  }));
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [showBiometricPasswordInput, setShowBiometricPasswordInput] =
@@ -329,10 +383,84 @@ export default function VaultSettingsScreen() {
     null
   );
   const [changingPassword, setChangingPassword] = useState(false);
+  const [autofillEnabled, setAutofillEnabled] = useState(false);
+
+  const checkAutofillStatus = useCallback(async () => {
+    try {
+      const enabled = await AutofillBridge.isAutofillServiceEnabled();
+      setAutofillEnabled(enabled);
+    } catch {
+      setAutofillEnabled(false);
+    }
+  }, []);
+
   const [historyMaxItemsInput, setHistoryMaxItemsInput] = useState("");
   const [historyMaxSizeInput, setHistoryMaxSizeInput] = useState("");
   const [historySettingsInitialized, setHistorySettingsInitialized] =
     useState(false);
+
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    if (useVaultStore.getState().isSaving) return;
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showNotificationModal = useCallback(
+    (
+      title: string,
+      description: string,
+      icon: keyof typeof Ionicons.glyphMap = "checkmark-circle-outline"
+    ) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    []
+  );
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
 
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
@@ -354,33 +482,50 @@ export default function VaultSettingsScreen() {
     const itemsCount =
       (binGroup.entries?.length || 0) + (binGroup.groups?.length || 0);
     if (itemsCount === 0) {
-      Alert.alert(
+      showNotificationModal(
         "Recycle Bin Empty",
-        "There are no items in the Recycle Bin to delete."
+        "There are no items in the Recycle Bin to delete.",
+        "trash-outline"
       );
       return;
     }
 
-    Alert.alert(
-      "Empty Recycle Bin",
-      `Are you sure you want to permanently delete all ${itemsCount} item(s) inside the "${binGroup.name}" group? This action cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Empty Recycle Bin",
+      description: `Are you sure you want to permanently delete all ${itemsCount} item(s) inside the "${binGroup.name}" group? This action cannot be undone.`,
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Empty Bin",
-          style: "destructive",
+          variant: "destructive",
           onPress: async () => {
+            hideModal();
             const success = await emptyRecycleBin();
             if (success) {
-              Alert.alert("Success", "Recycle bin emptied successfully.");
+              showNotificationModal(
+                "Success",
+                "Recycle bin emptied successfully."
+              );
             } else {
-              Alert.alert("Error", "Failed to empty the recycle bin.");
+              showErrorModal("Error", "Failed to empty the recycle bin.");
             }
           },
         },
-      ]
-    );
-  }, [db, storeMeta, groupIndex, emptyRecycleBin]);
+      ],
+    });
+  }, [
+    db,
+    storeMeta,
+    groupIndex,
+    emptyRecycleBin,
+    colors.statusError,
+    hideModal,
+    showNotificationModal,
+    showErrorModal,
+  ]);
 
   const handleChangePassword = async () => {
     if (!currentPassword) {
@@ -437,10 +582,9 @@ export default function VaultSettingsScreen() {
       try {
         const success = await changeMasterPassword(newPassword);
         if (success) {
-          Alert.alert(
+          showNotificationModal(
             "Success",
-            "Master password updated successfully. Don't forget to save your database to persist changes.",
-            [{ text: "OK" }]
+            "Master password updated successfully. Don't forget to save your database to persist changes."
           );
           setShowChangePasswordModal(false);
           setCurrentPassword("");
@@ -459,15 +603,153 @@ export default function VaultSettingsScreen() {
 
   const [showKdfModal, setShowKdfModal] = useState(false);
 
+  const handleAutoLockPress = useCallback(() => {
+    const options = [
+      {
+        label: "15 Seconds",
+        value: 15000,
+        isSelected: autoLockTimeout === 15000,
+        onPress: () => {
+          setAutoLockTimeout(15000);
+          hideModal();
+        },
+      },
+      {
+        label: "30 Seconds",
+        value: 30000,
+        isSelected: autoLockTimeout === 30000,
+        onPress: () => {
+          setAutoLockTimeout(30000);
+          hideModal();
+        },
+      },
+      {
+        label: "1 Minute",
+        value: 60000,
+        isSelected: autoLockTimeout === 60000,
+        onPress: () => {
+          setAutoLockTimeout(60000);
+          hideModal();
+        },
+      },
+      {
+        label: "2 Minutes",
+        value: 120000,
+        isSelected: autoLockTimeout === 120000,
+        onPress: () => {
+          setAutoLockTimeout(120000);
+          hideModal();
+        },
+      },
+      {
+        label: "5 Minutes",
+        value: 300000,
+        isSelected: autoLockTimeout === 300000,
+        onPress: () => {
+          setAutoLockTimeout(300000);
+          hideModal();
+        },
+      },
+      {
+        label: "Never",
+        value: 0,
+        isSelected: autoLockTimeout === 0,
+        onPress: () => {
+          setAutoLockTimeout(0);
+          hideModal();
+        },
+      },
+    ];
+    setModalConfig({
+      visible: true,
+      title: "Auto-Lock Timeout",
+      description: "Select inactivity duration before the database is locked.",
+      icon: "time-outline",
+      options,
+    });
+  }, [autoLockTimeout, setAutoLockTimeout, hideModal]);
+
+  const handleClipboardPress = useCallback(() => {
+    const options = [
+      {
+        label: "10 Seconds",
+        value: 10000,
+        isSelected: clipboardClearTime === 10000,
+        onPress: () => {
+          setClipboardClearTime(10000);
+          hideModal();
+        },
+      },
+      {
+        label: "20 Seconds",
+        value: 20000,
+        isSelected: clipboardClearTime === 20000,
+        onPress: () => {
+          setClipboardClearTime(20000);
+          hideModal();
+        },
+      },
+      {
+        label: "30 Seconds",
+        value: 30000,
+        isSelected: clipboardClearTime === 30000,
+        onPress: () => {
+          setClipboardClearTime(30000);
+          hideModal();
+        },
+      },
+      {
+        label: "1 Minute",
+        value: 60000,
+        isSelected: clipboardClearTime === 60000,
+        onPress: () => {
+          setClipboardClearTime(60000);
+          hideModal();
+        },
+      },
+      {
+        label: "2 Minutes",
+        value: 120000,
+        isSelected: clipboardClearTime === 120000,
+        onPress: () => {
+          setClipboardClearTime(120000);
+          hideModal();
+        },
+      },
+      {
+        label: "Never",
+        value: 0,
+        isSelected: clipboardClearTime === 0,
+        onPress: () => {
+          setClipboardClearTime(0);
+          hideModal();
+        },
+      },
+    ];
+    setModalConfig({
+      visible: true,
+      title: "Clipboard Clear",
+      description: "Select delay before sensitive clipboard items are cleared.",
+      icon: "clipboard-outline",
+      options,
+    });
+  }, [clipboardClearTime, setClipboardClearTime, hideModal]);
+
   useEffect(() => {
     async function checkBiometrics() {
       const supported = await isBiometricsSupported();
-      const enabled = await isBiometricEnabled();
+      const enabled = await isBiometricEnabled(fileUri || undefined);
       setBiometricSupported(supported);
       setBiometricEnabled(enabled);
     }
     checkBiometrics();
-  }, []);
+  }, [fileUri]);
+
+  useEffect(() => {
+    checkAutofillStatus();
+    const interval = setInterval(checkAutofillStatus, 3000);
+    return () => clearInterval(interval);
+  }, [checkAutofillStatus]);
 
   // Initialize history settings inputs from storeMeta
   useEffect(() => {
@@ -484,20 +766,24 @@ export default function VaultSettingsScreen() {
 
   const handleToggleBiometric = useCallback(async () => {
     if (biometricEnabled) {
-      await disableBiometric();
+      await disableBiometric(fileUri || undefined);
       setBiometricEnabled(false);
       setShowBiometricPasswordInput(false);
       setBiometricPassword("");
-      Alert.alert("Success", "Biometric unlock disabled.");
+      showNotificationModal(
+        "Success",
+        "Biometric unlock disabled.",
+        "finger-print-outline"
+      );
     } else {
       setShowBiometricPasswordInput(true);
     }
-  }, [biometricEnabled]);
+  }, [biometricEnabled, fileUri, showNotificationModal]);
 
   const handleConfirmBiometric = useCallback(async () => {
     if (verifying) return;
     if (!biometricPassword) {
-      Alert.alert("Error", "Please enter your master password.");
+      showErrorModal("Error", "Please enter your master password.");
       return;
     }
     setVerifying(true);
@@ -505,18 +791,28 @@ export default function VaultSettingsScreen() {
       try {
         const { db: verifiedDb } = await loadVault(biometricPassword);
         if (verifiedDb) {
-          const success = await enableBiometric(biometricPassword);
+          const success = await enableBiometric(
+            biometricPassword,
+            fileUri || undefined
+          );
           if (success) {
             setBiometricEnabled(true);
             setShowBiometricPasswordInput(false);
             setBiometricPassword("");
-            Alert.alert("Success", "Biometric unlock enabled successfully.");
+            showNotificationModal(
+              "Success",
+              "Biometric unlock enabled successfully.",
+              "finger-print-outline"
+            );
           } else {
-            Alert.alert("Error", "Failed to enable biometric authentication.");
+            showErrorModal(
+              "Error",
+              "Failed to enable biometric authentication."
+            );
           }
         }
       } catch (e: any) {
-        Alert.alert(
+        showErrorModal(
           "Verification Failed",
           e?.message || "Invalid master password."
         );
@@ -524,7 +820,14 @@ export default function VaultSettingsScreen() {
         setVerifying(false);
       }
     }, 50);
-  }, [biometricPassword, loadVault, verifying]);
+  }, [
+    biometricPassword,
+    loadVault,
+    verifying,
+    fileUri,
+    showNotificationModal,
+    showErrorModal,
+  ]);
 
   const stats = useMemo(() => {
     if (!db) return null;
@@ -547,88 +850,148 @@ export default function VaultSettingsScreen() {
   }, [kdfInfo]);
 
   const handleLock = useCallback(() => {
-    closeDatabase();
-    router.replace("/");
-  }, [closeDatabase, router]);
+    const performLock = () => {
+      closeDatabase();
+      router.replace("/");
+    };
+
+    if (isSaving) {
+      // Show saving indicator modal and lock when done
+      setModalConfig({
+        visible: true,
+        title: "Saving Changes",
+        description: "Saving changes to your vault file. Please wait...",
+        icon: "cloud-upload-outline",
+        iconColor: colors.accentMint,
+        buttons: [],
+      });
+
+      const checkAndLock = () => {
+        if (useVaultStore.getState().isSaving) {
+          setTimeout(checkAndLock, 100);
+        } else {
+          setModalConfig((prev) => ({ ...prev, visible: false }));
+          performLock();
+        }
+      };
+      setTimeout(checkAndLock, 100);
+      return;
+    }
+
+    performLock();
+  }, [closeDatabase, router, isSaving, colors.accentMint]);
 
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
     setSaving(true);
+    setIsSaving(true);
     setTimeout(async () => {
       try {
         await saveVault(db);
         markClean();
-        Alert.alert("Success", "Vault saved successfully.");
+        showNotificationModal("Success", "Vault saved successfully.");
       } catch (e: any) {
-        Alert.alert(
+        showErrorModal(
           "Error Saving",
           e?.message || "Failed to write database file."
         );
       } finally {
         setSaving(false);
+        setIsSaving(false);
       }
     }, 50);
-  }, [db, saveVault, markClean, saving]);
+  }, [
+    db,
+    saveVault,
+    markClean,
+    saving,
+    showNotificationModal,
+    showErrorModal,
+    setIsSaving,
+  ]);
 
   const handleForget = useCallback(() => {
-    Alert.alert(
-      "Forget Vault",
-      "This will remove the vault pointer and clear biometrics. The .kdbx file itself will not be deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Forget Vault",
+      description:
+        "This will remove the vault pointer and clear biometrics. The .kdbx file itself will not be deleted.",
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Forget",
-          style: "destructive",
+          variant: "destructive",
           onPress: async () => {
+            hideModal();
             closeDatabase();
             await clearVault();
             router.replace("/");
           },
         },
-      ]
-    );
-  }, [clearVault, closeDatabase, router]);
+      ],
+    });
+  }, [clearVault, closeDatabase, router, colors.statusError, hideModal]);
 
   const handleApplyKdfParams = useCallback(
     (params: KdfTuningParams) => {
       if (!db) return;
       applyKdfParams(db, params);
       refreshParsedState();
-      useVaultStore.setState({ isDirty: true });
-      Alert.alert(
+      useVaultStore.getState().markDirty();
+      showNotificationModal(
         "KDF Updated",
         "New parameters applied. Save the database to persist changes."
       );
     },
-    [db, refreshParsedState]
+    [db, refreshParsedState, showNotificationModal]
   );
 
   const handleToggleCompression = useCallback(() => {
     if (!db) return;
-    Alert.alert(
-      "Database Compression",
-      "Select XML compression algorithm for database serialization.",
-      [
-        {
-          text: "GZip (Default)",
-          onPress: () => {
-            db.header.compression = 1; // 1 = GZip
-            refreshParsedState();
-            useVaultStore.setState({ isDirty: true });
-          },
+    const compressionVal = db.header.compression || 0;
+    const options = [
+      {
+        label: "GZip (Default)",
+        value: 1,
+        isSelected: compressionVal === 1,
+        onPress: () => {
+          db.header.compression = 1; // 1 = GZip
+          refreshParsedState();
+          useVaultStore.getState().markDirty();
+          hideModal();
+          showNotificationModal(
+            "Compression Updated",
+            "New parameters applied. Save the database to persist changes."
+          );
         },
-        {
-          text: "None",
-          onPress: () => {
-            db.header.compression = 0; // 0 = None
-            refreshParsedState();
-            useVaultStore.setState({ isDirty: true });
-          },
+      },
+      {
+        label: "None",
+        value: 0,
+        isSelected: compressionVal === 0,
+        onPress: () => {
+          db.header.compression = 0; // 0 = None
+          refreshParsedState();
+          useVaultStore.getState().markDirty();
+          hideModal();
+          showNotificationModal(
+            "Compression Updated",
+            "New parameters applied. Save the database to persist changes."
+          );
         },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
-  }, [db, refreshParsedState]);
+      },
+    ];
+    setModalConfig({
+      visible: true,
+      title: "Database Compression",
+      description:
+        "Select XML compression algorithm for database serialization.",
+      icon: "file-tray-full-outline",
+      options,
+    });
+  }, [db, refreshParsedState, hideModal, showNotificationModal]);
 
   const handleCleanupPress = useCallback(() => {
     if (!db) return;
@@ -638,39 +1001,50 @@ export default function VaultSettingsScreen() {
     const { historyToRemove, binariesToRemove } = summary;
 
     if (historyToRemove === 0 && binariesToRemove === 0) {
-      Alert.alert(
+      showNotificationModal(
         "Database Clean",
-        "Your database is already clean! No unreferenced attachments or redundant history entries found."
+        "Your database is already clean! No unreferenced attachments or redundant history entries found.",
+        "shield-checkmark-outline"
       );
       return;
     }
 
-    Alert.alert(
-      "Clean Up Database",
-      `This will optimize your database file size.\n\nSummary of items to remove:\n• Unused binaries/attachments: ${binariesToRemove}\n• Redundant history entries: ${historyToRemove}\n\nDo you want to proceed?`,
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Clean Up Database",
+      description: `This will optimize your database file size.\n\nSummary of items to remove:\n• Unused binaries/attachments: ${binariesToRemove}\n• Redundant history entries: ${historyToRemove}\n\nDo you want to proceed?`,
+      icon: "sparkles-outline",
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Clean Up",
-          style: "destructive",
+          variant: "primary",
           onPress: () => {
+            hideModal();
             const success = runCleanupDatabase({
               binaries: true,
               history: true,
             });
             if (success) {
-              Alert.alert(
+              showNotificationModal(
                 "Cleanup Success",
                 `Successfully cleaned up the database!\n\nRemoved:\n• ${binariesToRemove} unused binaries/attachments\n• ${historyToRemove} redundant history entries.\n\nDon't forget to save your changes.`
               );
             } else {
-              Alert.alert("Error", "Failed to perform database cleanup.");
+              showErrorModal("Error", "Failed to perform database cleanup.");
             }
           },
         },
-      ]
-    );
-  }, [db, cleanupDatabase, runCleanupDatabase]);
+      ],
+    });
+  }, [
+    db,
+    cleanupDatabase,
+    runCleanupDatabase,
+    hideModal,
+    showNotificationModal,
+    showErrorModal,
+  ]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -688,13 +1062,13 @@ export default function VaultSettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Unsaved Changes Banner */}
-        {isDirty && (
+        {(isDirty || isSaving) && (
           <CyberCard style={styles.warningCard}>
             <View style={styles.warningHeader}>
               <Ionicons
                 name="warning-outline"
                 size={20}
-                color={Colors.statusWarning}
+                color={colors.statusWarning}
               />
               <Text style={styles.warningTitle}>Unsaved Changes</Text>
             </View>
@@ -704,24 +1078,26 @@ export default function VaultSettingsScreen() {
             </Text>
             <Pressable
               onPress={handleSave}
-              disabled={saving}
+              disabled={saving || isSaving || (autoSave && isDirty)}
               style={({ pressed }) => [
                 styles.saveBtn,
                 pressed && styles.saveBtnPressed,
-                saving && { opacity: 0.6 },
+                (saving || isSaving || (autoSave && isDirty)) && {
+                  opacity: 0.6,
+                },
               ]}
             >
-              {saving ? (
+              {saving || isSaving || (autoSave && isDirty) ? (
                 <ActivityIndicator
                   size="small"
-                  color={Colors.backgroundPrimary}
+                  color={colors.backgroundPrimary}
                 />
               ) : (
                 <>
                   <Ionicons
                     name="save-outline"
                     size={16}
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                   />
                   <Text style={styles.saveBtnText}>Save Changes</Text>
                 </>
@@ -740,7 +1116,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="information-circle-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Vault Information</Text>
                 </View>
@@ -777,7 +1153,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="shield-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Security & Encryption</Text>
                 </View>
@@ -808,7 +1184,7 @@ export default function VaultSettingsScreen() {
                 <View style={styles.divider} />
                 <SettingsRow
                   icon="key-outline"
-                  iconColor={Colors.accentMint}
+                  iconColor={colors.accentMint}
                   title="Change Master Password"
                   subtitle="Modify database master passphrase"
                   onPress={() => setShowChangePasswordModal(true)}
@@ -816,7 +1192,7 @@ export default function VaultSettingsScreen() {
                 <View style={styles.divider} />
                 <SettingsRow
                   icon="speedometer-outline"
-                  iconColor={Colors.accentMint}
+                  iconColor={colors.accentMint}
                   title="Tune KDF Parameters"
                   subtitle="Benchmark & adjust security strength"
                   onPress={() => setShowKdfModal(true)}
@@ -839,7 +1215,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="hammer-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Database Maintenance</Text>
                 </View>
@@ -859,7 +1235,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="time-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Entry History</Text>
                 </View>
@@ -886,7 +1262,7 @@ export default function VaultSettingsScreen() {
                           }
                         }}
                         keyboardType="number-pad"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         placeholder="10"
                         maxLength={4}
                       />
@@ -917,7 +1293,7 @@ export default function VaultSettingsScreen() {
                           }
                         }}
                         keyboardType="decimal-pad"
-                        placeholderTextColor={Colors.textDisabled}
+                        placeholderTextColor={colors.textDisabled}
                         placeholder="6"
                         maxLength={6}
                       />
@@ -935,7 +1311,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="copy-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Entry Templates</Text>
                 </View>
@@ -963,8 +1339,8 @@ export default function VaultSettingsScreen() {
                       size={38}
                       color={
                         storeMeta?.entryTemplatesEnabled
-                          ? Colors.accentMint
-                          : Colors.textMuted
+                          ? colors.accentMint
+                          : colors.textMuted
                       }
                     />
                   </Pressable>
@@ -991,7 +1367,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="trash-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Recycle Bin</Text>
                 </View>
@@ -1020,8 +1396,8 @@ export default function VaultSettingsScreen() {
                       size={38}
                       color={
                         storeMeta?.recycleBinEnabled
-                          ? Colors.accentMint
-                          : Colors.textMuted
+                          ? colors.accentMint
+                          : colors.textMuted
                       }
                     />
                   </Pressable>
@@ -1039,7 +1415,7 @@ export default function VaultSettingsScreen() {
                     <View style={styles.divider} />
                     <SettingsRow
                       icon="trash-bin-outline"
-                      iconColor={Colors.statusError}
+                      iconColor={colors.statusError}
                       title="Empty Recycle Bin"
                       subtitle="Permanently delete all items in the bin"
                       onPress={handleEmptyRecycleBinPress}
@@ -1057,7 +1433,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="construct-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Database Actions</Text>
                 </View>
@@ -1095,7 +1471,7 @@ export default function VaultSettingsScreen() {
                     <Ionicons
                       name="finger-print-outline"
                       size={18}
-                      color={Colors.accentMint}
+                      color={colors.accentMint}
                     />
                     <Text style={styles.cardTitle}>Biometric Unlock</Text>
                   </View>
@@ -1120,8 +1496,8 @@ export default function VaultSettingsScreen() {
                         size={38}
                         color={
                           biometricEnabled
-                            ? Colors.accentMint
-                            : Colors.textMuted
+                            ? colors.accentMint
+                            : colors.textMuted
                         }
                       />
                     </Pressable>
@@ -1139,7 +1515,7 @@ export default function VaultSettingsScreen() {
                           value={biometricPassword}
                           onChangeText={setBiometricPassword}
                           placeholder="Master Password"
-                          placeholderTextColor={Colors.textDisabled}
+                          placeholderTextColor={colors.textDisabled}
                           autoCapitalize="none"
                           autoCorrect={false}
                         />
@@ -1154,7 +1530,7 @@ export default function VaultSettingsScreen() {
                           {verifying ? (
                             <ActivityIndicator
                               size="small"
-                              color={Colors.backgroundPrimary}
+                              color={colors.backgroundPrimary}
                             />
                           ) : (
                             <Text style={styles.confirmBtnText}>Verify</Text>
@@ -1174,30 +1550,145 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="settings-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>Preferences</Text>
                 </View>
+
+                {/* Theme Selector */}
+                <View style={prefStyles.themeRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Theme</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Select application color palette
+                    </Text>
+                  </View>
+                  <View style={prefStyles.segmentedContainer}>
+                    <Animated.View
+                      style={[prefStyles.indicator, themeIndicatorStyle]}
+                    />
+                    <Pressable
+                      style={prefStyles.segmentButton}
+                      onPress={() => setTheme("dark")}
+                    >
+                      <Text
+                        style={[
+                          prefStyles.segmentText,
+                          theme === "dark" && prefStyles.segmentTextActive,
+                        ]}
+                      >
+                        Dark
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={prefStyles.segmentButton}
+                      onPress={() => setTheme("light")}
+                    >
+                      <Text
+                        style={[
+                          prefStyles.segmentText,
+                          theme === "light" && prefStyles.segmentTextActive,
+                        ]}
+                      >
+                        Light
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Auto Lock */}
                 <SettingsRow
                   icon="timer-outline"
                   title="Auto-Lock"
-                  subtitle="Lock after 60 seconds of inactivity"
-                  value="60s"
+                  subtitle="Inactivity duration before locking"
+                  value={formatAutoLock(autoLockTimeout)}
+                  onPress={handleAutoLockPress}
                 />
+
                 <View style={styles.divider} />
+
+                {/* Clipboard Clear */}
                 <SettingsRow
                   icon="clipboard-outline"
                   title="Clipboard Clear"
-                  subtitle="Auto-clear copied passwords"
-                  value="30s"
+                  subtitle="Delay before clearing clipboard"
+                  value={formatClipboard(clipboardClearTime)}
+                  onPress={handleClipboardPress}
                 />
+
                 <View style={styles.divider} />
+
+                {/* Auto-Save */}
                 <SettingsRow
-                  icon="moon-outline"
-                  title="Theme"
-                  subtitle="Cyber-Sage dark mode"
-                  value="Dark"
+                  icon="save-outline"
+                  title="Auto-Save"
+                  subtitle="Automatically save changes to storage"
+                  onPress={() => setAutoSave(!autoSave)}
+                  rightElement={
+                    <View pointerEvents="none" style={styles.switchButton}>
+                      <Ionicons
+                        name={autoSave ? "toggle" : "toggle-outline"}
+                        size={38}
+                        color={autoSave ? colors.accentMint : colors.textMuted}
+                      />
+                    </View>
+                  }
                 />
+              </CyberCard>
+            </Animated.View>
+
+            {/* Android Autofill Service */}
+            <Animated.View entering={FadeInDown.duration(200).delay(120)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="color-wand-outline"
+                    size={18}
+                    color={colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Android Autofill</Text>
+                </View>
+
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>
+                      {autofillEnabled ? "Service Active" : "Service Inactive"}
+                    </Text>
+                    <Text style={rowStyles.subtitle}>
+                      {autofillEnabled
+                        ? "VaultPeer is registered as your system autofill provider"
+                        : "Enable VaultPeer to automatically fill passwords in other apps"}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        await AutofillBridge.openAutofillSettings();
+                      } catch {
+                        showErrorModal(
+                          "Error",
+                          "Could not open Autofill settings."
+                        );
+                      }
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        autofillEnabled
+                          ? "checkmark-circle"
+                          : "arrow-forward-circle-outline"
+                      }
+                      size={28}
+                      color={
+                        autofillEnabled ? colors.accentMint : colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
               </CyberCard>
             </Animated.View>
 
@@ -1208,7 +1699,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="heart-outline"
                     size={18}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <Text style={styles.cardTitle}>About</Text>
                 </View>
@@ -1260,7 +1751,15 @@ export default function VaultSettingsScreen() {
           }
         }}
       >
-        <Animated.View style={modalStyles.overlay}>
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={modalStyles.overlayPress}
             onPress={() => {
@@ -1283,7 +1782,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="key-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={modalStyles.headerTitle}>
@@ -1303,7 +1802,7 @@ export default function VaultSettingsScreen() {
                 hitSlop={12}
                 style={modalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -1316,7 +1815,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name="alert-circle"
                     size={16}
-                    color={Colors.statusError}
+                    color={colors.statusError}
                   />
                   <Text style={styles.errorText}>{changePasswordError}</Text>
                 </View>
@@ -1328,7 +1827,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="lock-closed"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -1337,7 +1836,7 @@ export default function VaultSettingsScreen() {
                   value={currentPassword}
                   onChangeText={setCurrentPassword}
                   placeholder="Enter current password"
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   editable={!changingPassword}
                 />
                 <Pressable
@@ -1348,7 +1847,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name={showCurrentPassword ? "eye-off" : "eye"}
                     size={20}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
@@ -1359,7 +1858,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="key"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -1368,7 +1867,7 @@ export default function VaultSettingsScreen() {
                   value={newPassword}
                   onChangeText={setNewPassword}
                   placeholder="Enter new password"
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   editable={!changingPassword}
                 />
                 <Pressable
@@ -1379,7 +1878,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name={showNewPassword ? "eye-off" : "eye"}
                     size={20}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
@@ -1413,7 +1912,7 @@ export default function VaultSettingsScreen() {
                             styles.strengthBar,
                             active
                               ? { backgroundColor: strength.color }
-                              : { backgroundColor: Colors.surfaceElevated },
+                              : { backgroundColor: colors.surfaceElevated },
                           ]}
                         />
                       );
@@ -1428,7 +1927,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="checkmark-circle"
                   size={18}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -1437,7 +1936,7 @@ export default function VaultSettingsScreen() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Confirm new password"
-                  placeholderTextColor={Colors.textDisabled}
+                  placeholderTextColor={colors.textDisabled}
                   editable={!changingPassword}
                 />
                 <Pressable
@@ -1448,7 +1947,7 @@ export default function VaultSettingsScreen() {
                   <Ionicons
                     name={showConfirmPassword ? "eye-off" : "eye"}
                     size={20}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
@@ -1465,7 +1964,7 @@ export default function VaultSettingsScreen() {
                 {changingPassword ? (
                   <ActivityIndicator
                     size="small"
-                    color={Colors.backgroundPrimary}
+                    color={colors.backgroundPrimary}
                   />
                 ) : (
                   <Text style={styles.submitButtonText}>
@@ -1475,7 +1974,7 @@ export default function VaultSettingsScreen() {
               </Pressable>
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* Group Selector Modal */}
@@ -1486,7 +1985,15 @@ export default function VaultSettingsScreen() {
         statusBarTranslucent
         onRequestClose={() => setShowGroupModal(false)}
       >
-        <Animated.View style={modalStyles.overlay}>
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={modalStyles.overlayPress}
             onPress={() => setShowGroupModal(false)}
@@ -1501,7 +2008,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="folder-open-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={modalStyles.headerTitle}>Select Template Group</Text>
@@ -1510,7 +2017,7 @@ export default function VaultSettingsScreen() {
                 hitSlop={12}
                 style={modalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -1539,7 +2046,7 @@ export default function VaultSettingsScreen() {
                         name="folder"
                         size={20}
                         color={
-                          isSelected ? Colors.accentMint : Colors.textMuted
+                          isSelected ? colors.accentMint : colors.textMuted
                         }
                       />
                       <Text
@@ -1554,7 +2061,7 @@ export default function VaultSettingsScreen() {
                         <Ionicons
                           name="checkmark"
                           size={18}
-                          color={Colors.accentMint}
+                          color={colors.accentMint}
                         />
                       )}
                     </Pressable>
@@ -1562,7 +2069,7 @@ export default function VaultSettingsScreen() {
                 })}
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* Recycle Bin Group Selector Modal */}
@@ -1573,7 +2080,15 @@ export default function VaultSettingsScreen() {
         statusBarTranslucent
         onRequestClose={() => setShowRecycleBinGroupModal(false)}
       >
-        <Animated.View style={modalStyles.overlay}>
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={modalStyles.overlayPress}
             onPress={() => setShowRecycleBinGroupModal(false)}
@@ -1588,7 +2103,7 @@ export default function VaultSettingsScreen() {
                 <Ionicons
                   name="trash-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={modalStyles.headerTitle}>
@@ -1599,7 +2114,7 @@ export default function VaultSettingsScreen() {
                 hitSlop={12}
                 style={modalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -1627,7 +2142,7 @@ export default function VaultSettingsScreen() {
                         name="folder"
                         size={20}
                         color={
-                          isSelected ? Colors.accentMint : Colors.textMuted
+                          isSelected ? colors.accentMint : colors.textMuted
                         }
                       />
                       <Text
@@ -1642,7 +2157,7 @@ export default function VaultSettingsScreen() {
                         <Ionicons
                           name="checkmark"
                           size={18}
-                          color={Colors.accentMint}
+                          color={colors.accentMint}
                         />
                       )}
                     </Pressable>
@@ -1650,8 +2165,20 @@ export default function VaultSettingsScreen() {
                 })}
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }
@@ -1660,383 +2187,429 @@ export default function VaultSettingsScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
-  header: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  segmentWrapper: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.xs,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    gap: Spacing.md,
-  },
-  card: {
-    padding: Spacing.lg,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  cardTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.xs,
-  },
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
+    header: {
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+      alignItems: "center",
+    },
+    headerTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    segmentWrapper: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.md,
+      paddingBottom: Spacing.xs,
+    },
+    scrollContent: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.md,
+      gap: Spacing.md,
+    },
+    card: {
+      padding: Spacing.lg,
+    },
+    cardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    cardTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.xs,
+    },
 
-  // Unsaved Warning Card
-  warningCard: {
-    borderColor: Colors.statusWarning,
-    backgroundColor: Colors.statusWarningDim,
-    padding: Spacing.lg,
-  },
-  warningHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
-  },
-  warningTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.statusWarning,
-  },
-  warningText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: Spacing.md,
-  },
-  saveBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    height: TouchTarget.min,
-    ...Shadows.glow,
-  },
-  saveBtnPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  saveBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
+    // Unsaved Warning Card
+    warningCard: {
+      borderColor: colors.statusWarning,
+      backgroundColor: colors.statusWarningDim,
+      padding: Spacing.lg,
+    },
+    warningHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+    warningTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.statusWarning,
+    },
+    warningText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+      lineHeight: 20,
+      marginBottom: Spacing.md,
+    },
+    saveBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      ...Shadows.glow,
+    },
+    saveBtnPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    saveBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
 
-  // Biometric
-  biometricRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.xs,
-  },
-  switchButton: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: Spacing.xs,
-    minHeight: TouchTarget.min,
-    minWidth: TouchTarget.min,
-  },
-  confirmPasswordContainer: {
-    marginTop: Spacing.sm,
-    padding: Spacing.md,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  confirmLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  confirmInputRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    alignItems: "center",
-  },
-  confirmInput: {
-    flex: 1,
-    height: 40,
-    backgroundColor: Colors.backgroundPrimary,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.sm,
-    color: Colors.textPrimary,
-    paddingHorizontal: Spacing.sm,
-    fontFamily: Fonts.mono.regular,
-  },
-  confirmBtn: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.sm,
-    paddingHorizontal: Spacing.md,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  confirmBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.backgroundPrimary,
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    backgroundColor: Colors.statusErrorDim,
-    borderColor: Colors.statusError,
-    borderWidth: 1,
-    borderRadius: Radii.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  errorText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.statusError,
-    flex: 1,
-  },
-  inputLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.lg,
-    minHeight: TouchTarget.min,
-  },
-  inputIcon: {
-    marginRight: Spacing.sm,
-  },
-  input: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    paddingVertical: Spacing.sm,
-  },
-  eyeButton: {
-    padding: Spacing.xs,
-    justifyContent: "center",
-    alignItems: "center",
-    minWidth: TouchTarget.min,
-  },
-  submitButton: {
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.md,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: Spacing.md,
-    ...Shadows.glow,
-  },
-  submitButtonPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.98 }],
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.backgroundPrimary,
-  },
-  strengthContainer: {
-    marginTop: -Spacing.xs,
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.surfaceCard,
-    padding: Spacing.md,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-  },
-  strengthHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  strengthLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  strengthValue: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-  },
-  strengthBarContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    height: 6,
-  },
-  strengthBar: {
-    flex: 1,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.surfaceElevated,
-  },
+    // Biometric
+    biometricRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.xs,
+    },
+    switchButton: {
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: Spacing.xs,
+      minHeight: TouchTarget.min,
+      minWidth: TouchTarget.min,
+    },
+    confirmPasswordContainer: {
+      marginTop: Spacing.sm,
+      padding: Spacing.md,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    confirmLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textPrimary,
+      marginBottom: Spacing.xs,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    confirmInputRow: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      alignItems: "center",
+    },
+    confirmInput: {
+      flex: 1,
+      height: 40,
+      backgroundColor: colors.backgroundPrimary,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.sm,
+      color: colors.textPrimary,
+      paddingHorizontal: Spacing.sm,
+      fontFamily: Fonts.mono.regular,
+    },
+    confirmBtn: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.md,
+      height: 40,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    confirmBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    errorContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+      backgroundColor: colors.statusErrorDim,
+      borderColor: colors.statusError,
+      borderWidth: 1,
+      borderRadius: Radii.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+    },
+    errorText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+      flex: 1,
+    },
+    inputLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      marginBottom: Spacing.xs,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    inputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      marginBottom: Spacing.lg,
+      minHeight: TouchTarget.min,
+    },
+    inputIcon: {
+      marginRight: Spacing.sm,
+    },
+    input: {
+      flex: 1,
+      color: colors.textPrimary,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      paddingVertical: Spacing.sm,
+    },
+    eyeButton: {
+      padding: Spacing.xs,
+      justifyContent: "center",
+      alignItems: "center",
+      minWidth: TouchTarget.min,
+    },
+    submitButton: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: Spacing.md,
+      ...Shadows.glow,
+    },
+    submitButtonPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.98 }],
+    },
+    submitButtonDisabled: {
+      opacity: 0.5,
+    },
+    submitButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.backgroundPrimary,
+    },
+    strengthContainer: {
+      marginTop: -Spacing.xs,
+      marginBottom: Spacing.lg,
+      backgroundColor: colors.surfaceCard,
+      padding: Spacing.md,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    strengthHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.sm,
+    },
+    strengthLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    strengthValue: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+    },
+    strengthBarContainer: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      height: 6,
+    },
+    strengthBar: {
+      flex: 1,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.surfaceElevated,
+    },
 
-  // History Settings
-  historyDesc: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    lineHeight: 18,
-    marginBottom: Spacing.md,
-  },
-  historyInputRow: {
-    flexDirection: "row",
-    gap: Spacing.lg,
-  },
-  historyInputGroup: {
-    flex: 1,
-    alignItems: "center",
-  },
-  historyInputLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  historyInputContainer: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    width: "100%",
-    overflow: "hidden",
-  },
-  historyInput: {
-    color: Colors.textPrimary,
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.body,
-    textAlign: "center",
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    minHeight: TouchTarget.min,
-  },
-  historyInputHint: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.textMuted,
-    marginTop: Spacing.xxs,
-  },
-});
+    // History Settings
+    historyDesc: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      lineHeight: 18,
+      marginBottom: Spacing.md,
+    },
+    historyInputRow: {
+      flexDirection: "row",
+      gap: Spacing.lg,
+    },
+    historyInputGroup: {
+      flex: 1,
+      alignItems: "center",
+    },
+    historyInputLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      marginBottom: Spacing.xs,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    historyInputContainer: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      width: "100%",
+      overflow: "hidden",
+    },
+    historyInput: {
+      color: colors.textPrimary,
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.body,
+      textAlign: "center",
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      minHeight: TouchTarget.min,
+    },
+    historyInputHint: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.textMuted,
+      marginTop: Spacing.xxs,
+    },
+  });
+}
 
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: Colors.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  overlayPress: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContainer: {
-    width: "90%",
-    maxWidth: 400,
-    maxHeight: "70%",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    ...Shadows.elevated,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  headerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMintDim,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  scrollList: {
-    maxHeight: 350,
-  },
-  groupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radii.md,
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
-  },
-  groupRowSelected: {
-    backgroundColor: Colors.accentMintDim,
-  },
-  groupName: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-  },
-  groupNameSelected: {
-    fontFamily: Fonts.heading.medium,
-    color: Colors.accentMint,
-  },
-});
+function createModalStyles(colors: any) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    overlayPress: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    modalContainer: {
+      width: "90%",
+      maxWidth: 400,
+      maxHeight: "70%",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      ...Shadows.elevated,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    headerIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    closeBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    scrollList: {
+      maxHeight: 350,
+    },
+    groupRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.md,
+      borderRadius: Radii.md,
+      gap: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+    groupRowSelected: {
+      backgroundColor: colors.accentMintDim,
+    },
+    groupName: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+    },
+    groupNameSelected: {
+      fontFamily: Fonts.heading.medium,
+      color: colors.accentMint,
+    },
+  });
+}
+
+function createPrefStyles(colors: any) {
+  return StyleSheet.create({
+    themeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.xs,
+    },
+    segmentedContainer: {
+      flexDirection: "row",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.md,
+      padding: 3,
+      width: 140,
+      position: "relative",
+    },
+    indicator: {
+      position: "absolute",
+      top: 3,
+      bottom: 3,
+      width: "50%",
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.sm,
+    },
+    segmentButton: {
+      flex: 1,
+      paddingVertical: 6,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+      zIndex: 1,
+    },
+    segmentText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    segmentTextActive: {
+      color: colors.backgroundPrimary,
+    },
+  });
+}

@@ -1,18 +1,73 @@
 import { Tabs, useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors, Fonts } from "@/src/constants/theme";
+import { useThemeColors, Fonts } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useFilePicker } from "@/src/context/FilePickerContext";
 
 export default function VaultLayout() {
-  const { _db: db } = useVaultStore();
+  const {
+    _db: db,
+    isDirty,
+    autoSave,
+    markClean,
+    setIsSaving,
+    vaultRevision,
+  } = useVaultStore();
   const router = useRouter();
+  const colors = useThemeColors();
+  const { saveVault } = useFilePicker();
+
+  const lastSavedRevision = useRef<number>(0);
 
   useEffect(() => {
     if (!db) {
       router.replace("/");
     }
   }, [db, router]);
+
+  // Synchronize lastSavedRevision when vault becomes clean or changes
+  useEffect(() => {
+    if (!isDirty || !db) {
+      lastSavedRevision.current = vaultRevision;
+    }
+  }, [isDirty, db, vaultRevision]);
+
+  useEffect(() => {
+    if (
+      autoSave &&
+      isDirty &&
+      db &&
+      vaultRevision > lastSavedRevision.current
+    ) {
+      const currentRevision = vaultRevision;
+
+      const timer = setTimeout(async () => {
+        // Double check that we are still dirty and the db hasn't been closed
+        const currentStore = useVaultStore.getState();
+        if (!currentStore._db || !currentStore.isDirty) return;
+
+        try {
+          setIsSaving(true);
+          await saveVault(currentStore._db);
+
+          lastSavedRevision.current = currentRevision;
+
+          // If no new mutations happened during the save, mark it clean
+          if (useVaultStore.getState().vaultRevision === currentRevision) {
+            markClean();
+          }
+          console.log("[AutoSave] Vault automatically saved successfully.");
+        } catch (e) {
+          console.error("[AutoSave] Failed to auto-save vault:", e);
+        } finally {
+          setIsSaving(false);
+        }
+      }, 2000); // 2 seconds debounce
+
+      return () => clearTimeout(timer);
+    }
+  }, [isDirty, vaultRevision, autoSave, db, saveVault, markClean, setIsSaving]);
 
   if (!db) {
     return null;
@@ -22,8 +77,11 @@ export default function VaultLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.surfaceCard,
-          borderTopColor: "rgba(35, 46, 42, 0.5)", // thin glass border
+          backgroundColor: colors.surfaceCard,
+          borderTopColor:
+            colors.theme === "light"
+              ? "rgba(208, 219, 214, 0.6)"
+              : "rgba(35, 46, 42, 0.5)", // thin glass border
           borderTopWidth: 1,
           height: 64,
           paddingBottom: 10,
@@ -34,8 +92,8 @@ export default function VaultLayout() {
           shadowOpacity: 0.15,
           shadowRadius: 6,
         },
-        tabBarActiveTintColor: Colors.accentMint,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: colors.accentMint,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
           fontFamily: Fonts.body.regular,
           fontSize: 11,

@@ -8,15 +8,14 @@ interface AppSecurityWrapperProps {
 
 // Security constants
 const GRACE_PERIOD_MS = 30000; // 30 seconds grace period for background/inactive states
-const INACTIVITY_TIMEOUT_MS = 60000; // 60 seconds of user touch inactivity
 
 /**
  * Global wrapper to enforce application security:
  * 1. Purges the database from memory if the app goes to the background.
- * 2. Auto-locks/purges the database after 60 seconds of user touch inactivity.
+ * 2. Auto-locks/purges the database after user touch inactivity.
  */
 export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
-  const { closeDatabase, _db: db } = useVaultStore();
+  const { closeDatabase, _db: db, autoLockTimeout } = useVaultStore();
   const inactivityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -36,13 +35,13 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
     if (inactivityTimeoutRef.current) {
       clearTimeout(inactivityTimeoutRef.current);
     }
-    if (db) {
-      // Auto-lock after 60 seconds of inactivity
+    if (db && autoLockTimeout > 0) {
+      // Auto-lock after configured time of inactivity
       inactivityTimeoutRef.current = setTimeout(() => {
         lockDatabase();
-      }, INACTIVITY_TIMEOUT_MS);
+      }, autoLockTimeout);
     }
-  }, [db, lockDatabase]);
+  }, [db, lockDatabase, autoLockTimeout]);
 
   // AppState background/inactive listener
   useEffect(() => {
@@ -67,7 +66,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
           const elapsed = Date.now() - backgroundTimeRef.current;
           backgroundTimeRef.current = null;
 
-          if (elapsed > GRACE_PERIOD_MS) {
+          if (autoLockTimeout > 0 && elapsed > GRACE_PERIOD_MS) {
             console.log(
               `[AppSecurityWrapper] Grace period expired (${Math.round(
                 elapsed / 1000
@@ -98,7 +97,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
     return () => {
       subscription.remove();
     };
-  }, [lockDatabase, resetInactivityTimer]);
+  }, [lockDatabase, resetInactivityTimer, autoLockTimeout]);
 
   // Set/reset timer when database state changes
   useEffect(() => {

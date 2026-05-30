@@ -4,10 +4,11 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import * as Font from "expo-font";
 import { View, StyleSheet } from "react-native";
-import { Colors } from "@/src/constants/theme";
+import { useThemeColors } from "@/src/constants/theme";
 import { initCryptoEngine } from "@/src/services/crypto";
 import { FilePickerProvider } from "@/src/context/FilePickerContext";
 import { AppSecurityWrapper } from "@/src/components/AppSecurityWrapper";
+import { useVaultStore } from "@/src/stores/useVaultStore";
 
 /* eslint-disable */
 // Silence expo-keep-awake unhandled promise rejections on Android dev builds
@@ -84,6 +85,7 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
+  const colors = useThemeColors();
 
   useEffect(() => {
     async function prepare() {
@@ -99,6 +101,9 @@ export default function RootLayout() {
 
         // Initialize the cryptographic engine (registers native Argon2)
         initCryptoEngine();
+
+        // Load persisted app settings (theme, timeouts)
+        await useVaultStore.getState().loadAppSettings();
       } catch (error) {
         console.warn("[RootLayout] Initialization error:", error);
       } finally {
@@ -118,18 +123,27 @@ export default function RootLayout() {
   if (!appReady) {
     // Return an empty view matching the splash screen background
     // to avoid a white flash during loading
-    return <View style={styles.loading} />;
+    return (
+      <View
+        style={[styles.loading, { backgroundColor: colors.backgroundPrimary }]}
+      />
+    );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" backgroundColor={Colors.backgroundPrimary} />
+    <View
+      style={[styles.container, { backgroundColor: colors.backgroundPrimary }]}
+    >
+      <StatusBar
+        style={colors.theme === "dark" ? "light" : "dark"}
+        backgroundColor={colors.backgroundPrimary}
+      />
       <FilePickerProvider>
         <AppSecurityWrapper>
           <Stack
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: Colors.backgroundPrimary },
+              contentStyle: { backgroundColor: colors.backgroundPrimary },
               animation: "fade",
             }}
           />
@@ -142,10 +156,8 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
   },
   loading: {
     flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
   },
 });

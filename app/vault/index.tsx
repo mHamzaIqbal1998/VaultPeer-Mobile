@@ -17,7 +17,6 @@ import {
   Pressable,
   TextInput,
   FlatList,
-  Alert,
   ActivityIndicator,
   Modal,
   ScrollView,
@@ -27,7 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-  Colors,
+  useThemeColors,
   Fonts,
   FontSizes,
   Spacing,
@@ -40,6 +39,7 @@ import { useFilePicker } from "@/src/context/FilePickerContext";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
+import { ActionModal } from "@/src/components/ActionModal";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -54,6 +54,8 @@ function GroupRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const entryCount = group.entries.length;
   const subgroupCount = group.groups.length;
 
@@ -69,7 +71,7 @@ function GroupRow({
         <Ionicons
           name={GROUP_DEFAULT_ICON}
           size={22}
-          color={Colors.accentMint}
+          color={colors.accentMint}
         />
       </View>
       <View style={styles.rowContent}>
@@ -85,7 +87,7 @@ function GroupRow({
           {subgroupCount === 0 && entryCount === 0 && "Empty"}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={Colors.textDisabled} />
+      <Ionicons name="chevron-forward" size={18} color={colors.textDisabled} />
     </Pressable>
   );
 }
@@ -97,6 +99,8 @@ function EntryRow({
   entry: VaultEntry;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const iconName = getKdbxIconName(entry.iconId);
 
   return (
@@ -107,7 +111,7 @@ function EntryRow({
       accessibilityLabel={`View entry ${entry.title}`}
     >
       <View style={styles.rowIconContainer}>
-        <Ionicons name={iconName} size={20} color={Colors.textMuted} />
+        <Ionicons name={iconName} size={20} color={colors.textMuted} />
       </View>
       <View style={styles.rowContent}>
         <Text style={styles.entryTitle} numberOfLines={1}>
@@ -117,12 +121,12 @@ function EntryRow({
           {entry.username || "No username"}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={16} color={Colors.textDisabled} />
+      <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
     </Pressable>
   );
 }
 
-const getTemplateCardStyle = (title: string) => {
+const getTemplateCardStyle = (title: string, colors: any) => {
   switch (title.toLowerCase()) {
     case "credit card":
       return {
@@ -170,7 +174,7 @@ const getTemplateCardStyle = (title: string) => {
       return {
         icon: "shield-outline" as const,
         bgDim: "rgba(52, 211, 153, 0.12)",
-        color: Colors.accentMint,
+        color: colors.accentMint,
       };
   }
 };
@@ -181,6 +185,12 @@ const getTemplateCardStyle = (title: string) => {
 
 export default function VaultBrowserScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const templateModalStyles = useMemo(
+    () => createTemplateModalStyles(colors),
+    [colors]
+  );
   const { saveVault } = useFilePicker();
 
   const rootGroup = useVaultStore((state) => state.rootGroup);
@@ -192,6 +202,10 @@ export default function VaultBrowserScreen() {
   const isDirty = useVaultStore((state) => state.isDirty);
   const db = useVaultStore((state) => state._db);
   const markClean = useVaultStore((state) => state.markClean);
+  const closeDatabase = useVaultStore((state) => state.closeDatabase);
+  const autoSave = useVaultStore((state) => state.autoSave);
+  const isSaving = useVaultStore((state) => state.isSaving);
+  const setIsSaving = useVaultStore((state) => state.setIsSaving);
 
   const navigateToGroup = useVaultStore((state) => state.navigateToGroup);
   const navigateBack = useVaultStore((state) => state.navigateBack);
@@ -217,6 +231,69 @@ export default function VaultBrowserScreen() {
   const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
   const [renameGroupName, setRenameGroupName] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    if (useVaultStore.getState().isSaving) return;
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showNotificationModal = useCallback(
+    (
+      title: string,
+      description: string,
+      icon: keyof typeof Ionicons.glyphMap = "checkmark-circle-outline"
+    ) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    []
+  );
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
 
@@ -315,41 +392,60 @@ export default function VaultBrowserScreen() {
       const inBin = isGroupInRecycleBin(group.uuid);
       const deleteText = inBin ? "Delete Permanently" : "Delete Group";
 
-      Alert.alert(`Group: ${group.name}`, "Choose an action", [
+      const options = [
         {
-          text: "Rename",
+          label: "Rename",
           onPress: () => {
+            hideModal();
             setRenameGroupId(group.uuid);
             setRenameGroupName(group.name);
             setShowRenameInput(true);
           },
         },
         {
-          text: deleteText,
+          label: deleteText,
           style: "destructive",
           onPress: () => {
-            Alert.alert(
-              inBin ? "Permanently Delete" : "Delete Group",
-              inBin
+            setModalConfig({
+              visible: true,
+              title: inBin ? "Permanently Delete" : "Delete Group",
+              description: inBin
                 ? `Are you sure you want to permanently delete "${group.name}"? This action cannot be undone.`
                 : `Are you sure you want to delete "${group.name}"? This will move it to the recycle bin.`,
-              [
-                { text: "Cancel", style: "cancel" },
+              icon: "trash-outline",
+              iconColor: colors.statusError,
+              buttons: [
+                { text: "Cancel", onPress: hideModal, variant: "secondary" },
                 {
                   text: inBin ? "Delete Permanently" : "Delete",
-                  style: "destructive",
+                  variant: "destructive",
                   onPress: () => {
+                    hideModal();
                     deleteGroup(group.uuid);
                   },
                 },
-              ]
-            );
+              ],
+            });
           },
         },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      ];
+
+      setModalConfig({
+        visible: true,
+        title: `Group: ${group.name}`,
+        description: "Choose an action",
+        icon: "folder-open-outline",
+        options,
+      });
     },
-    [rootGroup, db, deleteGroup, isGroupInRecycleBin]
+    [
+      rootGroup,
+      db,
+      deleteGroup,
+      isGroupInRecycleBin,
+      colors.statusError,
+      hideModal,
+    ]
   );
 
   const handleCurrentGroupOptions = useCallback(() => {
@@ -357,59 +453,184 @@ export default function VaultBrowserScreen() {
     const inBin = isGroupInRecycleBin(activeGroup.uuid);
     const deleteText = inBin ? "Delete Permanently" : "Delete Group";
 
-    Alert.alert(`Group: ${activeGroup.name}`, "Choose an action", [
+    const options = [
       {
-        text: "Rename",
+        label: "Rename",
         onPress: () => {
+          hideModal();
           setRenameGroupId(activeGroup.uuid);
           setRenameGroupName(activeGroup.name);
           setShowRenameInput(true);
         },
       },
       {
-        text: deleteText,
+        label: deleteText,
         style: "destructive",
         onPress: () => {
-          Alert.alert(
-            inBin ? "Permanently Delete" : "Delete Group",
-            inBin
+          setModalConfig({
+            visible: true,
+            title: inBin ? "Permanently Delete" : "Delete Group",
+            description: inBin
               ? `Are you sure you want to permanently delete "${activeGroup.name}"? This action cannot be undone.`
               : `Are you sure you want to delete "${activeGroup.name}"? This will move it to the recycle bin.`,
-            [
-              { text: "Cancel", style: "cancel" },
+            icon: "trash-outline",
+            iconColor: colors.statusError,
+            buttons: [
+              { text: "Cancel", onPress: hideModal, variant: "secondary" },
               {
                 text: inBin ? "Delete Permanently" : "Delete",
-                style: "destructive",
+                variant: "destructive",
                 onPress: () => {
+                  hideModal();
                   deleteGroup(activeGroup.uuid);
                 },
               },
-            ]
-          );
+            ],
+          });
         },
       },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [activeGroup, deleteGroup, isGroupInRecycleBin]);
+    ];
+
+    setModalConfig({
+      visible: true,
+      title: `Group: ${activeGroup.name}`,
+      description: "Choose an action",
+      icon: "folder-open-outline",
+      options,
+    });
+  }, [
+    activeGroup,
+    deleteGroup,
+    isGroupInRecycleBin,
+    colors.statusError,
+    hideModal,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
     setSaving(true);
+    setIsSaving(true);
     setTimeout(async () => {
       try {
         await saveVault(db);
         markClean();
-        Alert.alert("Success", "Vault saved successfully.");
+        showNotificationModal("Success", "Vault saved successfully.");
       } catch (e: any) {
-        Alert.alert(
+        showErrorModal(
           "Error Saving",
           e?.message || "Failed to write database file."
         );
       } finally {
         setSaving(false);
+        setIsSaving(false);
       }
     }, 50);
-  }, [db, saveVault, markClean, saving]);
+  }, [
+    db,
+    saveVault,
+    markClean,
+    saving,
+    showNotificationModal,
+    showErrorModal,
+    setIsSaving,
+  ]);
+
+  const handleLock = useCallback(() => {
+    const performLock = () => {
+      closeDatabase();
+      router.replace("/");
+    };
+
+    if (isSaving) {
+      // Show saving indicator modal and lock when done
+      setModalConfig({
+        visible: true,
+        title: "Saving Changes",
+        description: "Saving changes to your vault file. Please wait...",
+        icon: "cloud-upload-outline",
+        iconColor: colors.accentMint,
+        buttons: [],
+      });
+
+      const checkAndLock = () => {
+        if (useVaultStore.getState().isSaving) {
+          setTimeout(checkAndLock, 100);
+        } else {
+          setModalConfig((prev) => ({ ...prev, visible: false }));
+          performLock();
+        }
+      };
+      setTimeout(checkAndLock, 100);
+      return;
+    }
+
+    if (isDirty && !autoSave) {
+      setModalConfig({
+        visible: true,
+        title: "Unsaved Changes",
+        description:
+          "You have unsaved changes. Do you want to save them before locking, or discard them?",
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "Save & Lock",
+            variant: "primary",
+            onPress: async () => {
+              setModalConfig((prev) => ({ ...prev, visible: false }));
+              setSaving(true);
+              setIsSaving(true);
+              try {
+                if (db) {
+                  await saveVault(db);
+                  markClean();
+                }
+                performLock();
+              } catch (e: any) {
+                showErrorModal(
+                  "Error Saving",
+                  e?.message || "Failed to write database file."
+                );
+              } finally {
+                setSaving(false);
+                setIsSaving(false);
+              }
+            },
+          },
+          {
+            text: "Discard & Lock",
+            variant: "destructive",
+            onPress: () => {
+              setModalConfig((prev) => ({ ...prev, visible: false }));
+              performLock();
+            },
+          },
+          {
+            text: "Cancel",
+            variant: "secondary",
+            onPress: () => {
+              setModalConfig((prev) => ({ ...prev, visible: false }));
+            },
+          },
+        ],
+      });
+    } else {
+      performLock();
+    }
+  }, [
+    isDirty,
+    autoSave,
+    db,
+    saveVault,
+    markClean,
+    closeDatabase,
+    router,
+    colors.statusError,
+    colors.accentMint,
+    showErrorModal,
+    isSaving,
+    setIsSaving,
+  ]);
 
   // ────── Render Helpers ──────
 
@@ -453,6 +674,15 @@ export default function VaultBrowserScreen() {
         );
       }
 
+      if (item.type === "search-result") {
+        return (
+          <EntryRow
+            entry={item.data as VaultEntry}
+            onPress={() => handleEntryPress(item.data as VaultEntry)}
+          />
+        );
+      }
+
       return (
         <Animated.View entering={FadeInDown.delay(index * 30).duration(200)}>
           <EntryRow
@@ -477,7 +707,7 @@ export default function VaultBrowserScreen() {
           <Ionicons
             name="alert-circle-outline"
             size={48}
-            color={Colors.textDisabled}
+            color={colors.textDisabled}
           />
           <Text style={styles.emptyText}>No vault loaded</Text>
         </View>
@@ -500,7 +730,7 @@ export default function VaultBrowserScreen() {
               <Ionicons
                 name="chevron-back"
                 size={24}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </Pressable>
           )}
@@ -517,30 +747,47 @@ export default function VaultBrowserScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          {isDirty && (
+          {(isDirty || isSaving) && (
             <Animated.View
               entering={FadeIn.duration(300)}
               exiting={FadeOut.duration(200)}
             >
               <Pressable
                 onPress={handleSave}
-                disabled={saving}
-                style={[styles.iconButton, saving && { opacity: 0.6 }]}
+                disabled={saving || isSaving || (autoSave && isDirty)}
+                style={[
+                  styles.iconButton,
+                  (saving || isSaving || (autoSave && isDirty)) && {
+                    opacity: 0.6,
+                  },
+                ]}
                 hitSlop={8}
                 accessibilityLabel="Save changes"
               >
-                {saving ? (
-                  <ActivityIndicator size="small" color={Colors.accentMint} />
+                {saving || isSaving || (autoSave && isDirty) ? (
+                  <ActivityIndicator size="small" color={colors.accentMint} />
                 ) : (
                   <Ionicons
                     name="save-outline"
                     size={22}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                 )}
               </Pressable>
             </Animated.View>
           )}
+          <Pressable
+            onPress={handleLock}
+            style={styles.iconButton}
+            hitSlop={8}
+            accessibilityLabel="Lock database"
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={22}
+              color={colors.textPrimary}
+            />
+          </Pressable>
           <Pressable
             onPress={() => {
               setShowSearch(!showSearch);
@@ -553,7 +800,7 @@ export default function VaultBrowserScreen() {
             <Ionicons
               name={showSearch ? "close" : "search"}
               size={22}
-              color={Colors.textPrimary}
+              color={colors.textPrimary}
             />
           </Pressable>
           {canModifyCurrentGroup && (
@@ -566,7 +813,7 @@ export default function VaultBrowserScreen() {
               <Ionicons
                 name="ellipsis-vertical"
                 size={22}
-                color={Colors.textPrimary}
+                color={colors.textPrimary}
               />
             </Pressable>
           )}
@@ -584,14 +831,14 @@ export default function VaultBrowserScreen() {
             style={styles.breadcrumbItem}
             hitSlop={4}
           >
-            <Ionicons name="home-outline" size={14} color={Colors.textMuted} />
+            <Ionicons name="home-outline" size={14} color={colors.textMuted} />
           </Pressable>
           {breadcrumbLabels.slice(0, -1).map((crumb, i) => (
             <React.Fragment key={`${crumb.uuid}-${i}`}>
               <Ionicons
                 name="chevron-forward"
                 size={12}
-                color={Colors.textDisabled}
+                color={colors.textDisabled}
               />
               <Pressable
                 onPress={() => {
@@ -620,7 +867,7 @@ export default function VaultBrowserScreen() {
           <Ionicons
             name="chevron-forward"
             size={12}
-            color={Colors.textDisabled}
+            color={colors.textDisabled}
           />
           <Text style={styles.breadcrumbActive} numberOfLines={1}>
             {breadcrumbLabels[breadcrumbLabels.length - 1]?.name}
@@ -638,7 +885,7 @@ export default function VaultBrowserScreen() {
           <Ionicons
             name="search"
             size={18}
-            color={Colors.textMuted}
+            color={colors.textMuted}
             style={styles.searchIcon}
           />
           <TextInput
@@ -646,7 +893,7 @@ export default function VaultBrowserScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search entries..."
-            placeholderTextColor={Colors.textDisabled}
+            placeholderTextColor={colors.textDisabled}
             autoFocus
             returnKeyType="search"
             autoCapitalize="none"
@@ -661,7 +908,7 @@ export default function VaultBrowserScreen() {
               <Ionicons
                 name="close-circle"
                 size={18}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
             </Pressable>
           )}
@@ -690,7 +937,7 @@ export default function VaultBrowserScreen() {
             <Ionicons
               name={isSearching ? "search-outline" : "folder-open-outline"}
               size={40}
-              color={Colors.textDisabled}
+              color={colors.textDisabled}
             />
             <Text style={styles.emptyText}>
               {isSearching ? "No matching entries" : "This group is empty"}
@@ -716,7 +963,7 @@ export default function VaultBrowserScreen() {
             value={renameGroupName}
             onChangeText={setRenameGroupName}
             placeholder="Rename group..."
-            placeholderTextColor={Colors.textDisabled}
+            placeholderTextColor={colors.textDisabled}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleRenameGroup}
@@ -726,7 +973,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupConfirm}
             hitSlop={4}
           >
-            <Ionicons name="checkmark" size={22} color={Colors.accentMint} />
+            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -737,7 +984,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupCancel}
             hitSlop={4}
           >
-            <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <Ionicons name="close" size={22} color={colors.textMuted} />
           </Pressable>
         </Animated.View>
       )}
@@ -754,7 +1001,7 @@ export default function VaultBrowserScreen() {
             value={newGroupName}
             onChangeText={setNewGroupName}
             placeholder="New group name..."
-            placeholderTextColor={Colors.textDisabled}
+            placeholderTextColor={colors.textDisabled}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleCreateGroup}
@@ -764,7 +1011,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupConfirm}
             hitSlop={4}
           >
-            <Ionicons name="checkmark" size={22} color={Colors.accentMint} />
+            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -774,7 +1021,7 @@ export default function VaultBrowserScreen() {
             style={styles.newGroupCancel}
             hitSlop={4}
           >
-            <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <Ionicons name="close" size={22} color={colors.textMuted} />
           </Pressable>
         </Animated.View>
       )}
@@ -784,22 +1031,34 @@ export default function VaultBrowserScreen() {
         <View style={styles.fabContainer}>
           <Pressable
             onPress={() => {
-              Alert.alert("Add to Vault", "What would you like to create?", [
+              const options = [
                 {
-                  text: "New Entry",
-                  onPress: handleCreateEntry,
+                  label: "New Entry",
+                  onPress: () => {
+                    hideModal();
+                    handleCreateEntry();
+                  },
                 },
                 {
-                  text: "New Group",
-                  onPress: () => setShowNewGroupInput(true),
+                  label: "New Group",
+                  onPress: () => {
+                    hideModal();
+                    setShowNewGroupInput(true);
+                  },
                 },
-                { text: "Cancel", style: "cancel" },
-              ]);
+              ];
+              setModalConfig({
+                visible: true,
+                title: "Add to Vault",
+                description: "What would you like to create?",
+                icon: "add-circle-outline",
+                options,
+              });
             }}
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityLabel="Add entry or group"
           >
-            <Ionicons name="add" size={28} color={Colors.backgroundPrimary} />
+            <Ionicons name="add" size={28} color={colors.backgroundPrimary} />
           </Pressable>
         </View>
       )}
@@ -811,7 +1070,15 @@ export default function VaultBrowserScreen() {
         statusBarTranslucent
         onRequestClose={() => setShowTemplateModal(false)}
       >
-        <Animated.View style={templateModalStyles.overlay}>
+        <View style={templateModalStyles.overlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
+          />
           <Pressable
             style={templateModalStyles.overlayPress}
             onPress={() => setShowTemplateModal(false)}
@@ -826,7 +1093,7 @@ export default function VaultBrowserScreen() {
                 <Ionicons
                   name="copy-outline"
                   size={20}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               </View>
               <Text style={templateModalStyles.headerTitle}>
@@ -837,7 +1104,7 @@ export default function VaultBrowserScreen() {
                 hitSlop={12}
                 style={templateModalStyles.closeBtn}
               >
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -865,7 +1132,7 @@ export default function VaultBrowserScreen() {
                   <Ionicons
                     name="add-outline"
                     size={24}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </View>
                 <Text style={templateModalStyles.cardTitle}>Blank Entry</Text>
@@ -879,7 +1146,7 @@ export default function VaultBrowserScreen() {
 
               {/* Dynamic Templates */}
               {templateEntries.map((entry) => {
-                const styleInfo = getTemplateCardStyle(entry.title);
+                const styleInfo = getTemplateCardStyle(entry.title, colors);
                 const customKeys = Object.keys(entry.fields).filter(
                   (k) =>
                     !["Title", "UserName", "Password", "URL", "Notes"].includes(
@@ -936,8 +1203,20 @@ export default function VaultBrowserScreen() {
               })}
             </ScrollView>
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }
@@ -946,359 +1225,362 @@ export default function VaultBrowserScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    gap: Spacing.xs,
-  },
-  backButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    flex: 1,
-  },
-  headerTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.heading,
-    color: Colors.textPrimary,
-    flexShrink: 1,
-  },
-  dirtyBadge: {
-    backgroundColor: Colors.statusWarningDim,
-    borderRadius: Radii.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-  },
-  dirtyBadgeText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.statusWarning,
-  },
-  headerRight: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  iconButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // Header
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    headerLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      gap: Spacing.xs,
+    },
+    backButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    headerTitleContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      flex: 1,
+    },
+    headerTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.heading,
+      color: colors.textPrimary,
+      flexShrink: 1,
+    },
+    dirtyBadge: {
+      backgroundColor: colors.statusWarningDim,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+    },
+    dirtyBadgeText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.statusWarning,
+    },
+    headerRight: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+    },
+    iconButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // Breadcrumbs
-  breadcrumbBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    gap: 4,
-    backgroundColor: Colors.surfaceCard,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  breadcrumbItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-  },
-  breadcrumbText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    maxWidth: 80,
-  },
-  breadcrumbActive: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    maxWidth: 120,
-  },
+    // Breadcrumbs
+    breadcrumbBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+      gap: 4,
+      backgroundColor: colors.surfaceCard,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    breadcrumbItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 2,
+      paddingHorizontal: 4,
+    },
+    breadcrumbText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      maxWidth: 80,
+    },
+    breadcrumbActive: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+      maxWidth: 120,
+    },
 
-  // Search
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: Spacing.lg,
-    marginVertical: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
-    minHeight: TouchTarget.min,
-  },
-  searchIcon: {
-    marginRight: Spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.sm,
-  },
-  clearButton: {
-    padding: Spacing.xs,
-  },
-  searchMeta: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs,
-  },
-  searchMetaText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
+    // Search
+    searchContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginHorizontal: Spacing.lg,
+      marginVertical: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      minHeight: TouchTarget.min,
+    },
+    searchIcon: {
+      marginRight: Spacing.sm,
+    },
+    searchInput: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      paddingVertical: Spacing.sm,
+    },
+    clearButton: {
+      padding: Spacing.xs,
+    },
+    searchMeta: {
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.xs,
+    },
+    searchMetaText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
 
-  // List
-  listContent: {
-    paddingBottom: 100,
-  },
+    // List
+    listContent: {
+      paddingBottom: 100,
+    },
 
-  // Group Row
-  groupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    minHeight: 56,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  rowPressed: {
-    backgroundColor: Colors.surfaceElevated,
-  },
-  rowIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.accentMintDim,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.md,
-  },
-  rowContent: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  groupName: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  groupMeta: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
+    // Group Row
+    groupRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.lg,
+      minHeight: 56,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    rowPressed: {
+      backgroundColor: colors.surfaceElevated,
+    },
+    rowIconContainer: {
+      width: 36,
+      height: 36,
+      borderRadius: Radii.sm,
+      backgroundColor: colors.accentMintDim,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: Spacing.md,
+    },
+    rowContent: {
+      flex: 1,
+      justifyContent: "center",
+    },
+    groupName: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    groupMeta: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
 
-  // Entry Row
-  entryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    minHeight: 56,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.borderSage,
-  },
-  entryTitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  entryUsername: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
+    // Entry Row
+    entryRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.lg,
+      minHeight: 56,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.borderSage,
+    },
+    entryTitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    entryUsername: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
 
-  // Empty State
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: Spacing.huge,
-    gap: Spacing.md,
-  },
-  emptyText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textMuted,
-  },
-  emptyHint: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textDisabled,
-  },
+    // Empty State
+    emptyState: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingTop: Spacing.huge,
+      gap: Spacing.md,
+    },
+    emptyText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textMuted,
+    },
+    emptyHint: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textDisabled,
+    },
 
-  // New Group Input
-  newGroupBar: {
-    position: "absolute",
-    bottom: 96,
-    left: Spacing.lg,
-    right: Spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceCard,
-    borderWidth: 1,
-    borderColor: Colors.borderSageActive,
-    borderRadius: Radii.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    ...Shadows.elevated,
-  },
-  newGroupInput: {
-    flex: 1,
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.xs,
-  },
-  newGroupConfirm: {
-    padding: Spacing.sm,
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  newGroupCancel: {
-    padding: Spacing.sm,
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // New Group Input
+    newGroupBar: {
+      position: "absolute",
+      bottom: 96,
+      left: Spacing.lg,
+      right: Spacing.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceCard,
+      borderWidth: 1,
+      borderColor: colors.borderSageActive,
+      borderRadius: Radii.lg,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      ...Shadows.elevated,
+    },
+    newGroupInput: {
+      flex: 1,
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      paddingVertical: Spacing.xs,
+    },
+    newGroupConfirm: {
+      padding: Spacing.sm,
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    newGroupCancel: {
+      padding: Spacing.sm,
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // FAB
-  fabContainer: {
-    position: "absolute",
-    bottom: Spacing.xxl,
-    right: Spacing.xl,
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.accentMint,
-    alignItems: "center",
-    justifyContent: "center",
-    ...Shadows.glow,
-  },
-  fabPressed: {
-    backgroundColor: "#2BC48A",
-    transform: [{ scale: 0.95 }],
-  },
-});
+    // FAB
+    fabContainer: {
+      position: "absolute",
+      bottom: Spacing.xxl,
+      right: Spacing.xl,
+    },
+    fab: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accentMint,
+      alignItems: "center",
+      justifyContent: "center",
+      ...Shadows.glow,
+    },
+    fabPressed: {
+      backgroundColor: "#2BC48A",
+      transform: [{ scale: 0.95 }],
+    },
+  });
+}
 
-const templateModalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: Colors.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  overlayPress: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContainer: {
-    width: "92%",
-    maxWidth: 440,
-    maxHeight: "80%",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    ...Shadows.elevated,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  headerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.accentMintDim,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.min,
-    height: TouchTarget.min,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: Spacing.md,
-    paddingBottom: Spacing.md,
-  },
-  card: {
-    width: "47%",
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.md,
-    marginBottom: Spacing.xs,
-    alignItems: "flex-start",
-  },
-  cardIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: Radii.md,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  cardTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xxs,
-  },
-  cardSubtitle: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    lineHeight: 16,
-  },
-});
+function createTemplateModalStyles(colors: any) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    overlayPress: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    modalContainer: {
+      width: "92%",
+      maxWidth: 440,
+      maxHeight: "80%",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      ...Shadows.elevated,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginBottom: Spacing.lg,
+    },
+    headerIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    closeBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    gridContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      gap: Spacing.md,
+      paddingBottom: Spacing.md,
+    },
+    card: {
+      width: "47%",
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.md,
+      marginBottom: Spacing.xs,
+      alignItems: "flex-start",
+    },
+    cardIconContainer: {
+      width: 44,
+      height: 44,
+      borderRadius: Radii.md,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: Spacing.md,
+    },
+    cardTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+      marginBottom: Spacing.xxs,
+    },
+    cardSubtitle: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      lineHeight: 16,
+    },
+  });
+}

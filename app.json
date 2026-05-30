@@ -70,7 +70,8 @@
           "faceIDPermission": "VaultPeer uses Face ID to unlock your vault securely."
         }
       ],
-      "react-native-quick-crypto"
+      "react-native-quick-crypto",
+      "./modules/vaultpeer-autofill/app.plugin.js"
     ],
     "experiments": {
       "typedRoutes": true,

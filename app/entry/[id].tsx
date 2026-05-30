@@ -11,8 +11,9 @@
 
 import { CyberCard } from "@/src/components/CyberCard";
 import { getKdbxIconName } from "@/src/constants/kdbxIcons";
+import { ActionModal } from "@/src/components/ActionModal";
 import {
-  Colors,
+  useThemeColors,
   FontSizes,
   Fonts,
   LineHeights,
@@ -29,10 +30,9 @@ import type { VaultAttachment, VaultHistorySnapshot } from "@/src/types/kdbx";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useMemo, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -70,6 +70,8 @@ function FieldRow({
   isMono?: boolean;
   onCopy?: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [revealed, setRevealed] = useState(!isMasked);
 
   if (!value) return null;
@@ -80,7 +82,7 @@ function FieldRow({
     <Animated.View entering={FadeInDown.duration(200)} style={styles.fieldRow}>
       <View style={styles.fieldHeader}>
         <View style={styles.fieldLabelRow}>
-          <Ionicons name={iconName} size={16} color={Colors.textMuted} />
+          <Ionicons name={iconName} size={16} color={colors.textMuted} />
           <Text style={styles.fieldLabel}>{label}</Text>
         </View>
         <View style={styles.fieldActions}>
@@ -94,7 +96,7 @@ function FieldRow({
               <Ionicons
                 name={revealed ? "eye-off-outline" : "eye-outline"}
                 size={18}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
             </Pressable>
           )}
@@ -108,7 +110,7 @@ function FieldRow({
               <Ionicons
                 name="copy-outline"
                 size={18}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </Pressable>
           )}
@@ -140,6 +142,8 @@ function OtpCard({
   entryUsername: string;
   onCopy: (text: string, label: string) => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [code, setCode] = useState("");
   const [timeLeft, setTimeLeft] = useState(30);
   const [progress, setProgress] = useState(1);
@@ -200,7 +204,7 @@ function OtpCard({
             <Ionicons
               name="shield-checkmark-outline"
               size={20}
-              color={Colors.accentMint}
+              color={colors.accentMint}
             />
             <View style={{ marginLeft: Spacing.sm }}>
               <Text style={styles.otpIssuer}>{params.issuer}</Text>
@@ -213,7 +217,7 @@ function OtpCard({
             hitSlop={8}
             accessibilityLabel="Copy OTP code"
           >
-            <Ionicons name="copy-outline" size={18} color={Colors.accentMint} />
+            <Ionicons name="copy-outline" size={18} color={colors.accentMint} />
           </Pressable>
         </View>
 
@@ -227,14 +231,14 @@ function OtpCard({
               style={[
                 styles.otpProgressBarFill,
                 { width: `${progress * 100}%` },
-                progress < 0.2 && { backgroundColor: Colors.statusError },
+                progress < 0.2 && { backgroundColor: colors.statusError },
               ]}
             />
           </View>
           <Text
             style={[
               styles.otpCountdownText,
-              progress < 0.2 && { color: Colors.statusError },
+              progress < 0.2 && { color: colors.statusError },
             ]}
           >
             {timeLeft}s
@@ -250,6 +254,8 @@ function OtpCard({
 // ────────────────────────────────────────────
 
 export default function EntryDetailScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
@@ -282,6 +288,68 @@ export default function EntryDetailScreen() {
   >([]);
   const [restoringSnapshot, setRestoringSnapshot] = useState(false);
 
+  const [modalConfig, setModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+    options?: any[];
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: "",
+  });
+
+  const hideModal = useCallback(() => {
+    setModalConfig((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const showNotificationModal = useCallback(
+    (
+      title: string,
+      description: string,
+      icon: keyof typeof Ionicons.glyphMap = "checkmark-circle-outline"
+    ) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    []
+  );
+
+  const showErrorModal = useCallback(
+    (title: string, description: string) => {
+      setModalConfig({
+        visible: true,
+        title,
+        description,
+        icon: "alert-circle-outline",
+        iconColor: colors.statusError,
+        buttons: [
+          {
+            text: "OK",
+            onPress: () =>
+              setModalConfig((prev) => ({ ...prev, visible: false })),
+            variant: "primary",
+          },
+        ],
+      });
+    },
+    [colors.statusError]
+  );
+
   const handleExportAttachment = useCallback(
     async (attachment: VaultAttachment) => {
       try {
@@ -297,13 +365,13 @@ export default function EntryDetailScreen() {
         }
         const tempFileUri = await writeTempFile(base64Data);
         await createFile(attachment.name, tempFileUri);
-        Alert.alert(
+        showNotificationModal(
           "Success",
           `Saved attachment "${attachment.name}" successfully.`
         );
       } catch (err: any) {
         console.error(err);
-        Alert.alert(
+        showErrorModal(
           "Export Failed",
           err?.message || "Could not save the attachment."
         );
@@ -311,7 +379,7 @@ export default function EntryDetailScreen() {
         setExporting(null);
       }
     },
-    [entry, getAttachmentData]
+    [entry, getAttachmentData, showNotificationModal, showErrorModal]
   );
 
   const isExpired =
@@ -353,38 +421,60 @@ export default function EntryDetailScreen() {
       : `Are you sure you want to delete "${entry.title}"? This will move it to the recycle bin.`;
     const deleteBtnText = inRecycleBin ? "Delete Permanently" : "Delete";
 
-    Alert.alert(title, message, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: deleteBtnText,
-        style: "destructive",
-        onPress: () => {
-          setDeleting(true);
-          setTimeout(() => {
-            try {
-              deleteEntry(entry.uuid);
-              logAccess(entry.uuid, entry.title, "deleted");
-              router.back();
-            } catch (err) {
-              setDeleting(false);
-              console.error(err);
-            }
-          }, 50);
+    setModalConfig({
+      visible: true,
+      title,
+      description: message,
+      icon: "trash-outline",
+      iconColor: colors.statusError,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
+        {
+          text: deleteBtnText,
+          variant: "destructive",
+          onPress: () => {
+            hideModal();
+            setDeleting(true);
+            setTimeout(() => {
+              try {
+                deleteEntry(entry.uuid);
+                logAccess(entry.uuid, entry.title, "deleted");
+                router.back();
+              } catch (err) {
+                setDeleting(false);
+                console.error(err);
+              }
+            }, 50);
+          },
         },
-      },
-    ]);
-  }, [entry, deleteEntry, logAccess, router, inRecycleBin, deleting]);
+      ],
+    });
+  }, [
+    entry,
+    deleteEntry,
+    logAccess,
+    router,
+    inRecycleBin,
+    deleting,
+    colors.statusError,
+    hideModal,
+  ]);
 
   const handleRestore = useCallback(() => {
     if (!entry || restoring) return;
-    Alert.alert(
-      "Restore Entry",
-      `Are you sure you want to restore "${entry.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
+    setModalConfig({
+      visible: true,
+      title: "Restore Entry",
+      description: `Are you sure you want to restore "${entry.title}"?`,
+      icon: "refresh-outline",
+      iconColor: colors.textPrimary,
+      buttons: [
+        { text: "Cancel", onPress: hideModal, variant: "secondary" },
         {
           text: "Restore",
+          variant: "primary",
           onPress: () => {
+            hideModal();
             setRestoring(true);
             setTimeout(() => {
               try {
@@ -394,7 +484,7 @@ export default function EntryDetailScreen() {
                   router.back();
                 } else {
                   setRestoring(false);
-                  Alert.alert("Error", "Failed to restore entry.");
+                  showErrorModal("Error", "Failed to restore entry.");
                 }
               } catch (err) {
                 setRestoring(false);
@@ -403,9 +493,18 @@ export default function EntryDetailScreen() {
             }, 50);
           },
         },
-      ]
-    );
-  }, [entry, restoreEntry, logAccess, router, restoring]);
+      ],
+    });
+  }, [
+    entry,
+    restoreEntry,
+    logAccess,
+    router,
+    restoring,
+    colors.textPrimary,
+    hideModal,
+    showErrorModal,
+  ]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;
@@ -422,7 +521,7 @@ export default function EntryDetailScreen() {
           <Ionicons
             name="alert-circle-outline"
             size={48}
-            color={Colors.textDisabled}
+            color={colors.textDisabled}
           />
           <Text style={styles.emptyText}>Entry not found</Text>
           <Pressable onPress={() => router.back()} style={styles.backLink}>
@@ -451,7 +550,7 @@ export default function EntryDetailScreen() {
           hitSlop={8}
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={Colors.accentMint} />
+          <Ionicons name="chevron-back" size={24} color={colors.accentMint} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {entry?.title || "Entry Detail"}
@@ -469,12 +568,12 @@ export default function EntryDetailScreen() {
               accessibilityLabel="Restore entry"
             >
               {restoring ? (
-                <ActivityIndicator size="small" color={Colors.accentMint} />
+                <ActivityIndicator size="small" color={colors.accentMint} />
               ) : (
                 <Ionicons
                   name="arrow-undo-outline"
                   size={22}
-                  color={Colors.accentMint}
+                  color={colors.accentMint}
                 />
               )}
             </Pressable>
@@ -492,7 +591,7 @@ export default function EntryDetailScreen() {
               <Ionicons
                 name="create-outline"
                 size={22}
-                color={Colors.accentMint}
+                color={colors.accentMint}
               />
             </Pressable>
           )}
@@ -507,12 +606,12 @@ export default function EntryDetailScreen() {
             accessibilityLabel="Delete entry"
           >
             {deleting ? (
-              <ActivityIndicator size="small" color={Colors.statusError} />
+              <ActivityIndicator size="small" color={colors.statusError} />
             ) : (
               <Ionicons
                 name="trash-outline"
                 size={22}
-                color={Colors.statusError}
+                color={colors.statusError}
               />
             )}
           </Pressable>
@@ -533,7 +632,7 @@ export default function EntryDetailScreen() {
             }}
           >
             <View style={styles.titleIconContainer}>
-              <Ionicons name={iconName} size={28} color={Colors.accentMint} />
+              <Ionicons name={iconName} size={28} color={colors.accentMint} />
             </View>
             <Text style={styles.entryTitle}>{entry.title || "Untitled"}</Text>
             {entry.expires && (
@@ -543,7 +642,7 @@ export default function EntryDetailScreen() {
                     <Ionicons
                       name="warning"
                       size={12}
-                      color={Colors.statusError}
+                      color={colors.statusError}
                     />
                     <Text style={styles.expiryBadgeTextExpired}>EXPIRED</Text>
                   </View>
@@ -552,7 +651,7 @@ export default function EntryDetailScreen() {
                     <Ionicons
                       name="time"
                       size={12}
-                      color={Colors.statusWarning}
+                      color={colors.statusWarning}
                     />
                     <Text style={styles.expiryBadgeText}>
                       Expires:{" "}
@@ -644,7 +743,7 @@ export default function EntryDetailScreen() {
                   <Ionicons
                     name="document-attach-outline"
                     size={20}
-                    color={Colors.accentMint}
+                    color={colors.accentMint}
                   />
                   <View style={{ marginLeft: Spacing.sm, flex: 1 }}>
                     <Text style={styles.attachmentName} numberOfLines={1}>
@@ -662,12 +761,12 @@ export default function EntryDetailScreen() {
                   hitSlop={8}
                 >
                   {exporting === attachment.name ? (
-                    <ActivityIndicator size="small" color={Colors.accentMint} />
+                    <ActivityIndicator size="small" color={colors.accentMint} />
                   ) : (
                     <Ionicons
                       name="download-outline"
                       size={20}
-                      color={Colors.accentMint}
+                      color={colors.accentMint}
                     />
                   )}
                 </Pressable>
@@ -694,7 +793,7 @@ export default function EntryDetailScreen() {
               <Ionicons
                 name="time-outline"
                 size={14}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
               <Text style={styles.historySectionTitle}>Entry History</Text>
             </View>
@@ -702,7 +801,7 @@ export default function EntryDetailScreen() {
               <Ionicons
                 name={showHistory ? "chevron-up" : "chevron-down"}
                 size={18}
-                color={Colors.textMuted}
+                color={colors.textMuted}
               />
             </View>
           </Pressable>
@@ -714,7 +813,7 @@ export default function EntryDetailScreen() {
                   <Ionicons
                     name="document-outline"
                     size={28}
-                    color={Colors.textDisabled}
+                    color={colors.textDisabled}
                   />
                   <Text style={styles.historyEmptyText}>
                     No history snapshots available
@@ -749,7 +848,7 @@ export default function EntryDetailScreen() {
                               name="git-commit-outline"
                               size={16}
                               color={
-                                isActive ? Colors.accentMint : Colors.textMuted
+                                isActive ? colors.accentMint : colors.textMuted
                               }
                             />
                             <View style={{ flex: 1, marginLeft: Spacing.sm }}>
@@ -768,205 +867,274 @@ export default function EntryDetailScreen() {
                           <Ionicons
                             name={isExpanded ? "chevron-up" : "chevron-down"}
                             size={16}
-                            color={Colors.textMuted}
+                            color={colors.textMuted}
                           />
                         </Pressable>
 
-                        {isExpanded && (
-                          <Animated.View
-                            entering={FadeInDown.duration(150)}
-                            style={styles.historyPreview}
-                          >
-                            {snapshot.username ? (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  Username
-                                </Text>
-                                <Text
-                                  style={styles.historyFieldValue}
-                                  numberOfLines={1}
-                                >
-                                  {snapshot.username}
-                                </Text>
-                              </View>
-                            ) : null}
-                            {snapshot.password ? (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  Password
-                                </Text>
-                                <Text
-                                  style={[
-                                    styles.historyFieldValue,
-                                    styles.historyFieldMono,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  ••••••••
-                                </Text>
-                              </View>
-                            ) : null}
-                            {snapshot.url ? (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  URL
-                                </Text>
-                                <Text
-                                  style={styles.historyFieldValue}
-                                  numberOfLines={1}
-                                >
-                                  {snapshot.url}
-                                </Text>
-                              </View>
-                            ) : null}
-                            {Object.entries(snapshot.fields).length > 0 && (
-                              <View style={styles.historyFieldRow}>
-                                <Text style={styles.historyFieldLabel}>
-                                  Custom Fields
-                                </Text>
-                                <Text style={styles.historyFieldValue}>
-                                  {Object.keys(snapshot.fields).length} field
-                                  {Object.keys(snapshot.fields).length !== 1
-                                    ? "s"
-                                    : ""}
-                                </Text>
-                              </View>
-                            )}
+                        {isExpanded &&
+                          (() => {
+                            const hasContent =
+                              !!snapshot.username ||
+                              !!snapshot.password ||
+                              !!snapshot.url ||
+                              !!snapshot.notes ||
+                              (snapshot.tags && snapshot.tags.length > 0) ||
+                              (snapshot.fields &&
+                                Object.entries(snapshot.fields).some(
+                                  ([_, val]) => !!val
+                                ));
 
-                            <View style={styles.historyActions}>
-                              <Pressable
-                                onPress={() => {
-                                  if (restoringSnapshot) return;
-                                  Alert.alert(
-                                    "Restore Snapshot",
-                                    `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
-                                    [
-                                      { text: "Cancel", style: "cancel" },
-                                      {
-                                        text: "Restore",
-                                        onPress: async () => {
-                                          setRestoringSnapshot(true);
-                                          try {
-                                            const result =
-                                              await restoreHistorySnapshot(
-                                                entry.uuid,
-                                                realIndex
-                                              );
-                                            if (result) {
-                                              const updated = getEntryHistory(
-                                                entry.uuid
-                                              );
-                                              setHistorySnapshots(updated);
-                                              setExpandedSnapshot(null);
-                                              Haptics.notificationAsync(
-                                                Haptics.NotificationFeedbackType
-                                                  .Success
-                                              );
-                                              Alert.alert(
-                                                "Restored",
-                                                "Entry restored to snapshot state."
-                                              );
-                                            } else {
-                                              Alert.alert(
-                                                "Error",
-                                                "Failed to restore snapshot."
-                                              );
-                                            }
-                                          } catch (err) {
-                                            console.error(err);
-                                            Alert.alert(
-                                              "Error",
-                                              "An error occurred while restoring."
-                                            );
-                                          } finally {
-                                            setRestoringSnapshot(false);
-                                          }
-                                        },
-                                      },
-                                    ]
-                                  );
-                                }}
-                                style={({ pressed }) => [
-                                  styles.historyActionBtn,
-                                  styles.historyRestoreBtn,
-                                  pressed && { opacity: 0.7 },
-                                  restoringSnapshot && { opacity: 0.5 },
-                                ]}
-                                disabled={restoringSnapshot}
+                            return (
+                              <Animated.View
+                                entering={FadeInDown.duration(150)}
+                                style={styles.historyPreview}
                               >
-                                {restoringSnapshot ? (
-                                  <ActivityIndicator
-                                    size="small"
-                                    color={Colors.backgroundPrimary}
-                                  />
-                                ) : (
-                                  <>
-                                    <Ionicons
-                                      name="refresh-outline"
-                                      size={14}
-                                      color={Colors.backgroundPrimary}
-                                    />
-                                    <Text style={styles.historyRestoreBtnText}>
-                                      Restore
-                                    </Text>
-                                  </>
-                                )}
-                              </Pressable>
-
-                              <Pressable
-                                onPress={() => {
-                                  Alert.alert(
-                                    "Delete Snapshot",
-                                    `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
-                                    [
-                                      { text: "Cancel", style: "cancel" },
-                                      {
-                                        text: "Delete",
-                                        style: "destructive",
-                                        onPress: () => {
-                                          const success = deleteHistorySnapshot(
-                                            entry.uuid,
-                                            realIndex
-                                          );
-                                          if (success) {
-                                            const updated = getEntryHistory(
-                                              entry.uuid
-                                            );
-                                            setHistorySnapshots(updated);
-                                            setExpandedSnapshot(null);
-                                            Haptics.notificationAsync(
-                                              Haptics.NotificationFeedbackType
-                                                .Success
-                                            );
-                                          } else {
-                                            Alert.alert(
-                                              "Error",
-                                              "Failed to delete snapshot."
-                                            );
-                                          }
-                                        },
-                                      },
-                                    ]
-                                  );
-                                }}
-                                style={({ pressed }) => [
-                                  styles.historyActionBtn,
-                                  styles.historyDeleteBtn,
-                                  pressed && { opacity: 0.7 },
-                                ]}
-                              >
-                                <Ionicons
-                                  name="trash-outline"
-                                  size={14}
-                                  color={Colors.statusError}
+                                <FieldRow
+                                  label="Username"
+                                  value={snapshot.username}
+                                  iconName="person-outline"
+                                  onCopy={() =>
+                                    handleCopy(snapshot.username, "Username")
+                                  }
                                 />
-                                <Text style={styles.historyDeleteBtnText}>
-                                  Delete
-                                </Text>
-                              </Pressable>
-                            </View>
-                          </Animated.View>
-                        )}
+                                <FieldRow
+                                  label="Password"
+                                  value={snapshot.password}
+                                  iconName="key-outline"
+                                  isMasked
+                                  isMono
+                                  onCopy={() =>
+                                    handleCopy(snapshot.password, "Password")
+                                  }
+                                />
+                                <FieldRow
+                                  label="URL"
+                                  value={snapshot.url}
+                                  iconName="globe-outline"
+                                  onCopy={() => handleCopy(snapshot.url, "URL")}
+                                />
+                                <FieldRow
+                                  label="Notes"
+                                  value={snapshot.notes}
+                                  iconName="document-text-outline"
+                                  onCopy={() =>
+                                    handleCopy(snapshot.notes, "Notes")
+                                  }
+                                />
+
+                                {/* Custom Fields */}
+                                {snapshot.fields &&
+                                  Object.entries(snapshot.fields).map(
+                                    ([key, val]) => (
+                                      <FieldRow
+                                        key={key}
+                                        label={key}
+                                        value={val}
+                                        iconName="pricetag-outline"
+                                        isMasked={snapshot.secureFields?.includes(
+                                          key
+                                        )}
+                                        isMono={snapshot.secureFields?.includes(
+                                          key
+                                        )}
+                                        onCopy={() => handleCopy(val, key)}
+                                      />
+                                    )
+                                  )}
+
+                                {/* Tags */}
+                                {snapshot.tags && snapshot.tags.length > 0 && (
+                                  <View style={{ marginBottom: Spacing.lg }}>
+                                    <View
+                                      style={[
+                                        styles.fieldLabelRow,
+                                        { marginBottom: Spacing.xs },
+                                      ]}
+                                    >
+                                      <Ionicons
+                                        name="pricetag-outline"
+                                        size={16}
+                                        color={colors.textMuted}
+                                      />
+                                      <Text style={styles.fieldLabel}>
+                                        Tags
+                                      </Text>
+                                    </View>
+                                    <View style={styles.tagsRow}>
+                                      {snapshot.tags.map((tag) => (
+                                        <View key={tag} style={styles.tag}>
+                                          <Text style={styles.tagText}>
+                                            {tag}
+                                          </Text>
+                                        </View>
+                                      ))}
+                                    </View>
+                                  </View>
+                                )}
+
+                                {/* Fallback if no content */}
+                                {!hasContent && (
+                                  <Text style={styles.historyEmptyFieldsText}>
+                                    No fields populated in this version
+                                  </Text>
+                                )}
+
+                                <View style={styles.historyActions}>
+                                  <Pressable
+                                    onPress={() => {
+                                      if (restoringSnapshot) return;
+                                      setModalConfig({
+                                        visible: true,
+                                        title: "Restore Snapshot",
+                                        description: `Restore this entry to its state from ${snapDate.toLocaleString()}? The current state will be saved to history first.`,
+                                        icon: "refresh-outline",
+                                        iconColor: colors.textPrimary,
+                                        buttons: [
+                                          {
+                                            text: "Cancel",
+                                            onPress: hideModal,
+                                            variant: "secondary",
+                                          },
+                                          {
+                                            text: "Restore",
+                                            variant: "primary",
+                                            onPress: async () => {
+                                              hideModal();
+                                              setRestoringSnapshot(true);
+                                              try {
+                                                const result =
+                                                  await restoreHistorySnapshot(
+                                                    entry.uuid,
+                                                    realIndex
+                                                  );
+                                                if (result) {
+                                                  const updated =
+                                                    getEntryHistory(entry.uuid);
+                                                  setHistorySnapshots(updated);
+                                                  setExpandedSnapshot(null);
+                                                  Haptics.notificationAsync(
+                                                    Haptics
+                                                      .NotificationFeedbackType
+                                                      .Success
+                                                  );
+                                                  showNotificationModal(
+                                                    "Restored",
+                                                    "Entry restored to snapshot state."
+                                                  );
+                                                } else {
+                                                  showErrorModal(
+                                                    "Error",
+                                                    "Failed to restore snapshot."
+                                                  );
+                                                }
+                                              } catch (err) {
+                                                console.error(err);
+                                                showErrorModal(
+                                                  "Error",
+                                                  "An error occurred while restoring."
+                                                );
+                                              } finally {
+                                                setRestoringSnapshot(false);
+                                              }
+                                            },
+                                          },
+                                        ],
+                                      });
+                                    }}
+                                    style={({ pressed }) => [
+                                      styles.historyActionBtn,
+                                      styles.historyRestoreBtn,
+                                      pressed && { opacity: 0.7 },
+                                      restoringSnapshot && { opacity: 0.5 },
+                                    ]}
+                                    disabled={restoringSnapshot}
+                                  >
+                                    {restoringSnapshot ? (
+                                      <ActivityIndicator
+                                        size="small"
+                                        color={colors.backgroundPrimary}
+                                      />
+                                    ) : (
+                                      <>
+                                        <Ionicons
+                                          name="refresh-outline"
+                                          size={14}
+                                          color={colors.backgroundPrimary}
+                                        />
+                                        <Text
+                                          style={styles.historyRestoreBtnText}
+                                        >
+                                          Restore
+                                        </Text>
+                                      </>
+                                    )}
+                                  </Pressable>
+
+                                  <Pressable
+                                    onPress={() => {
+                                      setModalConfig({
+                                        visible: true,
+                                        title: "Delete Snapshot",
+                                        description: `Remove this history snapshot from ${snapDate.toLocaleString()}? This cannot be undone.`,
+                                        icon: "trash-outline",
+                                        iconColor: colors.statusError,
+                                        buttons: [
+                                          {
+                                            text: "Cancel",
+                                            onPress: hideModal,
+                                            variant: "secondary",
+                                          },
+                                          {
+                                            text: "Delete",
+                                            variant: "destructive",
+                                            onPress: () => {
+                                              hideModal();
+                                              const success =
+                                                deleteHistorySnapshot(
+                                                  entry.uuid,
+                                                  realIndex
+                                                );
+                                              if (success) {
+                                                const updated = getEntryHistory(
+                                                  entry.uuid
+                                                );
+                                                setHistorySnapshots(updated);
+                                                setExpandedSnapshot(null);
+                                                Haptics.notificationAsync(
+                                                  Haptics
+                                                    .NotificationFeedbackType
+                                                    .Success
+                                                );
+                                              } else {
+                                                showErrorModal(
+                                                  "Error",
+                                                  "Failed to delete snapshot."
+                                                );
+                                              }
+                                            },
+                                          },
+                                        ],
+                                      });
+                                    }}
+                                    style={({ pressed }) => [
+                                      styles.historyActionBtn,
+                                      styles.historyDeleteBtn,
+                                      pressed && { opacity: 0.7 },
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name="trash-outline"
+                                      size={14}
+                                      color={colors.statusError}
+                                    />
+                                    <Text style={styles.historyDeleteBtnText}>
+                                      Delete
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                              </Animated.View>
+                            );
+                          })()}
                       </View>
                     );
                   })
@@ -1002,6 +1170,18 @@ export default function EntryDetailScreen() {
           </View>
         </CyberCard>
       </ScrollView>
+
+      {/* Reusable Action Modal */}
+      <ActionModal
+        visible={modalConfig.visible}
+        onClose={hideModal}
+        title={modalConfig.title}
+        description={modalConfig.description}
+        icon={modalConfig.icon}
+        iconColor={modalConfig.iconColor}
+        options={modalConfig.options}
+        buttons={modalConfig.buttons}
+      />
     </SafeAreaView>
   );
 }
@@ -1010,482 +1190,490 @@ export default function EntryDetailScreen() {
 // Styles
 // ────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.backgroundPrimary,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  backButton: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.subheading,
-    color: Colors.textPrimary,
-  },
-  headerActions: {
-    flexDirection: "row",
-    gap: Spacing.xs,
-  },
-  headerActionBtn: {
-    minWidth: TouchTarget.min,
-    minHeight: TouchTarget.min,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // Header
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    backButton: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    headerTitle: {
+      flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.subheading,
+      color: colors.textPrimary,
+    },
+    headerActions: {
+      flexDirection: "row",
+      gap: Spacing.xs,
+    },
+    headerActionBtn: {
+      minWidth: TouchTarget.min,
+      minHeight: TouchTarget.min,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // Scroll
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.huge,
-  },
+    // Scroll
+    scrollContent: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.xl,
+      paddingBottom: Spacing.huge,
+    },
 
-  // Title Card
-  titleCard: {
-    alignItems: "center",
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.xxl,
-    marginBottom: Spacing.lg,
-    ...Shadows.card,
-  },
-  titleIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.accentMintDim,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.md,
-  },
-  entryTitle: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.heading,
-    color: Colors.textPrimary,
-    textAlign: "center",
-  },
-  tagsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.xs,
-    marginTop: Spacing.md,
-    justifyContent: "center",
-  },
-  tag: {
-    backgroundColor: Colors.accentMintDim,
-    borderRadius: Radii.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-  },
-  tagText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.micro,
-    color: Colors.accentMint,
-  },
+    // Title Card
+    titleCard: {
+      alignItems: "center",
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.xxl,
+      marginBottom: Spacing.lg,
+      ...Shadows.card,
+    },
+    titleIconContainer: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accentMintDim,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: Spacing.md,
+    },
+    entryTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.heading,
+      color: colors.textPrimary,
+      textAlign: "center",
+    },
+    tagsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Spacing.xs,
+      marginTop: Spacing.md,
+      justifyContent: "center",
+    },
+    tag: {
+      backgroundColor: colors.accentMintDim,
+      borderRadius: Radii.full,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+    },
+    tagText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.accentMint,
+    },
 
-  // Fields Card
-  fieldsCard: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-    ...Shadows.card,
-  },
-  sectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    marginBottom: Spacing.md,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  historySectionTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
+    // Fields Card
+    fieldsCard: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+      ...Shadows.card,
+    },
+    sectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      marginBottom: Spacing.md,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    historySectionTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
 
-  // Field Row
-  fieldRow: {
-    marginBottom: Spacing.lg,
-  },
-  fieldHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.xs,
-  },
-  fieldLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-  },
-  fieldLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  fieldActions: {
-    flexDirection: "row",
-    gap: Spacing.xs,
-  },
-  fieldAction: {
-    minWidth: 36,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: Radii.sm,
-  },
-  fieldValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    lineHeight: LineHeights.body,
-    color: Colors.textPrimary,
-  },
-  fieldValueMono: {
-    fontFamily: Fonts.mono.regular,
-    letterSpacing: 1,
-  },
-  fieldValueMasked: {
-    color: Colors.textDisabled,
-    letterSpacing: 3,
-  },
+    // Field Row
+    fieldRow: {
+      marginBottom: Spacing.lg,
+    },
+    fieldHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.xs,
+    },
+    fieldLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.xs,
+    },
+    fieldLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    fieldActions: {
+      flexDirection: "row",
+      gap: Spacing.xs,
+    },
+    fieldAction: {
+      minWidth: 36,
+      minHeight: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+    },
+    fieldValue: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      lineHeight: LineHeights.body,
+      color: colors.textPrimary,
+    },
+    fieldValueMono: {
+      fontFamily: Fonts.mono.regular,
+      letterSpacing: 1,
+    },
+    fieldValueMasked: {
+      color: colors.textDisabled,
+      letterSpacing: 3,
+    },
 
-  // Meta Card
-  metaCard: {
-    backgroundColor: Colors.surfaceCard,
-    borderRadius: Radii.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  metaLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  metaValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textSecondary,
-  },
-  metaDivider: {
-    height: 1,
-    backgroundColor: Colors.borderSage,
-    marginVertical: Spacing.sm,
-  },
-  uuidText: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.micro,
-    maxWidth: 180,
-  },
+    // Meta Card
+    metaCard: {
+      backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    metaRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    metaLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    metaValue: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+    },
+    metaDivider: {
+      height: 1,
+      backgroundColor: colors.borderSage,
+      marginVertical: Spacing.sm,
+    },
+    uuidText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.micro,
+      maxWidth: 180,
+    },
 
-  // Empty State
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.md,
-  },
-  emptyText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.body,
-    color: Colors.textMuted,
-  },
-  backLink: {
-    marginTop: Spacing.md,
-    padding: Spacing.sm,
-  },
-  backLinkText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.accentMint,
-  },
+    // Empty State
+    emptyState: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.md,
+    },
+    emptyText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: colors.textMuted,
+    },
+    backLink: {
+      marginTop: Spacing.md,
+      padding: Spacing.sm,
+    },
+    backLinkText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.accentMint,
+    },
 
-  // Expiry badge
-  expiryBadgeRow: {
-    marginTop: Spacing.xs,
-  },
-  expiryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.statusWarningDim,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: Radii.sm,
-    gap: Spacing.xs,
-  },
-  expiryBadgeExpired: {
-    backgroundColor: Colors.statusErrorDim,
-  },
-  expiryBadgeText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.statusWarning,
-  },
-  expiryBadgeTextExpired: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.caption,
-    color: Colors.statusError,
-    letterSpacing: 0.5,
-  },
+    // Expiry badge
+    expiryBadgeRow: {
+      marginTop: Spacing.xs,
+    },
+    expiryBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.statusWarningDim,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 4,
+      borderRadius: Radii.sm,
+      gap: Spacing.xs,
+    },
+    expiryBadgeExpired: {
+      backgroundColor: colors.statusErrorDim,
+    },
+    expiryBadgeText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.statusWarning,
+    },
+    expiryBadgeTextExpired: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+      letterSpacing: 0.5,
+    },
 
-  // Attachments
-  attachmentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  attachmentInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  attachmentName: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  attachmentSize: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  attachmentExportBtn: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // Attachments
+    attachmentRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    attachmentInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    attachmentName: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    attachmentSize: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    attachmentExportBtn: {
+      minWidth: 44,
+      minHeight: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  // OTP Card
-  otpCard: {
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  otpHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  otpInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  otpIssuer: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.body,
-    color: Colors.textPrimary,
-  },
-  otpLabel: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-  },
-  otpCopyBtn: {
-    minWidth: 36,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: Radii.sm,
-    backgroundColor: Colors.accentMintDim,
-  },
-  otpCodeContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginVertical: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
-  otpCode: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: 32,
-    color: Colors.accentMint,
-    letterSpacing: 2,
-  },
-  otpProgressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  otpProgressBarBg: {
-    flex: 1,
-    height: 4,
-    backgroundColor: Colors.borderSage,
-    borderRadius: Radii.full,
-    overflow: "hidden",
-  },
-  otpProgressBarFill: {
-    height: "100%",
-    backgroundColor: Colors.accentMint,
-    borderRadius: Radii.full,
-  },
-  otpCountdownText: {
-    fontFamily: Fonts.mono.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.accentMint,
-    minWidth: 24,
-    textAlign: "right",
-  },
+    // OTP Card
+    otpCard: {
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    otpHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: Spacing.md,
+    },
+    otpInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    otpIssuer: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    otpLabel: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+    },
+    otpCopyBtn: {
+      minWidth: 36,
+      minHeight: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radii.sm,
+      backgroundColor: colors.accentMintDim,
+    },
+    otpCodeContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+      marginVertical: Spacing.sm,
+      paddingVertical: Spacing.xs,
+    },
+    otpCode: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: 32,
+      color: colors.accentMint,
+      letterSpacing: 2,
+    },
+    otpProgressRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      marginTop: Spacing.sm,
+    },
+    otpProgressBarBg: {
+      flex: 1,
+      height: 4,
+      backgroundColor: colors.borderSage,
+      borderRadius: Radii.full,
+      overflow: "hidden",
+    },
+    otpProgressBarFill: {
+      height: "100%",
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.full,
+    },
+    otpCountdownText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+      minWidth: 24,
+      textAlign: "right",
+    },
 
-  // Entry History
-  historyToggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  historyBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  historyEmpty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.xxl,
-    gap: Spacing.sm,
-  },
-  historyEmptyText: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textDisabled,
-  },
-  historyItem: {
-    marginTop: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.borderSage,
-    borderRadius: Radii.md,
-    overflow: "hidden",
-  },
-  historyItemHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  historyItemHeaderExpanded: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSage,
-  },
-  historyItemInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginRight: Spacing.sm,
-  },
-  historyItemTitle: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textPrimary,
-  },
-  historyItemDate: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  historyPreview: {
-    padding: Spacing.md,
-    backgroundColor: Colors.surfaceCard,
-    gap: Spacing.sm,
-  },
-  historyFieldRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.xxs,
-  },
-  historyFieldLabel: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  historyFieldValue: {
-    fontFamily: Fonts.body.regular,
-    fontSize: FontSizes.bodySmall,
-    color: Colors.textSecondary,
-    flex: 1,
-    textAlign: "right",
-    marginLeft: Spacing.md,
-  },
-  historyFieldMono: {
-    fontFamily: Fonts.mono.regular,
-    letterSpacing: 2,
-  },
-  historyActions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderSage,
-  },
-  historyActionBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radii.md,
-    minHeight: 36,
-  },
-  historyRestoreBtn: {
-    backgroundColor: Colors.accentMint,
-    ...Shadows.glow,
-  },
-  historyRestoreBtnText: {
-    fontFamily: Fonts.heading.semiBold,
-    fontSize: FontSizes.caption,
-    color: Colors.backgroundPrimary,
-  },
-  historyDeleteBtn: {
-    backgroundColor: Colors.statusErrorDim,
-    borderWidth: 1,
-    borderColor: Colors.statusError,
-  },
-  historyDeleteBtnText: {
-    fontFamily: Fonts.heading.medium,
-    fontSize: FontSizes.caption,
-    color: Colors.statusError,
-  },
-});
+    // Entry History
+    historyToggleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    historyBadgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+    },
+    historyEmpty: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: Spacing.xxl,
+      gap: Spacing.sm,
+    },
+    historyEmptyText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textDisabled,
+    },
+    historyItem: {
+      marginTop: Spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      overflow: "hidden",
+    },
+    historyItemHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.md,
+      backgroundColor: colors.surfaceElevated,
+    },
+    historyItemHeaderExpanded: {
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    historyItemInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      marginRight: Spacing.sm,
+    },
+    historyItemTitle: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textPrimary,
+    },
+    historyItemDate: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+    historyPreview: {
+      padding: Spacing.md,
+      backgroundColor: colors.surfaceCard,
+    },
+    historyEmptyFieldsText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textAlign: "center",
+      paddingVertical: Spacing.md,
+      fontStyle: "italic",
+    },
+    historyFieldRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: Spacing.xxs,
+    },
+    historyFieldLabel: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    historyFieldValue: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
+      flex: 1,
+      textAlign: "right",
+      marginLeft: Spacing.md,
+    },
+    historyFieldMono: {
+      fontFamily: Fonts.mono.regular,
+      letterSpacing: 2,
+    },
+    historyActions: {
+      flexDirection: "row",
+      gap: Spacing.sm,
+      marginTop: Spacing.sm,
+      paddingTop: Spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSage,
+    },
+    historyActionBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Spacing.xs,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radii.md,
+      minHeight: 36,
+    },
+    historyRestoreBtn: {
+      backgroundColor: colors.accentMint,
+      ...Shadows.glow,
+    },
+    historyRestoreBtnText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.caption,
+      color: colors.backgroundPrimary,
+    },
+    historyDeleteBtn: {
+      backgroundColor: colors.statusErrorDim,
+      borderWidth: 1,
+      borderColor: colors.statusError,
+    },
+    historyDeleteBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+    },
+  });

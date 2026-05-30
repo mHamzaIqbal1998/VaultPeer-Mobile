@@ -89,7 +89,7 @@ async function benchmarkAesKdf(): Promise<KdfBenchmarkResult> {
   // Import AES key for benchmarking
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    testSeed,
+    testSeed as any,
     { name: "AES-CBC", length: 256 },
     false,
     ["encrypt"]
