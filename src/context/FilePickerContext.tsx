@@ -21,17 +21,21 @@ import {
   base64ToArrayBuffer,
 } from "@/src/services/base64";
 import { disableBiometric } from "@/src/services/biometricService";
+import { getLkm, setLkm } from "@/src/services/webrtc/lkmStore";
+import { broadcastPushRequest } from "@/src/services/webrtc/webrtcManager";
 
 export interface RecentVault {
   uri: string;
   bookmark: string | null;
   name: string;
+  filename?: string;
   lastOpened: number; // timestamp
 }
 
 interface FilePickerContextType {
   fileUri: string | null;
   bookmark: string | null;
+  filename: string | null;
   isLoading: boolean;
   error: string | null;
   hasSavedVault: boolean;
@@ -71,7 +75,7 @@ const FilePickerContext = createContext<FilePickerContextType | undefined>(
   undefined
 );
 
-function getNameFromUri(uri: string): string {
+function getFileNameFromUri(uri: string): string {
   try {
     const decoded = decodeURIComponent(uri);
     const parts = decoded.split(/[/\\]/);
@@ -81,12 +85,11 @@ function getNameFromUri(uri: string): string {
       const subParts = lastPart.split(":");
       filename = subParts[subParts.length - 1];
     }
-    filename = filename || "vault.kdbx";
-    return filename.endsWith(".kdbx") ? filename.slice(0, -5) : filename;
+    return filename || "vault.kdbx";
   } catch (e) {
-    console.error("[FilePickerContext] Failed to get name from URI:", e);
+    console.error("[FilePickerContext] Failed to get file name from URI:", e);
   }
-  return "Vault";
+  return "vault.kdbx";
 }
 
 function validateKdbxSignature(arrayBuffer: ArrayBuffer) {
@@ -111,6 +114,7 @@ export function FilePickerProvider({
 }) {
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [bookmark, setBookmark] = useState<string | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(false);
@@ -124,9 +128,11 @@ export function FilePickerProvider({
         const savedUri = await SecureStore.getItemAsync(KEY_VAULT_URI);
         const savedBookmark =
           await SecureStore.getItemAsync(KEY_VAULT_BOOKMARK);
+        const savedFilename = await SecureStore.getItemAsync("vault_file_name");
         if (savedUri) {
           setFileUri(savedUri);
           setBookmark(savedBookmark || null);
+          setFilename(savedFilename || getFileNameFromUri(savedUri));
           setHasSavedVault(true);
         }
 
@@ -168,23 +174,39 @@ export function FilePickerProvider({
       // 5. Decrypt KDBX database
       const db = await decryptDatabase(arrayBuffer, password);
 
+      // Initialize LKM timestamp if not present
+      const currentLkm = await getLkm(pickResult.uri);
+      if (currentLkm === 0) {
+        const dbTime = db.meta.settingsChanged
+          ? db.meta.settingsChanged.getTime()
+          : Date.now();
+        await setLkm(pickResult.uri, dbTime);
+      }
+
       // 5. If successful, persist file reference
       await SecureStore.setItemAsync(KEY_VAULT_URI, pickResult.uri);
       await SecureStore.setItemAsync(
         KEY_VAULT_BOOKMARK,
         pickResult.bookmark || ""
       );
+      const resolvedFilename =
+        pickResult.filename || getFileNameFromUri(pickResult.uri);
+      await SecureStore.setItemAsync("vault_file_name", resolvedFilename);
 
       setFileUri(pickResult.uri);
       setBookmark(pickResult.bookmark);
+      setFilename(resolvedFilename);
       setHasSavedVault(true);
 
       // Add to recent vaults
-      const name = getNameFromUri(pickResult.uri);
+      const friendlyName = resolvedFilename.endsWith(".kdbx")
+        ? resolvedFilename.slice(0, -5)
+        : resolvedFilename;
       const newRecent: RecentVault = {
         uri: pickResult.uri,
         bookmark: pickResult.bookmark || null,
-        name,
+        name: friendlyName,
+        filename: resolvedFilename,
         lastOpened: Date.now(),
       };
       setRecentVaults((prev) => {
@@ -227,17 +249,24 @@ export function FilePickerProvider({
         KEY_VAULT_BOOKMARK,
         pickResult.bookmark || ""
       );
+      const resolvedFilename =
+        pickResult.filename || getFileNameFromUri(pickResult.uri);
+      await SecureStore.setItemAsync("vault_file_name", resolvedFilename);
 
       setFileUri(pickResult.uri);
       setBookmark(pickResult.bookmark);
+      setFilename(resolvedFilename);
       setHasSavedVault(true);
 
       // Add to recent vaults
-      const name = getNameFromUri(pickResult.uri);
+      const friendlyName = resolvedFilename.endsWith(".kdbx")
+        ? resolvedFilename.slice(0, -5)
+        : resolvedFilename;
       const newRecent: RecentVault = {
         uri: pickResult.uri,
         bookmark: pickResult.bookmark || null,
-        name,
+        name: friendlyName,
+        filename: resolvedFilename,
         lastOpened: Date.now(),
       };
       setRecentVaults((prev) => {
@@ -290,15 +319,22 @@ export function FilePickerProvider({
         throw new Error("Failed to save new file.");
       }
 
+      // Initialize LKM to current timestamp
+      await setLkm(saveResult.uri, Date.now());
+
       // 5. If successful, persist file reference
       await SecureStore.setItemAsync(KEY_VAULT_URI, saveResult.uri);
       await SecureStore.setItemAsync(
         KEY_VAULT_BOOKMARK,
         saveResult.bookmark || ""
       );
+      const resolvedFilename =
+        saveResult.filename || getFileNameFromUri(saveResult.uri);
+      await SecureStore.setItemAsync("vault_file_name", resolvedFilename);
 
       setFileUri(saveResult.uri);
       setBookmark(saveResult.bookmark);
+      setFilename(resolvedFilename);
       setHasSavedVault(true);
 
       // Add to recent vaults
@@ -306,6 +342,7 @@ export function FilePickerProvider({
         uri: saveResult.uri,
         bookmark: saveResult.bookmark || null,
         name: name,
+        filename: resolvedFilename,
         lastOpened: Date.now(),
       };
       setRecentVaults((prev) => {
@@ -348,6 +385,15 @@ export function FilePickerProvider({
 
         // 2. Call native write file (handles atomic write: temp file -> replace)
         const success = await writeFile(fileUri, base64Content, bookmark || "");
+        if (success) {
+          const newLkm = Date.now();
+          await setLkm(fileUri, newLkm);
+          // Broadcast database update to all connected WebRTC peers
+          const resolvedFilename =
+            (await SecureStore.getItemAsync("vault_file_name")) ||
+            getFileNameFromUri(fileUri);
+          broadcastPushRequest(resolvedFilename, base64Content, newLkm);
+        }
         return success;
       } catch (err) {
         const msg =
@@ -392,12 +438,25 @@ export function FilePickerProvider({
 
       const db = await decryptDatabase(arrayBuffer, password);
 
+      // Initialize LKM timestamp if not present
+      const currentLkm = await getLkm(fileUri);
+      if (currentLkm === 0) {
+        const dbTime = db.meta.settingsChanged
+          ? db.meta.settingsChanged.getTime()
+          : Date.now();
+        await setLkm(fileUri, dbTime);
+      }
+
       // Add/update in recent vaults
-      const name = getNameFromUri(fileUri);
+      const resolvedFilename = filename || getFileNameFromUri(fileUri);
+      const friendlyName = resolvedFilename.endsWith(".kdbx")
+        ? resolvedFilename.slice(0, -5)
+        : resolvedFilename;
       const newRecent: RecentVault = {
         uri: fileUri,
         bookmark: bookmark || null,
-        name,
+        name: friendlyName,
+        filename: resolvedFilename,
         lastOpened: Date.now(),
       };
       setRecentVaults((prev) => {
@@ -429,8 +488,10 @@ export function FilePickerProvider({
     try {
       await SecureStore.deleteItemAsync(KEY_VAULT_URI);
       await SecureStore.deleteItemAsync(KEY_VAULT_BOOKMARK);
+      await SecureStore.deleteItemAsync("vault_file_name");
       setFileUri(null);
       setBookmark(null);
+      setFilename(null);
       setHasSavedVault(false);
     } catch (err) {
       console.warn("[FilePickerContext] Failed to clear vault reference:", err);
@@ -449,9 +510,12 @@ export function FilePickerProvider({
     }
     await SecureStore.setItemAsync(KEY_VAULT_URI, vault.uri);
     await SecureStore.setItemAsync(KEY_VAULT_BOOKMARK, vault.bookmark || "");
+    const resolvedFilename = vault.filename || getFileNameFromUri(vault.uri);
+    await SecureStore.setItemAsync("vault_file_name", resolvedFilename);
 
     setFileUri(vault.uri);
     setBookmark(vault.bookmark);
+    setFilename(resolvedFilename);
     setHasSavedVault(true);
 
     const updated = recentVaults.map((v) =>
@@ -476,8 +540,10 @@ export function FilePickerProvider({
     if (fileUri === uri) {
       await SecureStore.deleteItemAsync(KEY_VAULT_URI);
       await SecureStore.deleteItemAsync(KEY_VAULT_BOOKMARK);
+      await SecureStore.deleteItemAsync("vault_file_name");
       setFileUri(null);
       setBookmark(null);
+      setFilename(null);
       setHasSavedVault(false);
     }
   }
@@ -491,6 +557,7 @@ export function FilePickerProvider({
       value={{
         fileUri,
         bookmark,
+        filename,
         isLoading,
         error,
         hasSavedVault,

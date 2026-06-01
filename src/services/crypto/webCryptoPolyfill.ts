@@ -179,11 +179,21 @@ function arrayBufferToWordArray(
  * Coerce any data argument into a plain Uint8Array for the native bridge.
  */
 function toUint8Array(data: ArrayBuffer | ArrayBufferView): Uint8Array {
-  if (data instanceof Uint8Array) return data;
-  if (ArrayBuffer.isView(data)) {
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  let view: Uint8Array;
+  if (data instanceof Uint8Array) {
+    view = data;
+  } else if (ArrayBuffer.isView(data)) {
+    view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  } else {
+    view = new Uint8Array(data);
   }
-  return new Uint8Array(data);
+
+  // If the view is a slice of a larger buffer (has non-zero offset or is smaller than the full buffer),
+  // copy the bytes to a fresh Uint8Array to reset the byteOffset to 0 and isolate the data.
+  if (view.byteOffset !== 0 || view.byteLength !== view.buffer.byteLength) {
+    return new Uint8Array(view);
+  }
+  return view;
 }
 
 // ── getRandomValues ──
@@ -511,10 +521,119 @@ const decrypt = async (
 };
 
 // ────────────────────────────────────────────
+// Binary-safe btoa and atob Polyfills
+// ────────────────────────────────────────────
+
+let quickBase64: any = null;
+try {
+  if (Platform.OS !== "web") {
+    // eslint-disable-next-line
+    quickBase64 = require("react-native-quick-base64");
+  }
+} catch {
+  // Fall back
+}
+
+const btoaLookup =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function binaryBtoa(input: string): string {
+  if (quickBase64 && typeof quickBase64.fromByteArray === "function") {
+    const bytes = new Uint8Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      bytes[i] = input.charCodeAt(i) & 0xff;
+    }
+    return quickBase64.fromByteArray(bytes);
+  }
+
+  let result = "";
+  let i = 0;
+  const len = input.length;
+  while (i < len) {
+    const b1 = input.charCodeAt(i++) & 0xff;
+    const b2 = i < len ? input.charCodeAt(i++) & 0xff : NaN;
+    const b3 = i < len ? input.charCodeAt(i++) & 0xff : NaN;
+
+    const c1 = b1 >> 2;
+    const c2 = ((b1 & 3) << 4) | (isNaN(b2) ? 0 : b2 >> 4);
+    const c3 = isNaN(b2) ? 64 : ((b2 & 15) << 2) | (isNaN(b3) ? 0 : b3 >> 6);
+    const c4 = isNaN(b3) ? 64 : b3 & 63;
+
+    result +=
+      btoaLookup.charAt(c1) +
+      btoaLookup.charAt(c2) +
+      (c3 === 64 ? "=" : btoaLookup.charAt(c3)) +
+      (c4 === 64 ? "=" : btoaLookup.charAt(c4));
+  }
+  return result;
+}
+
+function binaryAtob(input: string): string {
+  const cleaned = input.replace(/[\s\r\n]/g, "");
+
+  if (quickBase64 && typeof quickBase64.toByteArray === "function") {
+    const bytes = quickBase64.toByteArray(cleaned);
+    let str = "";
+    const chunkSize = 16384;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      str += String.fromCharCode.apply(null, chunk as any);
+    }
+    return str;
+  }
+
+  if (/[^A-Za-z0-9+/=]/.test(cleaned) || cleaned.length % 4 !== 0) {
+    throw new Error("Invalid base64 string");
+  }
+
+  let result = "";
+  const len = cleaned.length;
+  for (let i = 0; i < len; i += 4) {
+    const c1 = btoaLookup.indexOf(cleaned.charAt(i));
+    const c2 = btoaLookup.indexOf(cleaned.charAt(i + 1));
+    const c3 =
+      cleaned.charAt(i + 2) === "="
+        ? -1
+        : btoaLookup.indexOf(cleaned.charAt(i + 2));
+    const c4 =
+      cleaned.charAt(i + 3) === "="
+        ? -1
+        : btoaLookup.indexOf(cleaned.charAt(i + 3));
+
+    if (
+      c1 === -1 ||
+      c2 === -1 ||
+      (cleaned.charAt(i + 2) !== "=" && c3 === -1) ||
+      (cleaned.charAt(i + 3) !== "=" && c4 === -1)
+    ) {
+      throw new Error("Invalid base64 string");
+    }
+
+    const b1 = (c1 << 2) | (c2 >> 4);
+    result += String.fromCharCode(b1);
+
+    if (c3 !== -1) {
+      const b2 = ((c2 & 15) << 4) | (c3 >> 2);
+      result += String.fromCharCode(b2);
+      if (c4 !== -1) {
+        const b3 = ((c3 & 3) << 6) | c4;
+        result += String.fromCharCode(b3);
+      }
+    }
+  }
+  return result;
+}
+
+// ────────────────────────────────────────────
 // Self-Initialization
 // ────────────────────────────────────────────
 
 export function setupWebCryptoPolyfill(): void {
+  if (Platform.OS !== "web") {
+    (global as any).btoa = binaryBtoa;
+    (global as any).atob = binaryAtob;
+  }
+
   if (typeof global.crypto === "undefined") {
     (global as any).crypto = {
       getRandomValues,

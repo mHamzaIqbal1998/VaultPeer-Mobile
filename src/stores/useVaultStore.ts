@@ -78,6 +78,8 @@ interface VaultStoreState {
   closeDatabase: () => void;
   /** Re-parse the current database (after external save/sync) */
   refreshParsedState: () => void;
+  /** Synchronize database content from peer update */
+  syncDatabase: (db: kdbxweb.Kdbx) => void;
 
   // Navigation
   navigateToGroup: (groupUuid: string) => void;
@@ -604,6 +606,20 @@ export const useVaultStore = create<VaultStoreState>((rawSet, get) => {
         rootGroup,
         entryIndex: buildEntryIndex(rootGroup),
         groupIndex: buildGroupIndex(rootGroup),
+      });
+    },
+
+    syncDatabase: (db) => {
+      const { meta, rootGroup } = parseDatabase(db);
+      set({
+        _db: db,
+        meta,
+        rootGroup,
+        entryIndex: buildEntryIndex(rootGroup),
+        groupIndex: buildGroupIndex(rootGroup),
+        breadcrumbs: [],
+        activeGroupUuid: rootGroup.uuid,
+        isDirty: false,
       });
     },
 

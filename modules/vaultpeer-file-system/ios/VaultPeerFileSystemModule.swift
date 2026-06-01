@@ -221,7 +221,8 @@ public class VaultPeerFileSystemModule: Module, UIDocumentPickerDelegate {
 
       let result: [String: Any] = [
         "uri": url.absoluteString,
-        "bookmark": bookmarkBase64
+        "bookmark": bookmarkBase64,
+        "filename": url.lastPathComponent
       ]
       promise.resolve(result)
     } catch {

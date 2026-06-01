@@ -217,7 +217,7 @@ export default function VaultBrowserScreen() {
   const isGroupInRecycleBin = useVaultStore(
     (state) => state.isGroupInRecycleBin
   );
-  const { syncMode, connectionStatus } = useSignalingStore();
+  const { syncMode, connectionStatus, webrtcSyncStatus } = useSignalingStore();
 
   const activeGroup = useVaultStore((state) => {
     if (!state.activeGroupUuid || !state.groupIndex) return null;
@@ -779,32 +779,57 @@ export default function VaultBrowserScreen() {
             </Animated.View>
           )}
           {syncMode === "network" && (
-            <Pressable
-              onPress={() => {
-                router.push("/vault/settings");
-              }}
-              style={styles.iconButton}
-              hitSlop={8}
-              accessibilityLabel="Sync status"
-            >
-              <Ionicons
-                name={
-                  connectionStatus === "connected"
-                    ? "link"
-                    : connectionStatus === "connecting"
-                      ? "git-network-outline"
-                      : "link-outline"
-                }
-                size={22}
-                color={
-                  connectionStatus === "connected"
-                    ? colors.accentMint
-                    : connectionStatus === "connecting"
-                      ? "#F59E0B"
-                      : colors.statusError
-                }
-              />
-            </Pressable>
+            <>
+              {(webrtcSyncStatus === "pushing" ||
+                webrtcSyncStatus === "pulling" ||
+                webrtcSyncStatus === "checking_updates" ||
+                webrtcSyncStatus === "connecting_peers") && (
+                <View style={styles.syncingIndicator}>
+                  <ActivityIndicator size="small" color={colors.accentMint} />
+                  <Text style={styles.syncingText}>
+                    {webrtcSyncStatus === "pushing"
+                      ? "Pushing"
+                      : webrtcSyncStatus === "pulling"
+                        ? "Pulling"
+                        : "Syncing"}
+                  </Text>
+                </View>
+              )}
+              <Pressable
+                onPress={() => {
+                  router.push("/vault/settings");
+                }}
+                style={styles.iconButton}
+                hitSlop={8}
+                accessibilityLabel="Sync status"
+              >
+                <Ionicons
+                  name={
+                    webrtcSyncStatus === "synced" ||
+                    webrtcSyncStatus === "up_to_date"
+                      ? "cloud-done-outline"
+                      : connectionStatus === "connected"
+                        ? "link"
+                        : connectionStatus === "connecting"
+                          ? "git-network-outline"
+                          : "link-outline"
+                  }
+                  size={22}
+                  color={
+                    webrtcSyncStatus === "error"
+                      ? colors.statusError
+                      : webrtcSyncStatus === "synced" ||
+                          webrtcSyncStatus === "up_to_date"
+                        ? colors.accentMint
+                        : connectionStatus === "connected"
+                          ? colors.accentMint
+                          : connectionStatus === "connecting"
+                            ? "#F59E0B"
+                            : colors.statusError
+                  }
+                />
+              </Pressable>
+            </>
           )}
           <Pressable
             onPress={handleLock}
@@ -1309,6 +1334,7 @@ function createStyles(colors: any) {
     },
     headerRight: {
       flexDirection: "row",
+      alignItems: "center",
       gap: Spacing.sm,
     },
     iconButton: {
@@ -1316,6 +1342,20 @@ function createStyles(colors: any) {
       minHeight: TouchTarget.min,
       alignItems: "center",
       justifyContent: "center",
+    },
+    syncingIndicator: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 4,
+    },
+    syncingText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.micro,
+      color: colors.textMuted,
     },
 
     // Breadcrumbs

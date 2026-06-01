@@ -8,15 +8,27 @@ export type ConnectionStatus =
   | "connecting"
   | "connected";
 export type SyncMode = "offline" | "network" | null;
+export type WebrtcSyncStatus =
+  | "idle"
+  | "connecting_peers"
+  | "checking_updates"
+  | "pulling"
+  | "pushing"
+  | "up_to_date"
+  | "synced"
+  | "error";
 
 interface SignalingStoreState {
   // ── State Properties ──
+  myId: string;
   serverUrl: string;
   roomId: string;
   connectionStatus: ConnectionStatus;
   isConfigured: boolean;
   syncMode: SyncMode;
   lastError: string | null;
+  webrtcSyncStatus: WebrtcSyncStatus;
+  webrtcSyncError: string | null;
 
   // ── Actions ──
   setServerUrl: (url: string) => Promise<void>;
@@ -29,12 +41,27 @@ interface SignalingStoreState {
   createRoom: () => Promise<string>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: () => Promise<void>;
+  setWebrtcSyncStatus: (
+    status: WebrtcSyncStatus,
+    error?: string | null
+  ) => void;
 }
 
 let ws: WebSocket | null = null;
 let reconnectTimer: any = null;
 let backoffTime = 1000;
 const MAX_BACKOFF = 30000;
+let signalingMessageListener: ((msg: any) => void) | null = null;
+
+export function registerSignalingMessageListener(listener: (msg: any) => void) {
+  signalingMessageListener = listener;
+}
+
+export function sendSignalingMessage(message: any) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(message));
+  }
+}
 
 export const useSignalingStore = create<SignalingStoreState>((set, get) => {
   const cleanSocket = () => {
@@ -57,7 +84,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
   };
 
   const attemptConnect = () => {
-    const { serverUrl, isConfigured, roomId } = get();
+    const { serverUrl, isConfigured } = get();
 
     if (!isConfigured) {
       set({ connectionStatus: "offline", lastError: null });
@@ -71,15 +98,34 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
     try {
       ws = new WebSocket(serverUrl);
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
+        let { roomId, myId } = get();
         set({ connectionStatus: "connected", lastError: null });
         backoffTime = 1000; // Reset backoff on successful connection
+
+        if (!myId) {
+          try {
+            let storedMyId =
+              await SecureStore.getItemAsync("vault_peer_node_id");
+            if (!storedMyId) {
+              storedMyId = Crypto.randomUUID();
+              await SecureStore.setItemAsync("vault_peer_node_id", storedMyId);
+            }
+            set({ myId: storedMyId });
+            myId = storedMyId;
+          } catch {
+            myId = Crypto.randomUUID();
+            set({ myId });
+          }
+        }
+
         if (roomId) {
           try {
             ws?.send(JSON.stringify({ type: "join", roomId }));
+            ws?.send(JSON.stringify({ type: "announce", senderId: myId }));
           } catch (err) {
             console.warn(
-              "[SignalingStore] Failed to send join room message:",
+              "[SignalingStore] Failed to send join/announce room message:",
               err
             );
           }
@@ -91,6 +137,10 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
           const message = JSON.parse(event.data);
           if (message && message.type === "ping") {
             ws?.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+          if (signalingMessageListener) {
+            signalingMessageListener(message);
           }
         } catch (e) {
           console.warn("[SignalingStore] Failed to parse message:", e);
@@ -131,12 +181,15 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
 
   return {
     // ── Initial State ──
+    myId: "",
     serverUrl: "ws://10.0.2.2:8080", // Default Android emulator host address
     roomId: "",
     connectionStatus: "offline",
     isConfigured: false,
     syncMode: null,
     lastError: null,
+    webrtcSyncStatus: "idle",
+    webrtcSyncError: null,
 
     // ── Actions ──
     setServerUrl: async (url) => {
@@ -196,6 +249,12 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
 
     loadSettings: async () => {
       try {
+        let storedMyId = await SecureStore.getItemAsync("vault_peer_node_id");
+        if (!storedMyId) {
+          storedMyId = Crypto.randomUUID();
+          await SecureStore.setItemAsync("vault_peer_node_id", storedMyId);
+        }
+
         const storedUrl = await SecureStore.getItemAsync(
           "vault_signaling_server_url"
         );
@@ -208,7 +267,9 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         const storedSyncMode =
           await SecureStore.getItemAsync("vault_sync_mode");
 
-        const updates: Partial<SignalingStoreState> = {};
+        const updates: Partial<SignalingStoreState> = {
+          myId: storedMyId,
+        };
         if (storedUrl) {
           updates.serverUrl = storedUrl;
         }
@@ -235,6 +296,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
     },
 
     connect: () => {
+      backoffTime = 1000;
       attemptConnect();
     },
 
@@ -265,6 +327,10 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         }
       }
       await get().setRoomId("");
+    },
+
+    setWebrtcSyncStatus: (status, error = null) => {
+      set({ webrtcSyncStatus: status, webrtcSyncError: error });
     },
   };
 });

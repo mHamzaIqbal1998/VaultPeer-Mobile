@@ -94,6 +94,7 @@ export default function AutofillScreen() {
 
   const {
     fileUri,
+    filename,
     loadVault,
     error: fsError,
     clearError,
@@ -477,7 +478,9 @@ export default function AutofillScreen() {
       <CyberCard style={styles.card}>
         <Text style={styles.filenameLabel}>
           File:{" "}
-          <Text style={styles.filename}>{getFilenameFromUri(fileUri)}</Text>
+          <Text style={styles.filename}>
+            {filename || getFilenameFromUri(fileUri)}
+          </Text>
         </Text>
 
         <View style={styles.inputContainer}>

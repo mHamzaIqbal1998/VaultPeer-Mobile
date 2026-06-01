@@ -145,6 +145,31 @@ class VaultPeerFileSystemModule : Module(), ActivityEventListener {
         promise.reject("ERR_TEMP_WRITE_FAILED", "Failed to write temporary file: ${e.message}", e)
       }
     }
+
+    AsyncFunction("getFilenameFromUri") { uriString: String, promise: Promise ->
+      try {
+        val context = appContext.reactContext ?: throw Exception("React context is not available")
+        val uri = Uri.parse(uriString)
+        var displayName = ""
+        try {
+          context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1 && cursor.moveToFirst()) {
+              displayName = cursor.getString(nameIndex)
+            }
+          }
+        } catch (e: Exception) {
+          android.util.Log.e("VaultPeerFS", "Failed to query display name", e)
+        }
+
+        if (displayName.isEmpty()) {
+          displayName = uri.lastPathSegment ?: "vault.kdbx"
+        }
+        promise.resolve(displayName)
+      } catch (e: Exception) {
+        promise.reject("ERR_GET_FILENAME_FAILED", "Failed to resolve filename: ${e.message}", e)
+      }
+    }
   }
 
   override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
@@ -185,9 +210,28 @@ class VaultPeerFileSystemModule : Module(), ActivityEventListener {
           } ?: throw Exception("Failed to copy initial content to created file")
         }
 
+        // Query the display name (actual filename) from content resolver
+        var displayName = ""
+        try {
+          context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1 && cursor.moveToFirst()) {
+              displayName = cursor.getString(nameIndex)
+            }
+          }
+        } catch (e: Exception) {
+          android.util.Log.e("VaultPeerFS", "Failed to query display name", e)
+        }
+
+        // Fallback to URI parsing if displayName is empty
+        if (displayName.isEmpty()) {
+          displayName = uri.lastPathSegment ?: "vault.kdbx"
+        }
+
         val result = Arguments.createMap().apply {
           putString("uri", uri.toString())
           putString("bookmark", "") // Bookmarks are only required on iOS
+          putString("filename", displayName)
         }
         promise.resolve(result)
       } catch (e: Exception) {

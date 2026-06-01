@@ -10,3 +10,25 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: jest.fn().mockResolvedValue(undefined),
   deleteItemAsync: jest.fn().mockResolvedValue(undefined),
 }));
+
+jest.mock("react-native-webrtc", () => ({
+  RTCPeerConnection: jest.fn().mockImplementation(() => ({
+    createDataChannel: jest.fn().mockReturnValue({
+      send: jest.fn(),
+      close: jest.fn(),
+      readyState: "open",
+    }),
+    createOffer: jest.fn().mockResolvedValue({}),
+    createAnswer: jest.fn().mockResolvedValue({}),
+    setLocalDescription: jest.fn().mockResolvedValue({}),
+    setRemoteDescription: jest.fn().mockResolvedValue({}),
+    addIceCandidate: jest.fn().mockResolvedValue({}),
+    close: jest.fn(),
+  })),
+  RTCIceCandidate: jest.fn(),
+  RTCSessionDescription: jest.fn(),
+}));
+
+jest.mock("react-native-argon2-turbo", () => ({
+  hash: jest.fn(),
+}));

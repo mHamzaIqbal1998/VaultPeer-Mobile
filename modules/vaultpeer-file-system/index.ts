@@ -5,6 +5,7 @@ const VaultPeerFileSystem = requireNativeModule("VaultPeerFileSystem");
 export interface PickResult {
   uri: string;
   bookmark: string;
+  filename?: string;
 }
 
 /**
@@ -62,4 +63,20 @@ export async function writeFile(
  */
 export async function writeTempFile(contentBase64: string): Promise<string> {
   return await VaultPeerFileSystem.writeTempFile(contentBase64);
+}
+
+/**
+ * Query the real filename of a document URI from the system.
+ */
+export async function getFilenameFromUri(uri: string): Promise<string> {
+  if (VaultPeerFileSystem.getFilenameFromUri) {
+    return await VaultPeerFileSystem.getFilenameFromUri(uri);
+  }
+  const parts = decodeURIComponent(uri).split(/[/\\]/);
+  const lastPart = parts[parts.length - 1];
+  if (lastPart.includes(":")) {
+    const subParts = lastPart.split(":");
+    return subParts[subParts.length - 1] || "vault.kdbx";
+  }
+  return lastPart || "vault.kdbx";
 }

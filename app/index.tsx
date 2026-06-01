@@ -60,6 +60,7 @@ import {
   getStoredPassword,
 } from "@/src/services/biometricService";
 import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
+import { triggerSyncCheckForFile } from "@/src/services/webrtc/webrtcManager";
 
 // ────────────────────────────────────────────
 // Helper: Parse File Name from URI
@@ -116,6 +117,7 @@ export default function FileSetupScreen() {
   const router = useRouter();
   const {
     fileUri,
+    filename,
     isLoading: isFsLoading,
     error: fsError,
     hasSavedVault,
@@ -136,6 +138,8 @@ export default function FileSetupScreen() {
   const roomId = useSignalingStore((state) => state.roomId);
   const serverUrl = useSignalingStore((state) => state.serverUrl);
   const isConfigured = useSignalingStore((state) => state.isConfigured);
+  const webrtcSyncStatus = useSignalingStore((state) => state.webrtcSyncStatus);
+  const webrtcSyncError = useSignalingStore((state) => state.webrtcSyncError);
   const { setSyncMode, setServerUrl, setIsConfigured, createRoom, joinRoom } =
     useSignalingStore();
 
@@ -395,6 +399,80 @@ export default function FileSetupScreen() {
     }, 50);
   }, [loadVault, openDatabase, router, fileUri]);
 
+  const isSyncActive =
+    webrtcSyncStatus === "connecting_peers" ||
+    webrtcSyncStatus === "checking_updates" ||
+    webrtcSyncStatus === "pulling";
+
+  const renderSyncStatus = () => {
+    if (webrtcSyncStatus === "idle") return null;
+
+    let message = "";
+    let iconName: any = "sync";
+    let statusColor: string = colors.accentMint;
+    let showSpinner = false;
+
+    switch (webrtcSyncStatus) {
+      case "connecting_peers":
+        message = "Connecting to peers...";
+        iconName = "swap-horizontal";
+        showSpinner = true;
+        break;
+      case "checking_updates":
+        message = "Checking for updates...";
+        iconName = "cloud-download-outline";
+        showSpinner = true;
+        break;
+      case "pulling":
+        message = "Downloading latest database...";
+        iconName = "download-outline";
+        showSpinner = true;
+        break;
+      case "pushing":
+        message = "Pushing local changes...";
+        iconName = "upload-outline";
+        showSpinner = true;
+        break;
+      case "up_to_date":
+        message = "Vault is up-to-date";
+        iconName = "checkmark-circle-outline";
+        statusColor = colors.accentMint;
+        break;
+      case "synced":
+        message = "Vault synchronized!";
+        iconName = "checkmark-done-circle-outline";
+        statusColor = colors.accentMint;
+        break;
+      case "error":
+        message = webrtcSyncError || "Synchronization failed";
+        iconName = "alert-circle-outline";
+        statusColor = colors.statusError || "#ff5555";
+        break;
+    }
+
+    return (
+      <View style={styles.syncStatusContainer}>
+        {showSpinner ? (
+          <ActivityIndicator
+            size="small"
+            color={statusColor}
+            style={{ marginRight: Spacing.sm }}
+          />
+        ) : (
+          <Ionicons
+            name={iconName}
+            size={16}
+            color={statusColor}
+            style={{ marginRight: Spacing.sm }}
+          />
+        )}
+        <Text style={[styles.syncStatusText, { color: statusColor }]}>
+          {message}
+        </Text>
+      </View>
+    );
+  };
+
   useEffect(() => {
     async function checkBio() {
       if (hasSavedVault && fileUri) {
@@ -404,7 +482,8 @@ export default function FileSetupScreen() {
           enabled &&
           mode === "unlock" &&
           !storeDb &&
-          !hasAutoTriggeredBioRef.current
+          !hasAutoTriggeredBioRef.current &&
+          !isSyncActive
         ) {
           hasAutoTriggeredBioRef.current = true;
           setTimeout(() => {
@@ -417,7 +496,22 @@ export default function FileSetupScreen() {
       }
     }
     checkBio();
-  }, [hasSavedVault, mode, storeDb, fileUri, handleBiometricUnlock]);
+  }, [
+    hasSavedVault,
+    mode,
+    storeDb,
+    fileUri,
+    handleBiometricUnlock,
+    isSyncActive,
+  ]);
+
+  // Trigger WebRTC synchronization check whenever the user goes to the unlock screen
+  // or selects a different vault file.
+  useEffect(() => {
+    if (mode === "unlock" && fileUri) {
+      triggerSyncCheckForFile(fileUri);
+    }
+  }, [mode, fileUri]);
 
   // Combined Loading state
   const isLoading = isFsLoading || localLoading;
@@ -1027,9 +1121,11 @@ export default function FileSetupScreen() {
                     <Text style={styles.filenameLabel}>
                       File:{" "}
                       <Text style={styles.filename}>
-                        {getFilenameFromUri(fileUri)}
+                        {filename || getFilenameFromUri(fileUri)}
                       </Text>
                     </Text>
+
+                    {renderSyncStatus()}
 
                     <View style={styles.inputContainer}>
                       <Ionicons
@@ -1045,7 +1141,7 @@ export default function FileSetupScreen() {
                         onChangeText={setPassword}
                         placeholder="Master Password"
                         placeholderTextColor={colors.textDisabled}
-                        editable={!isLoading}
+                        editable={!isLoading && !isSyncActive}
                       />
                       <Pressable
                         onPress={() => setShowPassword(!showPassword)}
@@ -1063,12 +1159,12 @@ export default function FileSetupScreen() {
                     <View style={styles.buttonRow}>
                       <Pressable
                         onPress={handleUnlockSaved}
-                        disabled={isLoading}
+                        disabled={isLoading || isSyncActive}
                         style={({ pressed }) => [
                           styles.button,
                           { flex: 1 },
                           pressed && styles.buttonPressed,
-                          isLoading && styles.buttonDisabled,
+                          (isLoading || isSyncActive) && styles.buttonDisabled,
                         ]}
                       >
                         {isLoading ? (
@@ -1092,11 +1188,12 @@ export default function FileSetupScreen() {
                       {bioEnabled && (
                         <Pressable
                           onPress={handleBiometricUnlock}
-                          disabled={isLoading}
+                          disabled={isLoading || isSyncActive}
                           style={({ pressed }) => [
                             styles.bioButton,
                             pressed && styles.bioButtonPressed,
-                            isLoading && styles.bioButtonDisabled,
+                            (isLoading || isSyncActive) &&
+                              styles.bioButtonDisabled,
                           ]}
                           hitSlop={8}
                         >
@@ -2203,5 +2300,22 @@ const createStyles = (colors: any) =>
       fontFamily: Fonts.heading.medium,
       fontSize: FontSizes.caption,
       color: colors.textMuted,
+    },
+    syncStatusContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderColor: colors.borderSage,
+      borderWidth: 1,
+      borderRadius: Radii.sm,
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    syncStatusText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
     },
   });

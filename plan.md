@@ -363,3 +363,33 @@ Integrates signaling server connection states, persistent room creation/joining 
 - [x] Add connection state indicators to the database file header in `app/vault/index.tsx`:
   - Beside the filename, show a glowing green WiFi/Check icon (if connected), a red alert icon (if disconnected/reconnecting), or hide it entirely (if offline).
 - [x] Write unit tests (`src/stores/__tests__/useSignalingStore.test.ts`) to verify connection state machines, ping/pong reply loops, and message parsing.
+
+### Phase 21: WebRTC Peer-to-Peer File Synchronization
+
+Implements direct peer-to-peer WebRTC connection negotiation, conflict resolution via Last Known Modification (LKM) tracking, and synchronized file transfers before database decryption.
+
+- [ ] Install `react-native-webrtc` and configure dependencies.
+- [ ] Implement a Last Known Modification (LKM) local storage provider:
+  - Keep track of logical timestamps (epoch ms) per vault URI.
+  - On initial vault file select (before decryption), retrieve or initialize the LKM using the KeePass database change time (`settingsChanged`).
+  - Update the local LKM value upon successful local saves (`Date.now()`) or incoming peer updates (from remote metadata).
+- [ ] Create a WebRTC Peer Connection Manager (`src/services/webrtc/webrtcManager.ts` or within signaling store):
+  - Track active connections (`RTCPeerConnection` instances) indexed by remote client IDs.
+  - Implement a Politeness (Tie-Breaker) Protocol:
+    - If `myId > remoteId` (Impolite / Offerer): Initialize `RTCPeerConnection`, set up the `"vault-sync"` RTCDataChannel, and broadcast the SDP `offer`.
+    - If `myId < remoteId` (Polite / Answerer): Wait for an SDP `offer`, apply it, generate the SDP `answer`, and send it back.
+    - Resolve the "Answerer Discovery" race: when the Polite peer receives an `announce` message from the Offerer, it sends a targeted `announce` back so the Offerer knows it exists and initiates the connection.
+  - Exchange ICE candidates dynamically.
+- [ ] Implement the `"vault-sync"` data channel messaging protocol:
+  - On channel connection: Send a `metadata_query` and advertise local metadata with `metadata_info` (filename, lastModified LKM, file size).
+  - Handle `pull_request`: Read local database contents, serialize to Base64, and transmit via `pull_response`.
+  - Handle `pull_response` and `push_request`: Compare `remoteLastModified > localLastModified`. If remote is newer, write data atomically to disk, update the LKM map, and trigger database state refresh.
+- [ ] Implement proactive broadcast on database changes:
+  - Intercept database saving logic. Whenever the database is successfully modified and saved locally:
+    - Update the local LKM value to `Date.now()`.
+    - Proactively serialize the saved database, construct a `push_request` message containing the filename, base64 file data, and new LKM timestamp.
+    - Broadcast this `push_request` message directly to all active peers' `"vault-sync"` WebRTC data channels in the room.
+- [ ] Hook synchronization into the pre-decryption flow:
+  - When the app is opened or a vault is selected, if network mode is active, start peer discovery and synchronization _before_ showing the master password or biometric unlock screen.
+  - Allow the user to unlock the vault once the metadata check concludes or files have updated.
+- [ ] Create unit and mock tests (`src/services/webrtc/__tests__/webrtcManager.test.ts` or store tests) verifying the handshake, message routing, conflict resolution, and atomic file saves.
