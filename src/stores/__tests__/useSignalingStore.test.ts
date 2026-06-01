@@ -28,6 +28,7 @@ describe("useSignalingStore", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useSignalingStore.setState({
+      clientId: "mock-client-id",
       serverUrl: "ws://10.0.2.2:8080",
       roomId: "",
       connectionStatus: "offline",
@@ -151,7 +152,7 @@ describe("useSignalingStore", () => {
 
     await store.leaveRoom();
     expect(wsInstance?.send).toHaveBeenCalledWith(
-      JSON.stringify({ type: "leave" })
+      JSON.stringify({ type: "leave", senderId: "mock-client-id" })
     );
     expect(useSignalingStore.getState().roomId).toBe("");
   });

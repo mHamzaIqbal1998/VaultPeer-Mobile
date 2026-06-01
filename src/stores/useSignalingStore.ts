@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
+import { webRTCManager } from "../services/webrtc/webRTCManager";
 
 export type ConnectionStatus =
   | "offline"
@@ -11,6 +12,7 @@ export type SyncMode = "offline" | "network" | null;
 
 interface SignalingStoreState {
   // ── State Properties ──
+  clientId: string;
   serverUrl: string;
   roomId: string;
   connectionStatus: ConnectionStatus;
@@ -29,6 +31,7 @@ interface SignalingStoreState {
   createRoom: () => Promise<string>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: () => Promise<void>;
+  sendMessage: (msg: any) => void;
 }
 
 let ws: WebSocket | null = null;
@@ -57,7 +60,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
   };
 
   const attemptConnect = () => {
-    const { serverUrl, isConfigured, roomId } = get();
+    const { serverUrl, isConfigured, roomId, clientId } = get();
 
     if (!isConfigured) {
       set({ connectionStatus: "offline", lastError: null });
@@ -76,10 +79,13 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         backoffTime = 1000; // Reset backoff on successful connection
         if (roomId) {
           try {
+            // Join signaling room
             ws?.send(JSON.stringify({ type: "join", roomId }));
+            // Announce presence to other peers in the room
+            ws?.send(JSON.stringify({ type: "announce", senderId: clientId }));
           } catch (err) {
             console.warn(
-              "[SignalingStore] Failed to send join room message:",
+              "[SignalingStore] Failed to send join/announce messages:",
               err
             );
           }
@@ -91,6 +97,8 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
           const message = JSON.parse(event.data);
           if (message && message.type === "ping") {
             ws?.send(JSON.stringify({ type: "pong" }));
+          } else if (message) {
+            webRTCManager.handleSignalingMessage(message);
           }
         } catch (e) {
           console.warn("[SignalingStore] Failed to parse message:", e);
@@ -131,6 +139,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
 
   return {
     // ── Initial State ──
+    clientId: "",
     serverUrl: "ws://10.0.2.2:8080", // Default Android emulator host address
     roomId: "",
     connectionStatus: "offline",
@@ -157,6 +166,9 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         set({ roomId });
         if (get().connectionStatus === "connected" && roomId) {
           ws?.send(JSON.stringify({ type: "join", roomId }));
+          ws?.send(
+            JSON.stringify({ type: "announce", senderId: get().clientId })
+          );
         }
       } catch (e) {
         console.warn("[SignalingStore] Failed to save roomId:", e);
@@ -174,6 +186,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
           attemptConnect();
         } else {
           cleanSocket();
+          webRTCManager.destroy();
           set({ connectionStatus: "offline", lastError: null });
         }
       } catch (e) {
@@ -208,7 +221,15 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         const storedSyncMode =
           await SecureStore.getItemAsync("vault_sync_mode");
 
-        const updates: Partial<SignalingStoreState> = {};
+        let storedClientId = await SecureStore.getItemAsync("vault_client_id");
+        if (!storedClientId) {
+          storedClientId = Crypto.randomUUID();
+          await SecureStore.setItemAsync("vault_client_id", storedClientId);
+        }
+
+        const updates: Partial<SignalingStoreState> = {
+          clientId: storedClientId,
+        };
         if (storedUrl) {
           updates.serverUrl = storedUrl;
         }
@@ -240,6 +261,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
 
     disconnect: () => {
       cleanSocket();
+      webRTCManager.destroy();
       set({ connectionStatus: "offline", lastError: null });
     },
 
@@ -254,17 +276,31 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
     },
 
     leaveRoom: async () => {
-      const { roomId } = get();
+      const { roomId, clientId } = get();
       if (!roomId) return;
 
       if (ws && ws.readyState === WebSocket.OPEN) {
         try {
-          ws.send(JSON.stringify({ type: "leave" }));
+          ws.send(JSON.stringify({ type: "leave", senderId: clientId }));
         } catch (e) {
           console.warn("[SignalingStore] Failed to send leave message:", e);
         }
       }
+      webRTCManager.destroy();
       await get().setRoomId("");
+    },
+
+    sendMessage: (msg: any) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify(msg));
+        } catch (err) {
+          console.warn(
+            "[SignalingStore] Error sending signaling message:",
+            err
+          );
+        }
+      }
     },
   };
 });

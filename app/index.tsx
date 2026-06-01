@@ -17,6 +17,7 @@ import React, {
 } from "react";
 import { useRouter } from "expo-router";
 import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useActiveConnection } from "@/src/hooks/useActiveConnection";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import {
   View,
@@ -111,6 +112,7 @@ function formatLastOpened(timestamp: number): string {
 type ScreenMode = "select" | "unlock" | "create" | "recent";
 
 export default function FileSetupScreen() {
+  useActiveConnection();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();

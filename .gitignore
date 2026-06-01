@@ -2,7 +2,7 @@
 
 # dependencies
 node_modules/
-
+servernode-code/
 # Expo
 .expo/
 dist/

@@ -21,7 +21,16 @@ import {
   Modal,
   ScrollView,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -37,10 +46,13 @@ import {
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
 import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useActiveConnection } from "@/src/hooks/useActiveConnection";
+import { useWebRTCStore } from "@/src/stores/useWebRTCStore";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
 import { ActionModal } from "@/src/components/ActionModal";
+import { PeerListDrawer } from "@/src/components/PeerListDrawer";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -185,6 +197,7 @@ const getTemplateCardStyle = (title: string, colors: any) => {
 // ────────────────────────────────────────────
 
 export default function VaultBrowserScreen() {
+  useActiveConnection();
   const router = useRouter();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -218,6 +231,26 @@ export default function VaultBrowserScreen() {
     (state) => state.isGroupInRecycleBin
   );
   const { syncMode, connectionStatus } = useSignalingStore();
+  const { activePeersCount } = useWebRTCStore();
+  const [showPeerDrawer, setShowPeerDrawer] = useState(false);
+
+  const pulseScale = useSharedValue(1);
+  React.useEffect(() => {
+    pulseScale.value = withRepeat(
+      withSequence(
+        withTiming(1.15, { duration: 1000 }),
+        withTiming(1.0, { duration: 1000 })
+      ),
+      -1,
+      true
+    );
+  }, [pulseScale]);
+
+  const animatedBadgeStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: pulseScale.value }],
+    };
+  });
 
   const activeGroup = useVaultStore((state) => {
     if (!state.activeGroupUuid || !state.groupIndex) return null;
@@ -781,29 +814,56 @@ export default function VaultBrowserScreen() {
           {syncMode === "network" && (
             <Pressable
               onPress={() => {
-                router.push("/vault/settings");
+                setShowPeerDrawer(true);
               }}
               style={styles.iconButton}
               hitSlop={8}
               accessibilityLabel="Sync status"
             >
-              <Ionicons
-                name={
-                  connectionStatus === "connected"
-                    ? "link"
-                    : connectionStatus === "connecting"
-                      ? "git-network-outline"
-                      : "link-outline"
-                }
-                size={22}
-                color={
-                  connectionStatus === "connected"
-                    ? colors.accentMint
-                    : connectionStatus === "connecting"
-                      ? "#F59E0B"
-                      : colors.statusError
-                }
-              />
+              {connectionStatus === "connected" ? (
+                activePeersCount > 0 ? (
+                  <Animated.View
+                    style={[styles.pulseBadgeContainer, animatedBadgeStyle]}
+                  >
+                    <View
+                      style={[
+                        styles.pulseBadge,
+                        {
+                          backgroundColor: colors.accentMintDim,
+                          borderColor: colors.accentMint,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.pulseBadgeText,
+                          { color: colors.accentMint },
+                        ]}
+                      >
+                        {activePeersCount}
+                      </Text>
+                    </View>
+                  </Animated.View>
+                ) : (
+                  <Ionicons
+                    name="git-network-outline"
+                    size={22}
+                    color={colors.accentMint}
+                  />
+                )
+              ) : connectionStatus === "connecting" ? (
+                <Ionicons
+                  name="git-network-outline"
+                  size={22}
+                  color="#F59E0B"
+                />
+              ) : (
+                <Ionicons
+                  name="link-outline"
+                  size={22}
+                  color={colors.statusError}
+                />
+              )}
             </Pressable>
           )}
           <Pressable
@@ -1247,6 +1307,11 @@ export default function VaultBrowserScreen() {
         options={modalConfig.options}
         buttons={modalConfig.buttons}
       />
+
+      <PeerListDrawer
+        visible={showPeerDrawer}
+        onClose={() => setShowPeerDrawer(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1316,6 +1381,23 @@ function createStyles(colors: any) {
       minHeight: TouchTarget.min,
       alignItems: "center",
       justifyContent: "center",
+    },
+    pulseBadgeContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    pulseBadge: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      borderWidth: 1.5,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    pulseBadgeText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      fontWeight: "bold",
     },
 
     // Breadcrumbs
