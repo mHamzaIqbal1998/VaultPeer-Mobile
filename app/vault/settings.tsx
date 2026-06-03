@@ -366,6 +366,8 @@ export default function VaultSettingsScreen() {
     joinRoom,
     leaveRoom,
     lastError,
+    iceServers,
+    setIceServers,
   } = useSignalingStore();
 
   const { copyToClipboard } = useClipboard();
@@ -374,8 +376,10 @@ export default function VaultSettingsScreen() {
   const [showQrModal, setShowQrModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showServerEditModal, setShowServerEditModal] = useState(false);
+  const [showIceServersModal, setShowIceServersModal] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [newServerUrl, setNewServerUrl] = useState(serverUrl);
+  const [newIceServersText, setNewIceServersText] = useState("");
   const [newRoomId, setNewRoomId] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -1837,6 +1841,29 @@ export default function VaultSettingsScreen() {
                     />
 
                     <View style={styles.divider} />
+                    {/* ICE Servers */}
+                    <SettingsRow
+                      icon="shield-outline"
+                      title="ICE Servers (STUN/TURN)"
+                      subtitle="Relay configuration for symmetric NATs"
+                      value={
+                        iceServers.length > 0
+                          ? `${iceServers.length} custom server${
+                              iceServers.length > 1 ? "s" : ""
+                            }`
+                          : "Default (STUN only)"
+                      }
+                      onPress={() => {
+                        setNewIceServersText(
+                          iceServers.length > 0
+                            ? JSON.stringify(iceServers, null, 2)
+                            : ""
+                        );
+                        setShowIceServersModal(true);
+                      }}
+                    />
+
+                    <View style={styles.divider} />
                     {/* Connection Status & Test Connection */}
                     <View style={rowStyles.row}>
                       <Ionicons
@@ -2507,6 +2534,132 @@ export default function VaultSettingsScreen() {
               style={styles.modalButtonSecondary}
               onPress={() => {
                 setShowServerEditModal(false);
+                setFormError(null);
+              }}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* Edit ICE Servers Modal */}
+      <Modal
+        visible={showIceServersModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowIceServersModal(false);
+          setFormError(null);
+        }}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>
+                ICE Servers Configuration
+              </Text>
+            </View>
+
+            <View style={styles.modalInputContainer}>
+              <Text style={styles.inputLabel}>ICE Servers (JSON Array)</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    height: 120,
+                    textAlignVertical: "top",
+                    paddingTop: 8,
+                    paddingBottom: 8,
+                    fontFamily: "SpaceMono-Regular",
+                    fontSize: 12,
+                  },
+                ]}
+                multiline
+                numberOfLines={6}
+                value={newIceServersText}
+                onChangeText={(text) => {
+                  setNewIceServersText(text);
+                  setFormError(null);
+                }}
+                placeholder={`[\n  { "urls": ["stun:stun.l.google.com:19302"] },\n  { "urls": ["turn:your-turn-server.com:3478"], "username": "user", "credential": "pwd" }\n]`}
+                placeholderTextColor={colors.textDisabled}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {formError && (
+                <Text
+                  style={{
+                    color: colors.statusError,
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  {formError}
+                </Text>
+              )}
+              <Text
+                style={{ marginTop: 8, fontSize: 11, color: colors.textMuted }}
+              >
+                Input must be a valid JSON array of RTCIceServer objects. Leave
+                empty to reset to default Google STUN.
+              </Text>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={async () => {
+                const trimmed = newIceServersText.trim();
+                if (!trimmed) {
+                  await setIceServers([]);
+                  setShowIceServersModal(false);
+                  setFormError(null);
+                  return;
+                }
+
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  if (!Array.isArray(parsed)) {
+                    setFormError("Configuration must be a JSON array");
+                    return;
+                  }
+                  for (let i = 0; i < parsed.length; i++) {
+                    const item = parsed[i];
+                    if (typeof item !== "object" || item === null) {
+                      setFormError(`Item at index ${i} must be an object`);
+                      return;
+                    }
+                    if (!item.urls) {
+                      setFormError(
+                        `Item at index ${i} is missing "urls" field`
+                      );
+                      return;
+                    }
+                  }
+
+                  await setIceServers(parsed);
+                  setShowIceServersModal(false);
+                  setFormError(null);
+                } catch (e: any) {
+                  setFormError(`Invalid JSON: ${e.message}`);
+                }
+              }}
+            >
+              <Text style={styles.modalButtonText}>Save Configuration</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.modalButtonSecondary}
+              onPress={() => {
+                setShowIceServersModal(false);
                 setFormError(null);
               }}
             >

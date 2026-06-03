@@ -5,6 +5,7 @@ const VaultPeerFileSystem = requireNativeModule("VaultPeerFileSystem");
 export interface PickResult {
   uri: string;
   bookmark: string;
+  name?: string;
 }
 
 /**

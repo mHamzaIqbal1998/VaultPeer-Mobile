@@ -180,7 +180,7 @@ export function FilePickerProvider({
       setHasSavedVault(true);
 
       // Add to recent vaults
-      const name = getNameFromUri(pickResult.uri);
+      const name = pickResult.name || getNameFromUri(pickResult.uri);
       const newRecent: RecentVault = {
         uri: pickResult.uri,
         bookmark: pickResult.bookmark || null,
@@ -233,7 +233,7 @@ export function FilePickerProvider({
       setHasSavedVault(true);
 
       // Add to recent vaults
-      const name = getNameFromUri(pickResult.uri);
+      const name = pickResult.name || getNameFromUri(pickResult.uri);
       const newRecent: RecentVault = {
         uri: pickResult.uri,
         bookmark: pickResult.bookmark || null,
@@ -393,7 +393,8 @@ export function FilePickerProvider({
       const db = await decryptDatabase(arrayBuffer, password);
 
       // Add/update in recent vaults
-      const name = getNameFromUri(fileUri);
+      const existingVault = recentVaults.find((v) => v.uri === fileUri);
+      const name = existingVault ? existingVault.name : getNameFromUri(fileUri);
       const newRecent: RecentVault = {
         uri: fileUri,
         bookmark: bookmark || null,

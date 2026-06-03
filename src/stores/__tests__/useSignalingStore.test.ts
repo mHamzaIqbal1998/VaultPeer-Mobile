@@ -170,4 +170,42 @@ describe("useSignalingStore", () => {
       "WebSocket connection failed. Verify URL and server state."
     );
   });
+
+  it("should initialize with default empty iceServers", () => {
+    const state = useSignalingStore.getState();
+    expect(state.iceServers).toEqual([]);
+  });
+
+  it("should load iceServers from SecureStore in loadSettings", async () => {
+    const mockGetItem = SecureStore.getItemAsync as jest.Mock;
+    const testIceServers = [
+      { urls: ["turn:test.com"], username: "foo", credential: "bar" },
+    ];
+    mockGetItem.mockImplementation((key: string) => {
+      if (key === "vault_ice_servers")
+        return Promise.resolve(JSON.stringify(testIceServers));
+      return Promise.resolve(null);
+    });
+
+    const store = useSignalingStore.getState();
+    await store.loadSettings();
+
+    const state = useSignalingStore.getState();
+    expect(state.iceServers).toEqual(testIceServers);
+  });
+
+  it("should persist and update iceServers", async () => {
+    const mockSetItem = SecureStore.setItemAsync as jest.Mock;
+    const store = useSignalingStore.getState();
+    const testIceServers = [
+      { urls: ["turn:test-persist.com"], username: "user", credential: "pwd" },
+    ];
+
+    await store.setIceServers(testIceServers);
+    expect(useSignalingStore.getState().iceServers).toEqual(testIceServers);
+    expect(mockSetItem).toHaveBeenCalledWith(
+      "vault_ice_servers",
+      JSON.stringify(testIceServers)
+    );
+  });
 });

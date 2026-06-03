@@ -230,6 +230,8 @@ describe("WebRTCManager", () => {
     await flushPromises();
 
     const pcInstance = (RTCPeerConnection as any).lastInstance;
+    // Set remote description so candidate is added immediately
+    pcInstance.remoteDescription = { type: "offer", sdp: "remote-sdp" };
 
     await (webRTCManager as any).handleCandidate(
       "a",
@@ -240,6 +242,38 @@ describe("WebRTCManager", () => {
     expect(pcInstance.addIceCandidate).toHaveBeenCalledWith({
       candidate: "candidate-data",
       sdpMid: "sdp-mid-0",
+      sdpMLineIndex: 0,
+    });
+  });
+
+  it("should queue ICE candidates when remoteDescription is not set and process them later", async () => {
+    // Announce to initialize
+    webRTCManager.handleSignalingMessage({
+      type: "announce",
+      senderId: "a",
+    });
+
+    await flushPromises();
+
+    const pcInstance = (RTCPeerConnection as any).lastInstance;
+
+    // Call handleCandidate when remoteDescription is null/unset
+    await (webRTCManager as any).handleCandidate(
+      "a",
+      "queued-candidate-data",
+      "sdp-mid-1"
+    );
+
+    // expect addIceCandidate not to have been called yet
+    expect(pcInstance.addIceCandidate).not.toHaveBeenCalled();
+
+    // Now set remote description via handleAnswer
+    await (webRTCManager as any).handleAnswer("a", "remote-sdp-answer");
+
+    // expect queued candidate to be processed
+    expect(pcInstance.addIceCandidate).toHaveBeenCalledWith({
+      candidate: "queued-candidate-data",
+      sdpMid: "sdp-mid-1",
       sdpMLineIndex: 0,
     });
   });

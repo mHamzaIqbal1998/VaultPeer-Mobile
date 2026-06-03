@@ -19,12 +19,14 @@ interface SignalingStoreState {
   isConfigured: boolean;
   syncMode: SyncMode;
   lastError: string | null;
+  iceServers: any[];
 
   // ── Actions ──
   setServerUrl: (url: string) => Promise<void>;
   setRoomId: (roomId: string) => Promise<void>;
   setIsConfigured: (configured: boolean) => Promise<void>;
   setSyncMode: (mode: SyncMode) => Promise<void>;
+  setIceServers: (iceServers: any[]) => Promise<void>;
   loadSettings: () => Promise<void>;
   connect: () => void;
   disconnect: () => void;
@@ -146,6 +148,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
     isConfigured: false,
     syncMode: null,
     lastError: null,
+    iceServers: [],
 
     // ── Actions ──
     setServerUrl: async (url) => {
@@ -207,6 +210,18 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
       }
     },
 
+    setIceServers: async (iceServers) => {
+      try {
+        await SecureStore.setItemAsync(
+          "vault_ice_servers",
+          JSON.stringify(iceServers)
+        );
+        set({ iceServers });
+      } catch (e) {
+        console.warn("[SignalingStore] Failed to save iceServers:", e);
+      }
+    },
+
     loadSettings: async () => {
       try {
         const storedUrl = await SecureStore.getItemAsync(
@@ -220,6 +235,8 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         );
         const storedSyncMode =
           await SecureStore.getItemAsync("vault_sync_mode");
+        const storedIceServers =
+          await SecureStore.getItemAsync("vault_ice_servers");
 
         let storedClientId = await SecureStore.getItemAsync("vault_client_id");
         if (!storedClientId) {
@@ -229,6 +246,7 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
 
         const updates: Partial<SignalingStoreState> = {
           clientId: storedClientId,
+          iceServers: [],
         };
         if (storedUrl) {
           updates.serverUrl = storedUrl;
@@ -241,6 +259,19 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
         }
         if (storedSyncMode === "offline" || storedSyncMode === "network") {
           updates.syncMode = storedSyncMode;
+        }
+        if (storedIceServers) {
+          try {
+            const parsed = JSON.parse(storedIceServers);
+            if (Array.isArray(parsed)) {
+              updates.iceServers = parsed;
+            }
+          } catch (e) {
+            console.warn(
+              "[SignalingStore] Failed to parse stored iceServers:",
+              e
+            );
+          }
         }
 
         set(updates);

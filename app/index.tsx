@@ -1029,7 +1029,8 @@ export default function FileSetupScreen() {
                     <Text style={styles.filenameLabel}>
                       File:{" "}
                       <Text style={styles.filename}>
-                        {getFilenameFromUri(fileUri)}
+                        {recentVaults.find((v) => v.uri === fileUri)?.name ||
+                          getFilenameFromUri(fileUri)}
                       </Text>
                     </Text>
 

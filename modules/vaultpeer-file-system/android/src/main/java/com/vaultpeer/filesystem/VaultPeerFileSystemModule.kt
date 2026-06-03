@@ -171,6 +171,20 @@ class VaultPeerFileSystemModule : Module(), ActivityEventListener {
       }
 
       try {
+        var displayName: String? = null
+        try {
+          context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+              val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+              if (nameIndex != -1) {
+                displayName = cursor.getString(nameIndex)
+              }
+            }
+          }
+        } catch (queryEx: Exception) {
+          // Fallback to null, we'll parse the URI in JS
+        }
+
         // Persist permissions on the URI so we can read/write in subsequent app sessions
         val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         context.contentResolver.takePersistableUriPermission(uri, takeFlags)
@@ -188,6 +202,7 @@ class VaultPeerFileSystemModule : Module(), ActivityEventListener {
         val result = Arguments.createMap().apply {
           putString("uri", uri.toString())
           putString("bookmark", "") // Bookmarks are only required on iOS
+          putString("name", displayName ?: "")
         }
         promise.resolve(result)
       } catch (e: Exception) {

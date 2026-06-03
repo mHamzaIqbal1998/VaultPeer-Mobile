@@ -7,7 +7,7 @@ import { useSignalingStore } from "../../stores/useSignalingStore";
 import { useWebRTCStore } from "../../stores/useWebRTCStore";
 
 const TAG = "[WebRTCManager]";
-const ICE_SERVERS = [
+const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
@@ -18,6 +18,7 @@ interface PeerState {
   isOfferer: boolean;
   makingOffer: boolean;
   ignoreOffer: boolean;
+  candidateQueue?: any[];
 }
 
 class WebRTCManager {
@@ -135,6 +136,7 @@ class WebRTCManager {
       await pc.setRemoteDescription(
         new RTCSessionDescription({ type: "offer", sdp })
       );
+      await this.processQueuedCandidates(remotePeerId, state);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -164,6 +166,7 @@ class WebRTCManager {
       await state.pc.setRemoteDescription(
         new RTCSessionDescription({ type: "answer", sdp })
       );
+      await this.processQueuedCandidates(remotePeerId, state);
     } catch (err) {
       console.error(
         TAG,
@@ -190,23 +193,63 @@ class WebRTCManager {
       return;
     }
 
-    try {
-      let candInfo = candidate;
-      if (typeof candidate === "string") {
-        candInfo = { candidate, sdpMid, sdpMLineIndex: 0 };
-      } else if (candidate && !candidate.sdpMid) {
-        candInfo = { ...candidate, sdpMid };
-      }
+    let candInfo = candidate;
+    if (typeof candidate === "string") {
+      candInfo = { candidate, sdpMid, sdpMLineIndex: 0 };
+    } else if (candidate && !candidate.sdpMid) {
+      candInfo = { ...candidate, sdpMid };
+    }
 
-      if (candInfo) {
-        await state.pc.addIceCandidate(new RTCIceCandidate(candInfo));
+    if (!candInfo) return;
+
+    // Check if remoteDescription is set yet. If not, queue the candidate.
+    if (!state.pc.remoteDescription || !state.pc.remoteDescription.type) {
+      console.log(
+        TAG,
+        `Remote description not set yet for ${remotePeerId}. Queueing ICE candidate.`
+      );
+      if (!state.candidateQueue) {
+        state.candidateQueue = [];
       }
+      state.candidateQueue.push(candInfo);
+      return;
+    }
+
+    try {
+      await state.pc.addIceCandidate(new RTCIceCandidate(candInfo));
     } catch (err) {
       console.warn(
         TAG,
         `Error adding remote candidate from ${remotePeerId}:`,
         err
       );
+    }
+  }
+
+  /**
+   * Process any queued remote ICE candidates once remote description is set.
+   */
+  private async processQueuedCandidates(
+    remotePeerId: string,
+    state: PeerState
+  ) {
+    if (!state.candidateQueue || state.candidateQueue.length === 0) return;
+    console.log(
+      TAG,
+      `Processing ${state.candidateQueue.length} queued remote ICE candidates for ${remotePeerId}`
+    );
+    const queue = [...state.candidateQueue];
+    state.candidateQueue = [];
+    for (const candInfo of queue) {
+      try {
+        await state.pc.addIceCandidate(new RTCIceCandidate(candInfo));
+      } catch (err) {
+        console.warn(
+          TAG,
+          `Error adding queued remote candidate from ${remotePeerId}:`,
+          err
+        );
+      }
     }
   }
 
@@ -219,8 +262,17 @@ class WebRTCManager {
       `Creating RTCPeerConnection for ${remotePeerId} (Offerer: ${isOfferer})`
     );
 
+    const storeIceServers = useSignalingStore.getState().iceServers;
+    // Always prepend Google STUN as the fallback first item
+    const configIceServers = [
+      DEFAULT_ICE_SERVERS[0],
+      ...(storeIceServers && storeIceServers.length > 0
+        ? storeIceServers
+        : [DEFAULT_ICE_SERVERS[1]]),
+    ];
+
     const pc = new RTCPeerConnection({
-      iceServers: ICE_SERVERS,
+      iceServers: configIceServers,
     });
 
     const state: PeerState = {
@@ -229,6 +281,7 @@ class WebRTCManager {
       isOfferer,
       makingOffer: false,
       ignoreOffer: false,
+      candidateQueue: [],
     };
 
     this.peers.set(remotePeerId, state);
