@@ -12,6 +12,15 @@ const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+/** Maximum number of ICE restart attempts before giving up */
+const MAX_ICE_RESTART_ATTEMPTS = 2;
+/** Grace period (ms) before cleaning up a disconnected peer */
+const DISCONNECT_GRACE_MS = 10_000;
+/** Grace period (ms) after ICE restart before final cleanup */
+const ICE_RESTART_GRACE_MS = 15_000;
+/** Timeout (ms) waiting for ICE gathering before sending offer */
+const ICE_GATHER_TIMEOUT_MS = 3_000;
+
 interface PeerState {
   pc: RTCPeerConnection;
   dc: any | null; // DataChannel is not fully typed in all react-native-webrtc versions, so we use any
@@ -19,10 +28,12 @@ interface PeerState {
   makingOffer: boolean;
   ignoreOffer: boolean;
   candidateQueue?: any[];
+  iceRestartCount: number;
 }
 
 class WebRTCManager {
   private peers = new Map<string, PeerState>();
+  private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   /**
    * Processes inbound signaling messages from the signaling server.
@@ -254,6 +265,124 @@ class WebRTCManager {
   }
 
   /**
+   * Detect whether user-provided ICE servers contain any TURN entries.
+   */
+  private hasTurnServers(servers: any[]): boolean {
+    return servers.some((s) => {
+      const urls = Array.isArray(s.urls)
+        ? s.urls
+        : typeof s.urls === "string"
+          ? [s.urls]
+          : [];
+      return urls.some(
+        (u: string) => u.startsWith("turn:") || u.startsWith("turns:")
+      );
+    });
+  }
+
+  /**
+   * Filter, deduplicate, and prioritize ICE servers to prevent concurrent
+   * allocation attempts to the same TURN host, which causes collisions and
+   * rate-limiting on mobile CGNAT networks.
+   * Priority order:
+   *   1. turns: (TLS over TCP on 443) — most reliable, looks like HTTPS traffic
+   *   2. turn:  with transport=tcp — TCP avoids UDP NAT mapping timeout
+   *   3. turn:  UDP — fastest but NAT may kill the mapping after ~30s
+   *   4. stun:  only — useless on CGNAT, deprioritize or filter out
+   */
+  private filterAndPrioritizeIceServers(servers: any[]): any[] {
+    const flat: { url: string; username?: string; credential?: string }[] = [];
+    for (const s of servers) {
+      if (!s) continue;
+      const urls = Array.isArray(s.urls)
+        ? s.urls
+        : typeof s.urls === "string"
+          ? [s.urls]
+          : [];
+      for (const u of urls) {
+        if (typeof u === "string") {
+          flat.push({
+            url: u,
+            username: s.username,
+            credential: s.credential,
+          });
+        }
+      }
+    }
+
+    const getHost = (url: string): string => {
+      const match = url.match(/^(?:stun|stuns|turn|turns):([^:?]+)/i);
+      return match ? match[1].toLowerCase() : url.toLowerCase();
+    };
+
+    const getPriority = (url: string): number => {
+      if (url.startsWith("turns:")) return 0;
+      if (url.startsWith("turn:") && url.includes("transport=tcp")) return 1;
+      if (url.startsWith("turn:")) return 2;
+      return 3;
+    };
+
+    const groups = new Map<string, typeof flat>();
+    for (const item of flat) {
+      const host = getHost(item.url);
+      if (!groups.has(host)) {
+        groups.set(host, []);
+      }
+      groups.get(host)!.push(item);
+    }
+
+    const result: any[] = [];
+    groups.forEach((items) => {
+      items.sort((a, b) => getPriority(a.url) - getPriority(b.url));
+      const best = items[0];
+      if (best) {
+        const rtcServer: any = { urls: [best.url] };
+        if (best.username) rtcServer.username = best.username;
+        if (best.credential) rtcServer.credential = best.credential;
+        result.push(rtcServer);
+      }
+    });
+
+    const hasTurn = result.some((s) =>
+      s.urls.some(
+        (u: string) => u.startsWith("turn:") || u.startsWith("turns:")
+      )
+    );
+
+    if (hasTurn) {
+      const turnDomains = result
+        .filter((s) =>
+          s.urls.some(
+            (u: string) => u.startsWith("turn:") || u.startsWith("turns:")
+          )
+        )
+        .map((s) => {
+          const host = getHost(s.urls[0]);
+          return host.replace(/^(?:standard|stun|turn|relay)\./, "");
+        });
+
+      return result.filter((s) => {
+        const isStunOnly = s.urls.every(
+          (u: string) => u.startsWith("stun:") || u.startsWith("stuns:")
+        );
+        if (!isStunOnly) return true;
+        const host = getHost(s.urls[0]);
+        const stunDomain = host.replace(/^(?:standard|stun|turn|relay)\./, "");
+        const isDuplicate = turnDomains.some(
+          (td) => stunDomain.includes(td) || td.includes(stunDomain)
+        );
+        if (isDuplicate) {
+          console.log(TAG, `Filtering out redundant STUN server: ${s.urls[0]}`);
+          return false;
+        }
+        return true;
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Create and configure RTCPeerConnection.
    */
   private createPeerConnection(remotePeerId: string, isOfferer: boolean) {
@@ -263,17 +392,28 @@ class WebRTCManager {
     );
 
     const storeIceServers = useSignalingStore.getState().iceServers;
-    // Always prepend Google STUN as the fallback first item
-    const configIceServers = [
-      DEFAULT_ICE_SERVERS[0],
-      ...(storeIceServers && storeIceServers.length > 0
-        ? storeIceServers
-        : [DEFAULT_ICE_SERVERS[1]]),
-    ];
+    const hasCustomServers = storeIceServers && storeIceServers.length > 0;
 
-    const pc = new RTCPeerConnection({
+    // When user provides custom ICE servers (which already include their own STUN),
+    // use them as-is. Don't prepend Google STUN — on CGNAT it generates useless
+    // srflx candidates that compete with valid relay candidates.
+    let configIceServers = hasCustomServers
+      ? storeIceServers
+      : DEFAULT_ICE_SERVERS;
+
+    // Filter, deduplicate, and prioritize custom servers
+    if (hasCustomServers) {
+      configIceServers = this.filterAndPrioritizeIceServers(storeIceServers);
+    }
+
+    console.log(TAG, `ICE config: ${configIceServers.length} servers`);
+
+    const rtcConfig: any = {
       iceServers: configIceServers,
-    });
+      bundlePolicy: "max-bundle",
+    };
+
+    const pc = new RTCPeerConnection(rtcConfig);
 
     const state: PeerState = {
       pc,
@@ -282,6 +422,7 @@ class WebRTCManager {
       makingOffer: false,
       ignoreOffer: false,
       candidateQueue: [],
+      iceRestartCount: 0,
     };
 
     this.peers.set(remotePeerId, state);
@@ -323,11 +464,22 @@ class WebRTCManager {
         connectionState: connState,
       });
 
-      if (
-        connState === "closed" ||
-        connState === "failed" ||
-        connState === "disconnected"
-      ) {
+      if (connState === "connected") {
+        // Connection recovered or established — clear any pending disconnect timer
+        // and reset the ICE restart counter
+        this.clearDisconnectTimer(remotePeerId);
+        const peerState = this.peers.get(remotePeerId);
+        if (peerState) peerState.iceRestartCount = 0;
+      } else if (connState === "disconnected") {
+        // `disconnected` is transient — the ICE agent may still be trying
+        // TURN relay candidates. Give it generous time before cleaning up.
+        this.scheduleDisconnectCleanup(remotePeerId, DISCONNECT_GRACE_MS);
+      } else if (connState === "failed") {
+        // Attempt ICE restart before giving up
+        this.clearDisconnectTimer(remotePeerId);
+        this.attemptIceRestart(remotePeerId);
+      } else if (connState === "closed") {
+        this.clearDisconnectTimer(remotePeerId);
         this.cleanupPeer(remotePeerId);
       }
     };
@@ -346,11 +498,30 @@ class WebRTCManager {
         return;
       }
       if (
-        pc.iceConnectionState === "failed" ||
-        pc.iceConnectionState === "closed"
+        pc.iceConnectionState === "connected" ||
+        pc.iceConnectionState === "completed"
       ) {
+        this.clearDisconnectTimer(remotePeerId);
+        const peerState = this.peers.get(remotePeerId);
+        if (peerState) peerState.iceRestartCount = 0;
+      } else if (pc.iceConnectionState === "disconnected") {
+        // Transient — TURN relay candidates may still be in progress
+        this.scheduleDisconnectCleanup(remotePeerId, DISCONNECT_GRACE_MS);
+      } else if (pc.iceConnectionState === "failed") {
+        this.clearDisconnectTimer(remotePeerId);
+        this.attemptIceRestart(remotePeerId);
+      } else if (pc.iceConnectionState === "closed") {
+        this.clearDisconnectTimer(remotePeerId);
         this.cleanupPeer(remotePeerId);
       }
+    };
+
+    // ── ICE Gathering State (for debugging) ──
+    (pc as any).onicegatheringstatechange = () => {
+      console.log(
+        TAG,
+        `Peer ${remotePeerId} iceGatheringState: ${(pc as any).iceGatheringState}`
+      );
     };
 
     // ── Data Channel setup ──
@@ -371,13 +542,59 @@ class WebRTCManager {
   }
 
   /**
+   * Wait for ICE gathering to complete or timeout.
+   * On mobile networks with multiple TURN servers, gathering can take a while.
+   * We wait up to ICE_GATHER_TIMEOUT_MS for "complete" state, then send whatever we have.
+   */
+  private waitForGatheringComplete(pc: RTCPeerConnection): Promise<void> {
+    return new Promise((resolve) => {
+      if ((pc as any).iceGatheringState === "complete") {
+        resolve();
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        console.log(
+          TAG,
+          `ICE gathering timeout after ${ICE_GATHER_TIMEOUT_MS}ms — sending offer with current candidates`
+        );
+        (pc as any).onicegatheringstatechange = originalHandler;
+        resolve();
+      }, ICE_GATHER_TIMEOUT_MS);
+
+      const originalHandler = (pc as any).onicegatheringstatechange;
+      (pc as any).onicegatheringstatechange = () => {
+        console.log(
+          TAG,
+          `ICE gathering state: ${(pc as any).iceGatheringState}`
+        );
+        if ((pc as any).iceGatheringState === "complete") {
+          clearTimeout(timeout);
+          (pc as any).onicegatheringstatechange = originalHandler;
+          resolve();
+        }
+      };
+    });
+  }
+
+  /**
    * Initiate negotiation (SDP Offer)
+   * Waits briefly for ICE gathering to accumulate candidates before sending
+   * the offer, which reduces the reliance on trickle ICE for reliability.
    */
   private async negotiate(remotePeerId: string, state: PeerState) {
     state.makingOffer = true;
     try {
       const offer = await state.pc.createOffer();
+      // Verify peer wasn't cleaned up during async operation
+      if (!this.peers.has(remotePeerId)) return;
       await state.pc.setLocalDescription(offer);
+
+      // Wait for ICE gathering to complete (or timeout) so the offer
+      // includes as many candidates as possible — reducing reliance on
+      // trickle ICE which is fragile on mobile networks.
+      await this.waitForGatheringComplete(state.pc);
+      if (!this.peers.has(remotePeerId)) return;
 
       const { clientId } = useSignalingStore.getState();
       this.sendSignaling({
@@ -389,7 +606,9 @@ class WebRTCManager {
     } catch (err) {
       console.error(TAG, `Error during negotiation with ${remotePeerId}:`, err);
     } finally {
-      state.makingOffer = false;
+      if (this.peers.has(remotePeerId)) {
+        state.makingOffer = false;
+      }
     }
   }
 
@@ -465,6 +684,135 @@ class WebRTCManager {
   }
 
   /**
+   * Schedule a delayed cleanup for a peer in `disconnected` state.
+   * The timer is cancelled if the connection recovers to `connected`.
+   */
+  private scheduleDisconnectCleanup(peerId: string, delayMs: number) {
+    // Don't schedule a second timer if one is already pending
+    if (this.disconnectTimers.has(peerId)) return;
+
+    console.log(
+      TAG,
+      `Scheduling disconnect cleanup for ${peerId} in ${delayMs}ms`
+    );
+    const timer = setTimeout(() => {
+      this.disconnectTimers.delete(peerId);
+      const state = this.peers.get(peerId);
+      if (!state) return;
+
+      const connState = state.pc.connectionState;
+      const iceState = state.pc.iceConnectionState;
+
+      // Only clean up if still in a bad state after the grace period
+      if (
+        connState === "disconnected" ||
+        connState === "failed" ||
+        iceState === "disconnected" ||
+        iceState === "failed"
+      ) {
+        console.log(
+          TAG,
+          `Peer ${peerId} still disconnected/failed after grace period — cleaning up`
+        );
+        this.cleanupPeer(peerId);
+      } else {
+        console.log(
+          TAG,
+          `Peer ${peerId} recovered (conn=${connState}, ice=${iceState}) — skipping cleanup`
+        );
+      }
+    }, delayMs);
+
+    this.disconnectTimers.set(peerId, timer);
+  }
+
+  /**
+   * Cancel a pending disconnect timer for a peer.
+   */
+  private clearDisconnectTimer(peerId: string) {
+    const timer = this.disconnectTimers.get(peerId);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectTimers.delete(peerId);
+    }
+  }
+
+  /**
+   * Attempt ICE restart before giving up on a failed connection.
+   * Only the offerer triggers the restart; the answerer waits for a new offer.
+   */
+  private async attemptIceRestart(peerId: string) {
+    const state = this.peers.get(peerId);
+    if (!state) return;
+
+    // Only attempt once — if we're already making an offer, skip
+    if (state.makingOffer) {
+      console.log(
+        TAG,
+        `Already negotiating with ${peerId}, skipping ICE restart`
+      );
+      return;
+    }
+
+    // Enforce maximum restart attempts
+    if (state.iceRestartCount >= MAX_ICE_RESTART_ATTEMPTS) {
+      console.log(
+        TAG,
+        `Max ICE restart attempts (${MAX_ICE_RESTART_ATTEMPTS}) reached for ${peerId} — cleaning up`
+      );
+      this.cleanupPeer(peerId);
+      return;
+    }
+
+    if (!state.isOfferer) {
+      console.log(
+        TAG,
+        `We are answerer for ${peerId} — waiting for offerer to restart ICE`
+      );
+      // Give the offerer generous time to restart;
+      // if nothing happens, clean up
+      this.scheduleDisconnectCleanup(peerId, ICE_RESTART_GRACE_MS);
+      return;
+    }
+
+    state.iceRestartCount++;
+    console.log(
+      TAG,
+      `Attempting ICE restart for ${peerId} (attempt ${state.iceRestartCount}/${MAX_ICE_RESTART_ATTEMPTS})`
+    );
+    state.makingOffer = true;
+    try {
+      const offer = await state.pc.createOffer({ iceRestart: true } as any);
+      // Verify peer wasn't cleaned up during async createOffer
+      if (!this.peers.has(peerId)) return;
+      await state.pc.setLocalDescription(offer);
+
+      // Wait briefly for new relay candidates to gather after restart
+      await this.waitForGatheringComplete(state.pc);
+      if (!this.peers.has(peerId)) return;
+
+      const { clientId } = useSignalingStore.getState();
+      this.sendSignaling({
+        type: "offer",
+        senderId: clientId,
+        targetId: peerId,
+        sdp: state.pc.localDescription?.sdp || offer.sdp,
+      });
+
+      // Give the restart generous time to complete,
+      // then clean up if still failed
+      this.scheduleDisconnectCleanup(peerId, ICE_RESTART_GRACE_MS);
+    } catch (err) {
+      console.error(TAG, `ICE restart failed for ${peerId}:`, err);
+      this.cleanupPeer(peerId);
+    } finally {
+      if (this.peers.has(peerId)) {
+        state.makingOffer = false;
+      }
+    }
+  }
+
+  /**
    * Clean up a peer connection.
    */
   public cleanupPeer(peerId: string) {
@@ -472,6 +820,7 @@ class WebRTCManager {
     if (!state) return;
 
     console.log(TAG, `Cleaning up peer connection for ${peerId}`);
+    this.clearDisconnectTimer(peerId);
     try {
       state.dc?.close();
     } catch {}
@@ -501,6 +850,9 @@ class WebRTCManager {
    */
   public destroy() {
     console.log(TAG, "Destroying all peer connections");
+    // Clear all disconnect timers first
+    this.disconnectTimers.forEach((timer) => clearTimeout(timer));
+    this.disconnectTimers.clear();
     this.peers.forEach((_, peerId) => {
       this.cleanupPeer(peerId);
     });
