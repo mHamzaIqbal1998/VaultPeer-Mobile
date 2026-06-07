@@ -8,6 +8,15 @@ export interface PickResult {
   name?: string;
 }
 
+export interface FileMetadata {
+  /** Last-modified time in milliseconds since the Unix epoch (OS-reported). 0 if unknown. */
+  mtime: number;
+  /** File size in bytes. 0 if unknown. */
+  size: number;
+  /** Whether the file currently exists / is reachable. */
+  exists: boolean;
+}
+
 /**
  * Launch document picker to select an existing file.
  * Returns the URI and bookmark (iOS only) of the selected file.
@@ -63,4 +72,22 @@ export async function writeFile(
  */
 export async function writeTempFile(contentBase64: string): Promise<string> {
   return await VaultPeerFileSystem.writeTempFile(contentBase64);
+}
+
+/**
+ * Read-only file metadata (OS-reported last-modified time and size).
+ *
+ * NOTE: This is read-only by design. Android's Storage Access Framework does
+ * not expose an API to *set* a document's last-modified time, so the sync
+ * layer maintains its own logical clock and uses this native mtime only to
+ * detect external (out-of-app) edits.
+ *
+ * @param uri The URI of the file.
+ * @param bookmark The security-scoped bookmark data (iOS only).
+ */
+export async function getMetadata(
+  uri: string,
+  bookmark?: string
+): Promise<FileMetadata> {
+  return await VaultPeerFileSystem.getMetadata(uri, bookmark || "");
 }

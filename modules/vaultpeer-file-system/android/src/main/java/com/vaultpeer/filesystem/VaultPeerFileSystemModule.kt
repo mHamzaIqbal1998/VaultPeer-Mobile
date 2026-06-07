@@ -145,6 +145,43 @@ class VaultPeerFileSystemModule : Module(), ActivityEventListener {
         promise.reject("ERR_TEMP_WRITE_FAILED", "Failed to write temporary file: ${e.message}", e)
       }
     }
+
+    // Read-only metadata: OS last-modified time (ms) and size (bytes).
+    // SAF does not let us *set* mtime, so the JS sync layer keeps a logical clock
+    // and uses this only to detect external edits.
+    AsyncFunction("getMetadata") { uriString: String, bookmarkString: String, promise: Promise ->
+      try {
+        val context = appContext.reactContext ?: throw Exception("React context is not available")
+        val uri = Uri.parse(uriString)
+
+        var mtime = 0.0
+        var size = 0.0
+        var exists = false
+
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+          if (cursor.moveToFirst()) {
+            exists = true
+            val modIndex = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            if (modIndex != -1 && !cursor.isNull(modIndex)) {
+              mtime = cursor.getLong(modIndex).toDouble()
+            }
+            val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+            if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+              size = cursor.getLong(sizeIndex).toDouble()
+            }
+          }
+        }
+
+        val result = Arguments.createMap().apply {
+          putDouble("mtime", mtime)
+          putDouble("size", size)
+          putBoolean("exists", exists)
+        }
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("ERR_METADATA_FAILED", "Failed to get file metadata: ${e.message}", e)
+      }
+    }
   }
 
   override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {

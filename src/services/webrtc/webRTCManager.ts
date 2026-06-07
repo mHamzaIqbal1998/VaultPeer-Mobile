@@ -5,8 +5,29 @@ import {
 } from "react-native-webrtc";
 import { useSignalingStore } from "../../stores/useSignalingStore";
 import { useWebRTCStore } from "../../stores/useWebRTCStore";
+import {
+  ChunkReassembler,
+  createChunkMessages,
+  isChunkedType,
+} from "../sync/syncProtocol";
 
 const TAG = "[WebRTCManager]";
+
+/** Pause chunk sending while the channel's send buffer exceeds this (bytes). */
+const MAX_BUFFERED_AMOUNT = 1024 * 1024; // 1 MB
+/** Max time (ms) to wait for the send buffer to drain before aborting. */
+const BUFFER_DRAIN_TIMEOUT_MS = 10_000;
+
+/**
+ * Hooks the sync engine registers to receive data-channel lifecycle and
+ * (reassembled) message events. Kept as a registration callback so the
+ * transport never imports the engine — avoiding a circular dependency.
+ */
+export interface SyncHooks {
+  onChannelOpen: (peerId: string) => void;
+  onChannelClosed: (peerId: string) => void;
+  onMessage: (peerId: string, msg: any) => void;
+}
 const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -29,11 +50,21 @@ interface PeerState {
   ignoreOffer: boolean;
   candidateQueue?: any[];
   iceRestartCount: number;
+  reassembler: ChunkReassembler;
 }
 
 class WebRTCManager {
   private peers = new Map<string, PeerState>();
   private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private syncHooks: SyncHooks | null = null;
+
+  /**
+   * Register the sync engine's lifecycle/message hooks. Called once during
+   * sync engine initialization.
+   */
+  public setSyncHooks(hooks: SyncHooks) {
+    this.syncHooks = hooks;
+  }
 
   /**
    * Processes inbound signaling messages from the signaling server.
@@ -423,6 +454,7 @@ class WebRTCManager {
       ignoreOffer: false,
       candidateQueue: [],
       iceRestartCount: 0,
+      reassembler: new ChunkReassembler(),
     };
 
     this.peers.set(remotePeerId, state);
@@ -627,8 +659,8 @@ class WebRTCManager {
         dataChannelState: "open",
       });
 
-      // Announce readiness/query files (can be fleshed out in file sync phase)
-      this.sendToPeer(remotePeerId, { type: "metadata_query" });
+      // Hand off to the sync engine, which performs the metadata handshake.
+      this.syncHooks?.onChannelOpen(remotePeerId);
     };
 
     dc.onclose = () => {
@@ -636,7 +668,9 @@ class WebRTCManager {
       useWebRTCStore.getState().addOrUpdatePeer(remotePeerId, {
         dataChannelState: "closed",
       });
+      state.reassembler.reset();
       state.dc = null;
+      this.syncHooks?.onChannelClosed(remotePeerId);
     };
 
     dc.onerror = (error: any) => {
@@ -644,32 +678,107 @@ class WebRTCManager {
     };
 
     dc.onmessage = (event: any) => {
+      let msg: any;
       try {
-        const msg = JSON.parse(event.data);
-        console.log(TAG, `DC message received from ${remotePeerId}:`, msg.type);
-        // Dispatch data-channel message to future sync handlers
+        msg = JSON.parse(event.data);
       } catch {
         console.warn(TAG, `Received non-JSON message from ${remotePeerId}`);
+        return;
       }
+
+      // Reassemble chunked file transfers before dispatching to the engine.
+      if (ChunkReassembler.isChunkMessage(msg.type)) {
+        const assembled = state.reassembler.handleChunkMessage(msg);
+        if (assembled) {
+          this.syncHooks?.onMessage(remotePeerId, assembled);
+        }
+        return;
+      }
+
+      this.syncHooks?.onMessage(remotePeerId, msg);
     };
   }
 
   /**
-   * Send JSON message to a peer over data channel.
+   * Send a JSON message to a peer over the data channel.
+   *
+   * File-bearing messages (pull_response / push_request) are automatically
+   * split into chunks and streamed with backpressure handling. For these, the
+   * boolean return only indicates the channel was open at dispatch time; the
+   * actual streaming completes asynchronously.
    */
   public sendToPeer(peerId: string, msg: any): boolean {
     const state = this.peers.get(peerId);
-    if (state && state.dc && state.dc.readyState === "open") {
-      try {
-        state.dc.send(JSON.stringify(msg));
-        return true;
-      } catch (err) {
-        console.error(
-          TAG,
-          `Failed to send data channel message to ${peerId}:`,
-          err
-        );
+    if (!state || !state.dc || state.dc.readyState !== "open") {
+      return false;
+    }
+
+    if (msg && isChunkedType(msg.type)) {
+      void this.sendChunkedToPeer(peerId, msg);
+      return true;
+    }
+
+    try {
+      state.dc.send(JSON.stringify(msg));
+      return true;
+    } catch (err) {
+      console.error(
+        TAG,
+        `Failed to send data channel message to ${peerId}:`,
+        err
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Stream a large file-bearing message as ordered chunks, pausing when the
+   * data channel's send buffer grows too large to avoid overrunning it.
+   */
+  private async sendChunkedToPeer(peerId: string, msg: any): Promise<boolean> {
+    const chunks = createChunkMessages(msg);
+    console.log(
+      TAG,
+      `Sending ${msg.type} to ${peerId} in ${chunks.length} chunk message(s)`
+    );
+
+    for (const chunk of chunks) {
+      const state = this.peers.get(peerId);
+      if (!state || !state.dc || state.dc.readyState !== "open") {
+        console.warn(TAG, `Aborting chunked send to ${peerId}: channel gone`);
+        return false;
       }
+
+      // Backpressure: wait for the buffer to drain if it's too full.
+      const bufferedAmount = state.dc.bufferedAmount ?? 0;
+      if (bufferedAmount > MAX_BUFFERED_AMOUNT) {
+        const drained = await this.waitForBufferDrain(peerId);
+        if (!drained) {
+          console.warn(TAG, `Aborting chunked send to ${peerId}: buffer stuck`);
+          return false;
+        }
+      }
+
+      try {
+        state.dc.send(JSON.stringify(chunk));
+      } catch (err) {
+        console.error(TAG, `Failed to send chunk to ${peerId}:`, err);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Poll until the peer's send buffer drains below the threshold (or timeout).
+   */
+  private async waitForBufferDrain(peerId: string): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < BUFFER_DRAIN_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, 20));
+      const state = this.peers.get(peerId);
+      if (!state || !state.dc || state.dc.readyState !== "open") return false;
+      if ((state.dc.bufferedAmount ?? 0) <= MAX_BUFFERED_AMOUNT) return true;
     }
     return false;
   }
@@ -822,6 +931,9 @@ class WebRTCManager {
     console.log(TAG, `Cleaning up peer connection for ${peerId}`);
     this.clearDisconnectTimer(peerId);
     try {
+      state.reassembler.reset();
+    } catch {}
+    try {
       state.dc?.close();
     } catch {}
     try {
@@ -830,6 +942,7 @@ class WebRTCManager {
 
     this.peers.delete(peerId);
     useWebRTCStore.getState().removePeer(peerId);
+    this.syncHooks?.onChannelClosed(peerId);
   }
 
   /**

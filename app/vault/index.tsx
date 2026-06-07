@@ -53,6 +53,7 @@ import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
 import { ActionModal } from "@/src/components/ActionModal";
 import { PeerListDrawer } from "@/src/components/PeerListDrawer";
+import { RemoteUpdateBanner } from "@/src/components/RemoteUpdateBanner";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -909,6 +910,9 @@ export default function VaultBrowserScreen() {
           )}
         </View>
       </View>
+
+      {/* ── Remote sync update / conflict prompt ── */}
+      <RemoteUpdateBanner />
 
       {/* ── Breadcrumbs ── */}
       {breadcrumbLabels.length > 1 && !isSearching && (

@@ -56,6 +56,7 @@ import { parseMeta } from "@/src/services/crypto";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import type { VaultMeta } from "@/src/types/kdbx";
 import { CyberCard } from "@/src/components/CyberCard";
+import { SyncStatusPill } from "@/src/components/SyncStatusPill";
 import {
   isBiometricEnabled,
   getStoredPassword,
@@ -1033,6 +1034,8 @@ export default function FileSetupScreen() {
                           getFilenameFromUri(fileUri)}
                       </Text>
                     </Text>
+
+                    {syncMode === "network" && <SyncStatusPill />}
 
                     <View style={styles.inputContainer}>
                       <Ionicons

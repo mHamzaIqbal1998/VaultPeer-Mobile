@@ -189,6 +189,54 @@ public class VaultPeerFileSystemModule: Module, UIDocumentPickerDelegate {
         promise.reject("ERR_TEMP_WRITE_FAILED", "Failed to write temporary file: \(error.localizedDescription)")
       }
     }
+
+    // Read-only metadata: OS last-modified time (ms) and size (bytes).
+    AsyncFunction("getMetadata") { (uriString: String, bookmarkString: String, promise: Promise) in
+      do {
+        var url = URL(string: uriString)
+        var isSecurityScoped = false
+
+        if !bookmarkString.isEmpty {
+          if let bookmarkData = Data(base64Encoded: bookmarkString) {
+            var isStale = false
+            url = try URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
+            isSecurityScoped = true
+          }
+        }
+
+        guard let resolvedUrl = url else {
+          promise.reject("ERR_INVALID_URI", "Could not resolve file URI: \(uriString)")
+          return
+        }
+
+        if isSecurityScoped {
+          guard resolvedUrl.startAccessingSecurityScopedResource() else {
+            promise.reject("ERR_ACCESS_DENIED", "Failed to start accessing security-scoped resource")
+            return
+          }
+        }
+
+        defer {
+          if isSecurityScoped {
+            resolvedUrl.stopAccessingSecurityScopedResource()
+          }
+        }
+
+        let values = try resolvedUrl.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])
+        let mtimeMs = (values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000.0
+        let size = Double(values.fileSize ?? 0)
+        let exists = values.isRegularFile ?? FileManager.default.fileExists(atPath: resolvedUrl.path)
+
+        let result: [String: Any] = [
+          "mtime": mtimeMs,
+          "size": size,
+          "exists": exists
+        ]
+        promise.resolve(result)
+      } catch {
+        promise.reject("ERR_METADATA_FAILED", "Failed to get file metadata: \(error.localizedDescription)")
+      }
+    }
   }
 
   // MARK: - UIDocumentPickerDelegate
