@@ -47,7 +47,7 @@ import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
 import { useSignalingStore } from "@/src/stores/useSignalingStore";
 import { useActiveConnection } from "@/src/hooks/useActiveConnection";
-import { useWebRTCStore } from "@/src/stores/useWebRTCStore";
+import { useSyncStore } from "@/src/stores/useSyncStore";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
@@ -137,6 +137,191 @@ function EntryRow({
       </View>
       <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
     </Pressable>
+  );
+}
+
+/**
+ * SyncStatusButton — Header sync indicator
+ *
+ * Shows:
+ *   • Sync icon with peer count badge when connected
+ *   • Spinning sync icon when actively syncing/pushing
+ *   • Spinning sync icon when saving (which triggers push to peers)
+ *   • Offline icon when no peers
+ *   • Error state when sync fails
+ */
+function SyncStatusButton({ onPress }: { onPress: () => void }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { syncMode, connectionStatus } = useSignalingStore();
+
+  const syncStatus = useSyncStore((s) => s.status);
+  const activePeers = useSyncStore((s) => s.activePeers);
+  const pendingRemote = useSyncStore((s) => s.pendingRemote);
+  const isSaving = useVaultStore((s) => s.isSaving);
+
+  // Spinner animation for syncing/saving/connecting state
+  const spinValue = useSharedValue(0);
+  React.useEffect(() => {
+    const shouldSpin =
+      syncStatus === "syncing" || isSaving || connectionStatus === "connecting";
+    if (shouldSpin) {
+      spinValue.value = withRepeat(
+        withTiming(360, { duration: 1200 }),
+        -1,
+        false
+      );
+    } else {
+      spinValue.value = 0;
+    }
+  }, [syncStatus, isSaving, connectionStatus, spinValue]);
+
+  const spinStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${spinValue.value}deg` }],
+    };
+  });
+
+  // Pulse animation for active state
+  const pulseScale = useSharedValue(1);
+  React.useEffect(() => {
+    const shouldPulse =
+      connectionStatus === "connecting" ||
+      (connectionStatus === "connected" && activePeers > 0);
+    if (shouldPulse) {
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 1000 }),
+          withTiming(1.0, { duration: 1000 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      pulseScale.value = 1;
+    }
+  }, [connectionStatus, activePeers, pulseScale]);
+
+  const pulseStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: pulseScale.value }],
+    };
+  });
+
+  if (syncMode !== "network") return null;
+
+  // Determine appearance based on combined state
+  let iconName: React.ComponentProps<typeof Ionicons>["name"] = "globe-outline";
+  let iconColor: string = colors.textMuted;
+  let text = "";
+  let capsuleStyle: any = styles.syncCapsule;
+  let textStyle: any = styles.syncCapsuleText;
+  let isSpinning = false;
+  let accessibilityLabel = "Sync status: idle";
+
+  // 1. Connection states (signaling server)
+  if (connectionStatus === "disconnected") {
+    iconName = "cloud-offline-outline";
+    iconColor = colors.statusError;
+    text = "Offline";
+    capsuleStyle = [styles.syncCapsule, styles.syncCapsuleError];
+    textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextError];
+    accessibilityLabel = "Sync offline · disconnected from signaling server";
+  } else if (connectionStatus === "connecting") {
+    iconName = "sync-outline";
+    iconColor = colors.statusWarning;
+    text = "Connecting";
+    capsuleStyle = [styles.syncCapsule, styles.syncCapsuleWarning];
+    textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextWarning];
+    isSpinning = true;
+    accessibilityLabel = "Connecting to signaling server…";
+  } else {
+    // connectionStatus === "connected"
+    if (activePeers === 0) {
+      iconName = "globe-outline";
+      iconColor = colors.textMuted;
+      text = "0";
+      capsuleStyle = styles.syncCapsule;
+      textStyle = styles.syncCapsuleText;
+      accessibilityLabel = "Connected to signaling · waiting for peers";
+    } else {
+      // We have peers connected!
+      iconName = "people-outline";
+      iconColor = colors.accentMint;
+      text = `${activePeers}`;
+      capsuleStyle = [styles.syncCapsule, styles.syncCapsuleActive];
+      textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextActive];
+      accessibilityLabel = `Connected · ${activePeers} peer${activePeers !== 1 ? "s" : ""} active`;
+
+      // Handle active operations
+      if (isSaving) {
+        iconName = "cloud-upload-outline";
+        isSpinning = true;
+        accessibilityLabel = `Pushing changes to ${activePeers} peer${activePeers !== 1 ? "s" : ""}…`;
+      } else if (syncStatus === "syncing") {
+        iconName = "sync";
+        isSpinning = true;
+        accessibilityLabel = `Syncing with ${activePeers} peer${activePeers !== 1 ? "s" : ""}…`;
+      } else if (pendingRemote) {
+        iconName =
+          pendingRemote.mode === "conflict"
+            ? "warning-outline"
+            : "cloud-download-outline";
+        iconColor =
+          pendingRemote.mode === "conflict"
+            ? colors.statusWarning
+            : colors.accentMint;
+        text = pendingRemote.mode === "conflict" ? "Conflict" : "Update";
+        capsuleStyle = [
+          styles.syncCapsule,
+          pendingRemote.mode === "conflict"
+            ? styles.syncCapsuleWarning
+            : styles.syncCapsuleActive,
+        ];
+        textStyle = [
+          styles.syncCapsuleText,
+          pendingRemote.mode === "conflict"
+            ? styles.syncCapsuleTextWarning
+            : styles.syncCapsuleTextActive,
+        ];
+        accessibilityLabel =
+          pendingRemote.mode === "conflict"
+            ? "Sync conflict · action required"
+            : "Remote update available · tap to apply";
+      } else if (syncStatus === "error") {
+        iconName = "alert-circle-outline";
+        iconColor = colors.statusError;
+        text = "Error";
+        capsuleStyle = [styles.syncCapsule, styles.syncCapsuleError];
+        textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextError];
+        accessibilityLabel = "Sync error occurred";
+      }
+    }
+  }
+
+  const RenderedIcon = () => (
+    <Ionicons name={iconName} size={15} color={iconColor} />
+  );
+
+  return (
+    <Animated.View style={pulseStyle}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [capsuleStyle, pressed && { opacity: 0.7 }]}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+      >
+        {isSpinning ? (
+          <Animated.View style={spinStyle}>
+            <RenderedIcon />
+          </Animated.View>
+        ) : (
+          <RenderedIcon />
+        )}
+        {text ? <Text style={textStyle}>{text}</Text> : null}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -231,27 +416,7 @@ export default function VaultBrowserScreen() {
   const isGroupInRecycleBin = useVaultStore(
     (state) => state.isGroupInRecycleBin
   );
-  const { syncMode, connectionStatus } = useSignalingStore();
-  const { activePeersCount } = useWebRTCStore();
   const [showPeerDrawer, setShowPeerDrawer] = useState(false);
-
-  const pulseScale = useSharedValue(1);
-  React.useEffect(() => {
-    pulseScale.value = withRepeat(
-      withSequence(
-        withTiming(1.15, { duration: 1000 }),
-        withTiming(1.0, { duration: 1000 })
-      ),
-      -1,
-      true
-    );
-  }, [pulseScale]);
-
-  const animatedBadgeStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: pulseScale.value }],
-    };
-  });
 
   const activeGroup = useVaultStore((state) => {
     if (!state.activeGroupUuid || !state.groupIndex) return null;
@@ -774,7 +939,7 @@ export default function VaultBrowserScreen() {
             <Text style={styles.headerTitle} numberOfLines={1}>
               {activeGroup.name}
             </Text>
-            {isDirty && (
+            {isDirty && !autoSave && (
               <View style={styles.dirtyBadge}>
                 <Text style={styles.dirtyBadgeText}>Unsaved</Text>
               </View>
@@ -783,24 +948,24 @@ export default function VaultBrowserScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          {(isDirty || isSaving) && (
+          {!autoSave && (isDirty || isSaving) && (
             <Animated.View
               entering={FadeIn.duration(300)}
               exiting={FadeOut.duration(200)}
             >
               <Pressable
                 onPress={handleSave}
-                disabled={saving || isSaving || (autoSave && isDirty)}
+                disabled={saving || isSaving}
                 style={[
                   styles.iconButton,
-                  (saving || isSaving || (autoSave && isDirty)) && {
+                  (saving || isSaving) && {
                     opacity: 0.6,
                   },
                 ]}
                 hitSlop={8}
                 accessibilityLabel="Save changes"
               >
-                {saving || isSaving || (autoSave && isDirty) ? (
+                {saving || isSaving ? (
                   <ActivityIndicator size="small" color={colors.accentMint} />
                 ) : (
                   <Ionicons
@@ -812,61 +977,7 @@ export default function VaultBrowserScreen() {
               </Pressable>
             </Animated.View>
           )}
-          {syncMode === "network" && (
-            <Pressable
-              onPress={() => {
-                setShowPeerDrawer(true);
-              }}
-              style={styles.iconButton}
-              hitSlop={8}
-              accessibilityLabel="Sync status"
-            >
-              {connectionStatus === "connected" ? (
-                activePeersCount > 0 ? (
-                  <Animated.View
-                    style={[styles.pulseBadgeContainer, animatedBadgeStyle]}
-                  >
-                    <View
-                      style={[
-                        styles.pulseBadge,
-                        {
-                          backgroundColor: colors.accentMintDim,
-                          borderColor: colors.accentMint,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.pulseBadgeText,
-                          { color: colors.accentMint },
-                        ]}
-                      >
-                        {activePeersCount}
-                      </Text>
-                    </View>
-                  </Animated.View>
-                ) : (
-                  <Ionicons
-                    name="git-network-outline"
-                    size={22}
-                    color={colors.accentMint}
-                  />
-                )
-              ) : connectionStatus === "connecting" ? (
-                <Ionicons
-                  name="git-network-outline"
-                  size={22}
-                  color="#F59E0B"
-                />
-              ) : (
-                <Ionicons
-                  name="link-outline"
-                  size={22}
-                  color={colors.statusError}
-                />
-              )}
-            </Pressable>
-          )}
+          <SyncStatusButton onPress={() => setShowPeerDrawer(true)} />
           <Pressable
             onPress={handleLock}
             style={styles.iconButton}
@@ -1361,7 +1472,7 @@ function createStyles(colors: any) {
     },
     headerTitle: {
       fontFamily: Fonts.heading.semiBold,
-      fontSize: FontSizes.heading,
+      fontSize: FontSizes.subheading,
       color: colors.textPrimary,
       flexShrink: 1,
     },
@@ -1378,6 +1489,7 @@ function createStyles(colors: any) {
     },
     headerRight: {
       flexDirection: "row",
+      alignItems: "center",
       gap: Spacing.sm,
     },
     iconButton: {
@@ -1386,22 +1498,43 @@ function createStyles(colors: any) {
       alignItems: "center",
       justifyContent: "center",
     },
-    pulseBadgeContainer: {
+    syncCapsule: {
+      height: 32,
+      borderRadius: Radii.lg,
+      flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
+      paddingHorizontal: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      gap: 6,
     },
-    pulseBadge: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      borderWidth: 1.5,
-      alignItems: "center",
-      justifyContent: "center",
+    syncCapsuleActive: {
+      backgroundColor: colors.accentMintDim,
+      borderColor: colors.accentMint,
     },
-    pulseBadgeText: {
+    syncCapsuleWarning: {
+      backgroundColor: colors.statusWarningDim,
+      borderColor: colors.statusWarning,
+    },
+    syncCapsuleError: {
+      backgroundColor: colors.statusErrorDim,
+      borderColor: colors.statusError,
+    },
+    syncCapsuleText: {
       fontFamily: Fonts.mono.regular,
       fontSize: FontSizes.caption,
       fontWeight: "bold",
+      color: colors.textMuted,
+    },
+    syncCapsuleTextActive: {
+      color: colors.accentMint,
+    },
+    syncCapsuleTextWarning: {
+      color: colors.statusWarning,
+    },
+    syncCapsuleTextError: {
+      color: colors.statusError,
     },
 
     // Breadcrumbs

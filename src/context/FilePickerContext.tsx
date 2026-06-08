@@ -244,6 +244,24 @@ export function FilePickerProvider({
     };
 
     syncEngine.init(host);
+
+    // Subscribe to the vault store: when _db transitions from null to non-null
+    // (vault was just opened/decrypted), notify the sync engine. This handles
+    // the case where a remote file was synced to disk while the vault was still
+    // locked — the engine will reload from the (updated) disk file.
+    let prevDb: unknown = null;
+    const unsub = useVaultStore.subscribe((state) => {
+      const nowDb = state._db;
+      if (prevDb === null && nowDb !== null) {
+        // Vault just opened — fire-and-forget; errors handled inside.
+        void syncEngine.onVaultOpened();
+      }
+      prevDb = nowDb;
+    });
+
+    return () => {
+      unsub();
+    };
   }, [runExclusive]);
 
   /**
@@ -517,7 +535,11 @@ export function FilePickerProvider({
     setIsLoading(true);
     setError(null);
     try {
-      const base64Content = await readFile(fileUri, bookmark || "");
+      // Serialize through the save queue so we never read while the sync
+      // engine is mid-write to the same file.
+      const base64Content = await runExclusive(() =>
+        readFile(fileUri, bookmark || "")
+      );
       const arrayBuffer = base64ToArrayBuffer(base64Content);
 
       // Validate KeePass signature
