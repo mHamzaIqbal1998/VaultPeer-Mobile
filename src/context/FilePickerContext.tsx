@@ -40,6 +40,7 @@ interface FilePickerContextType {
   fileUri: string | null;
   bookmark: string | null;
   isLoading: boolean;
+  isRestored: boolean;
   error: string | null;
   hasSavedVault: boolean;
   recentVaults: RecentVault[];
@@ -119,6 +120,7 @@ export function FilePickerProvider({
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [bookmark, setBookmark] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isRestored, setIsRestored] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(false);
   const [recentVaults, setRecentVaults] = useState<RecentVault[]>([]);
@@ -162,6 +164,8 @@ export function FilePickerProvider({
         }
       } catch (err) {
         console.warn("[FilePickerContext] Failed to restore saved vault:", err);
+      } finally {
+        setIsRestored(true);
       }
     }
     restoreSavedVault();
@@ -655,6 +659,7 @@ export function FilePickerProvider({
         fileUri,
         bookmark,
         isLoading,
+        isRestored,
         error,
         hasSavedVault,
         recentVaults,

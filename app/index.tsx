@@ -123,6 +123,7 @@ export default function FileSetupScreen() {
     error: fsError,
     hasSavedVault,
     recentVaults,
+    isRestored,
     selectVaultFile,
     createNewVault,
     loadVault,
@@ -348,17 +349,30 @@ export default function FileSetupScreen() {
     opacity: glowOpacity.value,
   }));
 
+  const isInitialLoad = useRef(true);
+
   // Auto-transition depending on active vault or recent vaults list
   useEffect(() => {
     if (storeDb) return;
-    if (fileUri) {
-      setMode("unlock");
-    } else if (recentVaults.length > 0) {
-      setMode("recent");
+    if (!isRestored) return;
+
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      if (recentVaults.length > 0) {
+        setMode("recent");
+      } else {
+        setMode("select");
+      }
     } else {
-      setMode("select");
+      if (fileUri) {
+        setMode("unlock");
+      } else if (recentVaults.length > 0) {
+        setMode("recent");
+      } else {
+        setMode("select");
+      }
     }
-  }, [fileUri, recentVaults.length, storeDb]);
+  }, [fileUri, recentVaults.length, storeDb, isRestored]);
 
   // Clear file errors and form errors on screen mode transition
   useEffect(() => {
@@ -1159,7 +1173,10 @@ export default function FileSetupScreen() {
                           style={styles.recentItemContainer}
                         >
                           <Pressable
-                            onPress={() => selectRecentVault(vault.uri)}
+                            onPress={async () => {
+                              await selectRecentVault(vault.uri);
+                              setMode("unlock");
+                            }}
                             style={({ pressed }) => [
                               styles.recentItemPressable,
                               pressed && styles.recentItemPressed,
