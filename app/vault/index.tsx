@@ -21,6 +21,8 @@ import {
   Modal,
   ScrollView,
   Keyboard,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import Animated, {
   FadeIn,
@@ -31,6 +33,7 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  Easing,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -166,22 +169,23 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
 
   // Spinner animation for syncing/saving/connecting state
   const spinValue = useSharedValue(0);
+  const shouldSpin =
+    syncStatus === "syncing" ||
+    isSaving ||
+    (isDirty && autoSave) ||
+    connectionStatus === "connecting";
+
   React.useEffect(() => {
-    const shouldSpin =
-      syncStatus === "syncing" ||
-      isSaving ||
-      (isDirty && autoSave) ||
-      connectionStatus === "connecting";
     if (shouldSpin) {
       spinValue.value = withRepeat(
-        withTiming(360, { duration: 1200 }),
+        withTiming(360, { duration: 1200, easing: Easing.linear }),
         -1,
         false
       );
     } else {
       spinValue.value = 0;
     }
-  }, [syncStatus, isSaving, isDirty, autoSave, connectionStatus, spinValue]);
+  }, [shouldSpin, spinValue]);
 
   const spinStyle = useAnimatedStyle(() => {
     return {
@@ -191,10 +195,11 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
 
   // Pulse animation for active state
   const pulseScale = useSharedValue(1);
+  const shouldPulse =
+    connectionStatus === "connecting" ||
+    (connectionStatus === "connected" && activePeers > 0);
+
   React.useEffect(() => {
-    const shouldPulse =
-      connectionStatus === "connecting" ||
-      (connectionStatus === "connected" && activePeers > 0);
     if (shouldPulse) {
       pulseScale.value = withRepeat(
         withSequence(
@@ -207,7 +212,7 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
     } else {
       pulseScale.value = 1;
     }
-  }, [connectionStatus, activePeers, pulseScale]);
+  }, [shouldPulse, pulseScale]);
 
   const pulseStyle = useAnimatedStyle(() => {
     return {
@@ -437,12 +442,18 @@ export default function VaultBrowserScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
-
-  const [showRenameInput, setShowRenameInput] = useState(false);
-  const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
-  const [renameGroupName, setRenameGroupName] = useState("");
+  const [groupModalConfig, setGroupModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    placeholder: string;
+    onConfirm: (name: string) => void;
+  }>({
+    visible: false,
+    title: "",
+    placeholder: "",
+    onConfirm: () => {},
+  });
+  const [groupModalValue, setGroupModalValue] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [modalConfig, setModalConfig] = useState<{
@@ -558,13 +569,6 @@ export default function VaultBrowserScreen() {
     [router]
   );
 
-  const handleCreateGroup = useCallback(() => {
-    if (!newGroupName.trim() || !activeGroupUuid) return;
-    createGroup(activeGroupUuid, newGroupName.trim());
-    setNewGroupName("");
-    setShowNewGroupInput(false);
-  }, [newGroupName, activeGroupUuid, createGroup]);
-
   const handleCreateEntry = useCallback(() => {
     if (!activeGroupUuid) return;
     if (meta?.entryTemplatesEnabled) {
@@ -585,14 +589,6 @@ export default function VaultBrowserScreen() {
     );
   }, [activeGroupUuid, rootGroup?.uuid, db?.meta.recycleBinUuid?.id]);
 
-  const handleRenameGroup = useCallback(() => {
-    if (!renameGroupName.trim() || !renameGroupId) return;
-    renameGroup(renameGroupId, renameGroupName.trim());
-    setRenameGroupName("");
-    setRenameGroupId(null);
-    setShowRenameInput(false);
-  }, [renameGroupName, renameGroupId, renameGroup]);
-
   const handleGroupOptions = useCallback(
     (group: VaultGroup) => {
       if (
@@ -610,9 +606,15 @@ export default function VaultBrowserScreen() {
           label: "Rename",
           onPress: () => {
             hideModal();
-            setRenameGroupId(group.uuid);
-            setRenameGroupName(group.name);
-            setShowRenameInput(true);
+            setGroupModalValue(group.name);
+            setGroupModalConfig({
+              visible: true,
+              title: "Rename Group",
+              placeholder: "New group name...",
+              onConfirm: (name) => {
+                renameGroup(group.uuid, name);
+              },
+            });
           },
         },
         {
@@ -658,6 +660,7 @@ export default function VaultBrowserScreen() {
       isGroupInRecycleBin,
       colors.statusError,
       hideModal,
+      renameGroup,
     ]
   );
 
@@ -671,9 +674,15 @@ export default function VaultBrowserScreen() {
         label: "Rename",
         onPress: () => {
           hideModal();
-          setRenameGroupId(activeGroup.uuid);
-          setRenameGroupName(activeGroup.name);
-          setShowRenameInput(true);
+          setGroupModalValue(activeGroup.name);
+          setGroupModalConfig({
+            visible: true,
+            title: "Rename Group",
+            placeholder: "New group name...",
+            onConfirm: (name) => {
+              renameGroup(activeGroup.uuid, name);
+            },
+          });
         },
       },
       {
@@ -717,6 +726,7 @@ export default function VaultBrowserScreen() {
     isGroupInRecycleBin,
     colors.statusError,
     hideModal,
+    renameGroup,
   ]);
 
   const handleSave = useCallback(async () => {
@@ -1218,80 +1228,123 @@ export default function VaultBrowserScreen() {
         }
       />
 
-      {/* ── Rename Group Input (inline) ── */}
-      {showRenameInput && (
-        <Animated.View
-          entering={FadeInDown.duration(200)}
-          exiting={FadeOut.duration(150)}
-          style={styles.newGroupBar}
-        >
-          <TextInput
-            style={styles.newGroupInput}
-            value={renameGroupName}
-            onChangeText={setRenameGroupName}
-            placeholder="Rename group..."
-            placeholderTextColor={colors.textDisabled}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={handleRenameGroup}
+      {/* ── Group Name Input Modal ── */}
+      <Modal
+        visible={groupModalConfig.visible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() =>
+          setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+        }
+      >
+        <View style={styles.modalOverlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
           />
           <Pressable
-            onPress={handleRenameGroup}
-            style={styles.newGroupConfirm}
-            hitSlop={4}
+            style={StyleSheet.absoluteFillObject}
+            onPress={() =>
+              setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+            }
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboardAvoidingContainer}
           >
-            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setShowRenameInput(false);
-              setRenameGroupId(null);
-              setRenameGroupName("");
-            }}
-            style={styles.newGroupCancel}
-            hitSlop={4}
-          >
-            <Ionicons name="close" size={22} color={colors.textMuted} />
-          </Pressable>
-        </Animated.View>
-      )}
+            <Animated.View
+              entering={FadeInDown.duration(200)}
+              exiting={FadeOut.duration(150)}
+              style={styles.inputModalContainer}
+            >
+              <View style={styles.inputModalHeader}>
+                <View style={styles.inputModalIconContainer}>
+                  <Ionicons
+                    name="folder-outline"
+                    size={20}
+                    color={colors.accentMint}
+                  />
+                </View>
+                <Text style={styles.inputModalTitle}>
+                  {groupModalConfig.title}
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+                  }
+                  hitSlop={12}
+                  style={styles.inputModalCloseBtn}
+                >
+                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                </Pressable>
+              </View>
 
-      {/* ── New Group Input (inline) ── */}
-      {showNewGroupInput && (
-        <Animated.View
-          entering={FadeInDown.duration(200)}
-          exiting={FadeOut.duration(150)}
-          style={styles.newGroupBar}
-        >
-          <TextInput
-            style={styles.newGroupInput}
-            value={newGroupName}
-            onChangeText={setNewGroupName}
-            placeholder="New group name..."
-            placeholderTextColor={colors.textDisabled}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={handleCreateGroup}
-          />
-          <Pressable
-            onPress={handleCreateGroup}
-            style={styles.newGroupConfirm}
-            hitSlop={4}
-          >
-            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setShowNewGroupInput(false);
-              setNewGroupName("");
-            }}
-            style={styles.newGroupCancel}
-            hitSlop={4}
-          >
-            <Ionicons name="close" size={22} color={colors.textMuted} />
-          </Pressable>
-        </Animated.View>
-      )}
+              <View style={styles.inputModalBody}>
+                <TextInput
+                  style={styles.inputModalTextInput}
+                  value={groupModalValue}
+                  onChangeText={setGroupModalValue}
+                  placeholder={groupModalConfig.placeholder}
+                  placeholderTextColor={colors.textDisabled}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    if (groupModalValue.trim()) {
+                      groupModalConfig.onConfirm(groupModalValue.trim());
+                      setGroupModalConfig((prev) => ({
+                        ...prev,
+                        visible: false,
+                      }));
+                    }
+                  }}
+                />
+              </View>
+
+              <View style={styles.inputModalButtons}>
+                <Pressable
+                  onPress={() =>
+                    setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+                  }
+                  style={({ pressed }) => [
+                    styles.inputModalBtn,
+                    styles.inputModalBtnSecondary,
+                    pressed && styles.inputModalBtnSecondaryPressed,
+                  ]}
+                >
+                  <Text style={styles.inputModalBtnTextSecondary}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (groupModalValue.trim()) {
+                      groupModalConfig.onConfirm(groupModalValue.trim());
+                      setGroupModalConfig((prev) => ({
+                        ...prev,
+                        visible: false,
+                      }));
+                    }
+                  }}
+                  disabled={!groupModalValue.trim()}
+                  style={({ pressed }) => [
+                    styles.inputModalBtn,
+                    styles.inputModalBtnPrimary,
+                    !groupModalValue.trim() && styles.inputModalBtnDisabled,
+                    pressed &&
+                      groupModalValue.trim() &&
+                      styles.inputModalBtnPrimaryPressed,
+                  ]}
+                >
+                  <Text style={styles.inputModalBtnTextPrimary}>Save</Text>
+                </Pressable>
+              </View>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       {/* ── FAB (Add) ── */}
       {!isSearching && (
@@ -1310,7 +1363,16 @@ export default function VaultBrowserScreen() {
                   label: "New Group",
                   onPress: () => {
                     hideModal();
-                    setShowNewGroupInput(true);
+                    setGroupModalValue("");
+                    setGroupModalConfig({
+                      visible: true,
+                      title: "New Group",
+                      placeholder: "Group name...",
+                      onConfirm: (name) => {
+                        if (!activeGroupUuid) return;
+                        createGroup(activeGroupUuid, name);
+                      },
+                    });
                   },
                 },
               ];
@@ -1750,42 +1812,113 @@ function createStyles(colors: any) {
       color: colors.textDisabled,
     },
 
-    // New Group Input
-    newGroupBar: {
-      position: "absolute",
-      bottom: 96,
-      left: Spacing.lg,
-      right: Spacing.lg,
-      flexDirection: "row",
+    // Group Modal Styles
+    modalOverlay: {
+      flex: 1,
+      justifyContent: "center",
       alignItems: "center",
+    },
+    keyboardAvoidingContainer: {
+      width: "100%",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    inputModalContainer: {
+      width: "90%",
+      maxWidth: 360,
       backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
       borderWidth: 1,
-      borderColor: colors.borderSageActive,
-      borderRadius: Radii.lg,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
       ...Shadows.elevated,
     },
-    newGroupInput: {
+    inputModalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      paddingBottom: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    inputModalIconContainer: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    inputModalTitle: {
       flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    inputModalCloseBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    inputModalBody: {
+      marginTop: Spacing.lg,
+      marginBottom: Spacing.md,
+    },
+    inputModalTextInput: {
+      height: 48,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSageActive,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
       fontFamily: Fonts.body.regular,
       fontSize: FontSizes.body,
       color: colors.textPrimary,
-      paddingVertical: Spacing.xs,
     },
-    newGroupConfirm: {
-      padding: Spacing.sm,
-      minWidth: TouchTarget.min,
-      minHeight: TouchTarget.min,
-      alignItems: "center",
-      justifyContent: "center",
+    inputModalButtons: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: Spacing.sm,
+      marginTop: Spacing.md,
+      paddingTop: Spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSage,
     },
-    newGroupCancel: {
-      padding: Spacing.sm,
-      minWidth: TouchTarget.min,
-      minHeight: TouchTarget.min,
-      alignItems: "center",
+    inputModalBtn: {
+      height: TouchTarget.min,
+      borderRadius: Radii.md,
       justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      minWidth: 80,
+    },
+    inputModalBtnPrimary: {
+      backgroundColor: colors.accentMint,
+    },
+    inputModalBtnPrimaryPressed: {
+      backgroundColor: "#2BC48A",
+    },
+    inputModalBtnSecondary: {
+      backgroundColor: colors.transparent,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    inputModalBtnSecondaryPressed: {
+      backgroundColor: colors.surfaceElevated,
+    },
+    inputModalBtnDisabled: {
+      opacity: 0.5,
+    },
+    inputModalBtnTextPrimary: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    inputModalBtnTextSecondary: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
     },
 
     // FAB
