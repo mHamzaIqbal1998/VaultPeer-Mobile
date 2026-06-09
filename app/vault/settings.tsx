@@ -1004,7 +1004,7 @@ export default function VaultSettingsScreen() {
             setSaving(false);
             setIsSaving(false);
           }
-        }, 50);
+        }, 150);
         return;
       } else {
         // Manual save prompt
@@ -1023,21 +1023,23 @@ export default function VaultSettingsScreen() {
                 setModalConfig((prev) => ({ ...prev, visible: false }));
                 setSaving(true);
                 setIsSaving(true);
-                try {
-                  if (db) {
-                    await saveVault(db);
-                    markClean();
+                setTimeout(async () => {
+                  try {
+                    if (db) {
+                      await saveVault(db);
+                      markClean();
+                    }
+                    waitAndLock();
+                  } catch (e: any) {
+                    showErrorModal(
+                      "Error Saving",
+                      e?.message || "Failed to write database file."
+                    );
+                  } finally {
+                    setSaving(false);
+                    setIsSaving(false);
                   }
-                  waitAndLock();
-                } catch (e: any) {
-                  showErrorModal(
-                    "Error Saving",
-                    e?.message || "Failed to write database file."
-                  );
-                } finally {
-                  setSaving(false);
-                  setIsSaving(false);
-                }
+                }, 150);
               },
             },
             {
@@ -1096,7 +1098,7 @@ export default function VaultSettingsScreen() {
         setSaving(false);
         setIsSaving(false);
       }
-    }, 50);
+    }, 150);
   }, [
     db,
     saveVault,

@@ -646,7 +646,7 @@ export default function EntryEditScreen() {
       } finally {
         setSaving(false);
       }
-    }, 50);
+    }, 150);
   }, [
     saving,
     isNew,

@@ -228,7 +228,6 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
   let text = "";
   let capsuleStyle: any = styles.syncCapsule;
   let textStyle: any = styles.syncCapsuleText;
-  let isSpinning = false;
   let accessibilityLabel = "Sync status: idle";
 
   // 1. Connection states (signaling server)
@@ -245,7 +244,6 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
     text = "Connecting";
     capsuleStyle = [styles.syncCapsule, styles.syncCapsuleWarning];
     textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextWarning];
-    isSpinning = true;
     accessibilityLabel = "Connecting to signaling server…";
   } else {
     // connectionStatus === "connected"
@@ -256,7 +254,6 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
       text = activePeers > 0 ? `${activePeers}` : "Saving";
       capsuleStyle = [styles.syncCapsule, styles.syncCapsuleActive];
       textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextActive];
-      isSpinning = true;
       accessibilityLabel = `Saving changes and pushing to ${activePeers} peers…`;
     } else if (activePeers === 0) {
       iconName = "globe-outline";
@@ -277,7 +274,6 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
       // Handle active operations
       if (syncStatus === "syncing") {
         iconName = "sync";
-        isSpinning = true;
         accessibilityLabel = `Syncing with ${activePeers} peer${activePeers !== 1 ? "s" : ""}…`;
       } else if (pendingRemote) {
         iconName =
@@ -329,13 +325,9 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
       >
-        {isSpinning ? (
-          <Animated.View style={spinStyle}>
-            <RenderedIcon />
-          </Animated.View>
-        ) : (
+        <Animated.View style={spinStyle}>
           <RenderedIcon />
-        )}
+        </Animated.View>
         {text ? <Text style={textStyle}>{text}</Text> : null}
       </Pressable>
     </Animated.View>
@@ -747,7 +739,7 @@ export default function VaultBrowserScreen() {
         setSaving(false);
         setIsSaving(false);
       }
-    }, 50);
+    }, 150);
   }, [
     db,
     saveVault,
@@ -831,7 +823,7 @@ export default function VaultBrowserScreen() {
             setSaving(false);
             setIsSaving(false);
           }
-        }, 50);
+        }, 150);
         return;
       } else {
         // Manual save prompt
@@ -850,21 +842,23 @@ export default function VaultBrowserScreen() {
                 setModalConfig((prev) => ({ ...prev, visible: false }));
                 setSaving(true);
                 setIsSaving(true);
-                try {
-                  if (db) {
-                    await saveVault(db);
-                    markClean();
+                setTimeout(async () => {
+                  try {
+                    if (db) {
+                      await saveVault(db);
+                      markClean();
+                    }
+                    waitAndLock();
+                  } catch (e: any) {
+                    showErrorModal(
+                      "Error Saving",
+                      e?.message || "Failed to write database file."
+                    );
+                  } finally {
+                    setSaving(false);
+                    setIsSaving(false);
                   }
-                  waitAndLock();
-                } catch (e: any) {
-                  showErrorModal(
-                    "Error Saving",
-                    e?.message || "Failed to write database file."
-                  );
-                } finally {
-                  setSaving(false);
-                  setIsSaving(false);
-                }
+                }, 150);
               },
             },
             {

@@ -49,6 +49,8 @@ export default function VaultLayout() {
 
         try {
           setIsSaving(true);
+          // Wait 150ms to allow React state updates to propagate and UI to stabilize
+          await new Promise((resolve) => setTimeout(resolve, 150));
           await saveVault(currentStore._db);
 
           lastSavedRevision.current = currentRevision;
