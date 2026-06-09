@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  Keyboard,
 } from "react-native";
 import Animated, {
   FadeIn,
@@ -54,6 +55,7 @@ import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
 import { ActionModal } from "@/src/components/ActionModal";
 import { PeerListDrawer } from "@/src/components/PeerListDrawer";
 import { RemoteUpdateBanner } from "@/src/components/RemoteUpdateBanner";
+import { syncEngine } from "@/src/services/sync/syncEngine";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -159,12 +161,17 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
   const activePeers = useSyncStore((s) => s.activePeers);
   const pendingRemote = useSyncStore((s) => s.pendingRemote);
   const isSaving = useVaultStore((s) => s.isSaving);
+  const isDirty = useVaultStore((s) => s.isDirty);
+  const autoSave = useVaultStore((s) => s.autoSave);
 
   // Spinner animation for syncing/saving/connecting state
   const spinValue = useSharedValue(0);
   React.useEffect(() => {
     const shouldSpin =
-      syncStatus === "syncing" || isSaving || connectionStatus === "connecting";
+      syncStatus === "syncing" ||
+      isSaving ||
+      (isDirty && autoSave) ||
+      connectionStatus === "connecting";
     if (shouldSpin) {
       spinValue.value = withRepeat(
         withTiming(360, { duration: 1200 }),
@@ -174,7 +181,7 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
     } else {
       spinValue.value = 0;
     }
-  }, [syncStatus, isSaving, connectionStatus, spinValue]);
+  }, [syncStatus, isSaving, isDirty, autoSave, connectionStatus, spinValue]);
 
   const spinStyle = useAnimatedStyle(() => {
     return {
@@ -237,7 +244,16 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
     accessibilityLabel = "Connecting to signaling server…";
   } else {
     // connectionStatus === "connected"
-    if (activePeers === 0) {
+    // Check active saving operations first (independent of peer count)
+    if (isSaving || (isDirty && autoSave)) {
+      iconName = "save";
+      iconColor = colors.accentMint;
+      text = activePeers > 0 ? `${activePeers}` : "Saving";
+      capsuleStyle = [styles.syncCapsule, styles.syncCapsuleActive];
+      textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextActive];
+      isSpinning = true;
+      accessibilityLabel = `Saving changes and pushing to ${activePeers} peers…`;
+    } else if (activePeers === 0) {
       iconName = "globe-outline";
       iconColor = colors.textMuted;
       text = "0";
@@ -254,11 +270,7 @@ function SyncStatusButton({ onPress }: { onPress: () => void }) {
       accessibilityLabel = `Connected · ${activePeers} peer${activePeers !== 1 ? "s" : ""} active`;
 
       // Handle active operations
-      if (isSaving) {
-        iconName = "cloud-upload-outline";
-        isSpinning = true;
-        accessibilityLabel = `Pushing changes to ${activePeers} peer${activePeers !== 1 ? "s" : ""}…`;
-      } else if (syncStatus === "syncing") {
+      if (syncStatus === "syncing") {
         iconName = "sync";
         isSpinning = true;
         accessibilityLabel = `Syncing with ${activePeers} peer${activePeers !== 1 ? "s" : ""}…`;
@@ -737,87 +749,137 @@ export default function VaultBrowserScreen() {
   ]);
 
   const handleLock = useCallback(() => {
+    Keyboard.dismiss();
     const performLock = () => {
       closeDatabase();
       router.replace("/");
     };
 
-    if (isSaving) {
-      // Show saving indicator modal and lock when done
-      setModalConfig({
-        visible: true,
-        title: "Saving Changes",
-        description: "Saving changes to your vault file. Please wait...",
-        icon: "cloud-upload-outline",
-        iconColor: colors.accentMint,
-        buttons: [],
-      });
+    const waitAndLock = () => {
+      const engine = syncEngine;
 
-      const checkAndLock = () => {
-        if (useVaultStore.getState().isSaving) {
-          setTimeout(checkAndLock, 100);
+      let attempts = 0;
+      const maxAttempts = 30; // 3 seconds timeout
+
+      const poll = () => {
+        const pushes = engine.getActivePushesCount();
+        const pulls = engine.getActivePullsCount();
+        const localSaving = useVaultStore.getState().isSaving;
+
+        if (
+          (localSaving || pushes > 0 || pulls > 0) &&
+          attempts < maxAttempts
+        ) {
+          attempts++;
+          let title = "Saving Changes";
+          let desc = "Saving changes to your vault file. Please wait...";
+          if (pushes > 0 || pulls > 0) {
+            title = "Syncing with Peers";
+            desc = `Syncing changes with connected peers. Please wait...`;
+          }
+          setModalConfig({
+            visible: true,
+            title,
+            description: desc,
+            icon: pushes > 0 || pulls > 0 ? "sync-outline" : "save-outline",
+            iconColor: colors.accentMint,
+            buttons: [],
+          });
+          setTimeout(poll, 100);
         } else {
           setModalConfig((prev) => ({ ...prev, visible: false }));
           performLock();
         }
       };
-      setTimeout(checkAndLock, 100);
+
+      poll();
+    };
+
+    if (isSaving) {
+      waitAndLock();
       return;
     }
 
-    if (isDirty && !autoSave) {
-      setModalConfig({
-        visible: true,
-        title: "Unsaved Changes",
-        description:
-          "You have unsaved changes. Do you want to save them before locking, or discard them?",
-        icon: "alert-circle-outline",
-        iconColor: colors.statusError,
-        buttons: [
-          {
-            text: "Save & Lock",
-            variant: "primary",
-            onPress: async () => {
-              setModalConfig((prev) => ({ ...prev, visible: false }));
-              setSaving(true);
-              setIsSaving(true);
-              try {
-                if (db) {
-                  await saveVault(db);
-                  markClean();
+    if (isDirty) {
+      if (autoSave) {
+        // Trigger save immediately, then wait for saving and syncing to finish
+        setSaving(true);
+        setIsSaving(true);
+        setTimeout(async () => {
+          try {
+            if (db) {
+              await saveVault(db);
+              markClean();
+            }
+            waitAndLock();
+          } catch (e: any) {
+            showErrorModal(
+              "Error Saving",
+              e?.message || "Failed to write database file."
+            );
+          } finally {
+            setSaving(false);
+            setIsSaving(false);
+          }
+        }, 50);
+        return;
+      } else {
+        // Manual save prompt
+        setModalConfig({
+          visible: true,
+          title: "Unsaved Changes",
+          description:
+            "You have unsaved changes. Do you want to save them before locking, or discard them?",
+          icon: "alert-circle-outline",
+          iconColor: colors.statusError,
+          buttons: [
+            {
+              text: "Save & Lock",
+              variant: "primary",
+              onPress: async () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+                setSaving(true);
+                setIsSaving(true);
+                try {
+                  if (db) {
+                    await saveVault(db);
+                    markClean();
+                  }
+                  waitAndLock();
+                } catch (e: any) {
+                  showErrorModal(
+                    "Error Saving",
+                    e?.message || "Failed to write database file."
+                  );
+                } finally {
+                  setSaving(false);
+                  setIsSaving(false);
                 }
+              },
+            },
+            {
+              text: "Discard & Lock",
+              variant: "destructive",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
                 performLock();
-              } catch (e: any) {
-                showErrorModal(
-                  "Error Saving",
-                  e?.message || "Failed to write database file."
-                );
-              } finally {
-                setSaving(false);
-                setIsSaving(false);
-              }
+              },
             },
-          },
-          {
-            text: "Discard & Lock",
-            variant: "destructive",
-            onPress: () => {
-              setModalConfig((prev) => ({ ...prev, visible: false }));
-              performLock();
+            {
+              text: "Cancel",
+              variant: "secondary",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+              },
             },
-          },
-          {
-            text: "Cancel",
-            variant: "secondary",
-            onPress: () => {
-              setModalConfig((prev) => ({ ...prev, visible: false }));
-            },
-          },
-        ],
-      });
-    } else {
-      performLock();
+          ],
+        });
+        return;
+      }
     }
+
+    // If not dirty, check if we need to wait for any active sync/pushes first
+    waitAndLock();
   }, [
     isDirty,
     autoSave,
@@ -1421,6 +1483,7 @@ export default function VaultBrowserScreen() {
         iconColor={modalConfig.iconColor}
         options={modalConfig.options}
         buttons={modalConfig.buttons}
+        hideOverlay
       />
 
       <PeerListDrawer

@@ -16,6 +16,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Dimensions,
 } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
@@ -42,6 +43,7 @@ interface ActionModalProps {
   iconColor?: string;
   options?: ActionModalOption[];
   buttons?: ActionModalButton[];
+  hideOverlay?: boolean;
 }
 
 export function ActionModal({
@@ -53,6 +55,7 @@ export function ActionModal({
   iconColor,
   options,
   buttons,
+  hideOverlay = false,
 }: ActionModalProps) {
   const colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
@@ -73,12 +76,12 @@ export function ActionModal({
           exiting={FadeOut.duration(150)}
           style={[
             StyleSheet.absoluteFillObject,
-            { backgroundColor: colors.overlay },
+            { backgroundColor: hideOverlay ? "transparent" : colors.overlay },
           ]}
         />
         <Pressable style={styles.overlayPress} onPress={onClose} />
         <Animated.View
-          entering={FadeIn.duration(200).springify()}
+          entering={FadeIn.duration(200)}
           exiting={FadeOut.duration(150)}
           style={styles.modalContainer}
         >
@@ -202,7 +205,12 @@ export function ActionModal({
 function createStyles(colors: any) {
   return StyleSheet.create({
     overlay: {
-      flex: 1,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: Dimensions.get("screen").height,
       justifyContent: "center",
       alignItems: "center",
     },

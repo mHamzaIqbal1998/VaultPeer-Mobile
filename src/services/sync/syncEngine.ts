@@ -101,6 +101,14 @@ class SyncEngine {
    */
   private activePushes = new Set<string>();
 
+  public getActivePushesCount(): number {
+    return this.activePushes.size;
+  }
+
+  public getActivePullsCount(): number {
+    return this.activePulls.size;
+  }
+
   /** Wire the engine to the file/vault host and the WebRTC transport. */
   public init(host: SyncHost) {
     this.host = host;

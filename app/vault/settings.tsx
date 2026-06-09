@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   Image,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -53,6 +54,7 @@ import * as AutofillBridge from "@/modules/vaultpeer-autofill";
 import { useSignalingStore } from "@/src/stores/useSignalingStore";
 import { useClipboard } from "@/src/hooks/useClipboard";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { syncEngine } from "@/src/services/sync/syncEngine";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -930,36 +932,151 @@ export default function VaultSettingsScreen() {
   }, [kdfInfo]);
 
   const handleLock = useCallback(() => {
+    Keyboard.dismiss();
     const performLock = () => {
       closeDatabase();
       router.replace("/");
     };
 
-    if (isSaving) {
-      // Show saving indicator modal and lock when done
-      setModalConfig({
-        visible: true,
-        title: "Saving Changes",
-        description: "Saving changes to your vault file. Please wait...",
-        icon: "cloud-upload-outline",
-        iconColor: colors.accentMint,
-        buttons: [],
-      });
+    const waitAndLock = () => {
+      const engine = syncEngine;
 
-      const checkAndLock = () => {
-        if (useVaultStore.getState().isSaving) {
-          setTimeout(checkAndLock, 100);
+      let attempts = 0;
+      const maxAttempts = 30; // 3 seconds timeout
+
+      const poll = () => {
+        const pushes = engine.getActivePushesCount();
+        const pulls = engine.getActivePullsCount();
+        const localSaving = useVaultStore.getState().isSaving;
+
+        if (
+          (localSaving || pushes > 0 || pulls > 0) &&
+          attempts < maxAttempts
+        ) {
+          attempts++;
+          let title = "Saving Changes";
+          let desc = "Saving changes to your vault file. Please wait...";
+          if (pushes > 0 || pulls > 0) {
+            title = "Syncing with Peers";
+            desc = `Syncing changes with connected peers. Please wait...`;
+          }
+          setModalConfig({
+            visible: true,
+            title,
+            description: desc,
+            icon: pushes > 0 || pulls > 0 ? "sync-outline" : "save-outline",
+            iconColor: colors.accentMint,
+            buttons: [],
+          });
+          setTimeout(poll, 100);
         } else {
           setModalConfig((prev) => ({ ...prev, visible: false }));
           performLock();
         }
       };
-      setTimeout(checkAndLock, 100);
+
+      poll();
+    };
+
+    if (isSaving) {
+      waitAndLock();
       return;
     }
 
-    performLock();
-  }, [closeDatabase, router, isSaving, colors.accentMint]);
+    if (isDirty) {
+      if (autoSave) {
+        // Trigger save immediately, then wait for saving and syncing to finish
+        setSaving(true);
+        setIsSaving(true);
+        setTimeout(async () => {
+          try {
+            if (db) {
+              await saveVault(db);
+              markClean();
+            }
+            waitAndLock();
+          } catch (e: any) {
+            showErrorModal(
+              "Error Saving",
+              e?.message || "Failed to write database file."
+            );
+          } finally {
+            setSaving(false);
+            setIsSaving(false);
+          }
+        }, 50);
+        return;
+      } else {
+        // Manual save prompt
+        setModalConfig({
+          visible: true,
+          title: "Unsaved Changes",
+          description:
+            "You have unsaved changes. Do you want to save them before locking, or discard them?",
+          icon: "alert-circle-outline",
+          iconColor: colors.statusError,
+          buttons: [
+            {
+              text: "Save & Lock",
+              variant: "primary",
+              onPress: async () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+                setSaving(true);
+                setIsSaving(true);
+                try {
+                  if (db) {
+                    await saveVault(db);
+                    markClean();
+                  }
+                  waitAndLock();
+                } catch (e: any) {
+                  showErrorModal(
+                    "Error Saving",
+                    e?.message || "Failed to write database file."
+                  );
+                } finally {
+                  setSaving(false);
+                  setIsSaving(false);
+                }
+              },
+            },
+            {
+              text: "Discard & Lock",
+              variant: "destructive",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+                performLock();
+              },
+            },
+            {
+              text: "Cancel",
+              variant: "secondary",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+              },
+            },
+          ],
+        });
+        return;
+      }
+    }
+
+    // If not dirty, check if we need to wait for any active sync/pushes first
+    waitAndLock();
+  }, [
+    isDirty,
+    autoSave,
+    db,
+    saveVault,
+    markClean,
+    closeDatabase,
+    router,
+    colors.statusError,
+    colors.accentMint,
+    showErrorModal,
+    isSaving,
+    setIsSaving,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
@@ -2914,6 +3031,7 @@ export default function VaultSettingsScreen() {
         iconColor={modalConfig.iconColor}
         options={modalConfig.options}
         buttons={modalConfig.buttons}
+        hideOverlay
       />
     </SafeAreaView>
   );

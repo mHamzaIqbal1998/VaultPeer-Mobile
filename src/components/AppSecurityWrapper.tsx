@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { AppState, View, StyleSheet, AppStateStatus } from "react-native";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useFilePicker } from "@/src/context/FilePickerContext";
 
 interface AppSecurityWrapperProps {
   children: React.ReactNode;
@@ -21,14 +22,35 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
   );
   const backgroundTimeRef = useRef<number | null>(null);
 
-  const lockDatabase = useCallback(() => {
+  const { saveVault } = useFilePicker();
+
+  const lockDatabase = useCallback(async () => {
     if (db) {
+      const { isDirty, autoSave, markClean, setIsSaving } =
+        useVaultStore.getState();
+      if (isDirty && autoSave) {
+        console.log(
+          "[AppSecurityWrapper] Auto-save is on and vault is dirty. Saving changes before lock..."
+        );
+        try {
+          setIsSaving(true);
+          await saveVault(db);
+          markClean();
+          console.log(
+            "[AppSecurityWrapper] Auto-save on lock completed successfully."
+          );
+        } catch (e) {
+          console.error("[AppSecurityWrapper] Auto-save on lock failed:", e);
+        } finally {
+          setIsSaving(false);
+        }
+      }
       console.log(
         "[AppSecurityWrapper] Auto-locking vault due to security trigger."
       );
       closeDatabase();
     }
-  }, [db, closeDatabase]);
+  }, [db, closeDatabase, saveVault]);
 
   // Inactivity timeout reset
   const resetInactivityTimer = useCallback(() => {
