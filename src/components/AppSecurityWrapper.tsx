@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useCallback } from "react";
 import { AppState, View, StyleSheet, AppStateStatus } from "react-native";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
+import { useSyncStore } from "@/src/stores/useSyncStore";
+import { syncEngine } from "@/src/services/sync/syncEngine";
 
 interface AppSecurityWrapperProps {
   children: React.ReactNode;
@@ -25,6 +27,28 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
   const { saveVault } = useFilePicker();
 
   const lockDatabase = useCallback(async () => {
+    // Prevent locking if we are currently saving or syncing
+    const isSaving = useVaultStore.getState().isSaving;
+    const isSyncing =
+      useSyncStore.getState().status === "syncing" ||
+      syncEngine.getActivePushesCount() > 0 ||
+      syncEngine.getActivePullsCount() > 0;
+
+    if (isSaving || isSyncing) {
+      console.log(
+        `[AppSecurityWrapper] Auto-lock triggered (saving: ${isSaving}, syncing: ${isSyncing}) but postponed because sync/save is in progress.`
+      );
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+      }
+      if (db && autoLockTimeout > 0) {
+        inactivityTimeoutRef.current = setTimeout(() => {
+          lockDatabase();
+        }, autoLockTimeout);
+      }
+      return;
+    }
+
     if (db) {
       const { isDirty, autoSave, markClean, setIsSaving } =
         useVaultStore.getState();
@@ -50,7 +74,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
       );
       closeDatabase();
     }
-  }, [db, closeDatabase, saveVault]);
+  }, [db, closeDatabase, saveVault, autoLockTimeout]);
 
   // Inactivity timeout reset
   const resetInactivityTimer = useCallback(() => {
