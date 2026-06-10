@@ -28,8 +28,9 @@ import {
 
 const TAG = "[SyncEngine]";
 
-/** How long to keep the "syncing" indicator before settling to "synced". */
-const SYNC_TIMEOUT_MS = 5000;
+/** How long to keep the "syncing" indicator before settling to "synced".
+ *  Must be generous enough for large KDBX file transfers over mobile WebRTC. */
+const SYNC_TIMEOUT_MS = 15_000;
 
 export interface ActiveFile {
   uri: string;
@@ -120,6 +121,10 @@ class SyncEngine {
       });
       this.started = true;
     }
+    // Kick the sync handshake now that the host is wired. This covers the race
+    // where the React effect for onActiveFileChanged fired before init() — at
+    // that point `this.host` was still null so nothing happened.
+    this.onActiveFileChanged();
   }
 
   // ── Status helpers ───────────────────────────
@@ -134,11 +139,31 @@ class SyncEngine {
     this.setStatus("syncing");
     if (this.syncTimeout) clearTimeout(this.syncTimeout);
     this.syncTimeout = setTimeout(() => {
-      // Settle the indicator if nothing else updated it.
-      if (useSyncStore.getState().status === "syncing") {
+      // Only settle if there are no active transfers in flight.
+      if (
+        useSyncStore.getState().status === "syncing" &&
+        this.activePulls.size === 0 &&
+        this.activePushes.size === 0
+      ) {
         useSyncStore.getState().markSynced();
       }
     }, SYNC_TIMEOUT_MS);
+  }
+
+  /**
+   * Cancel the syncing timeout early because we've conclusively finished all
+   * transfers. Prevents the indicator lingering for the full timeout duration.
+   */
+  private settleIfIdle() {
+    if (this.activePulls.size === 0 && this.activePushes.size === 0) {
+      if (this.syncTimeout) {
+        clearTimeout(this.syncTimeout);
+        this.syncTimeout = null;
+      }
+      if (useSyncStore.getState().status === "syncing") {
+        useSyncStore.getState().markSynced();
+      }
+    }
   }
 
   private refreshPeerCount() {
@@ -183,7 +208,11 @@ class SyncEngine {
     this.stashedDiskWrite = null;
     this.activePushes.clear();
 
-    const af = this.host?.getActiveFile();
+    // Guard: host may not be wired yet (React effect ordering). init() will
+    // call us again once the host is set.
+    if (!this.host) return;
+
+    const af = this.host.getActiveFile();
     if (!af) {
       this.setStatus("idle");
       return;
@@ -210,14 +239,34 @@ class SyncEngine {
    * we trigger an immediate reload-from-disk.
    */
   public async onVaultOpened() {
+    // First, try to consume a stash immediately.
+    const consumed = await this.tryConsumeStash();
+    if (consumed) return;
+
+    // If there are in-flight pulls, the stash may arrive imminently.
+    // Schedule a short deferred re-check so we catch it.
+    if (this.activePulls.size > 0) {
+      console.log(
+        TAG,
+        "Vault opened with in-flight pulls — will re-check stash shortly"
+      );
+      this.scheduleStashRecheck();
+    }
+  }
+
+  /**
+   * Attempt to consume a stashed disk write. Returns true if a stash was found
+   * and consumed (reloaded from disk).
+   */
+  private async tryConsumeStash(): Promise<boolean> {
     const stashed = this.stashedDiskWrite;
-    if (!stashed || !this.host) return;
+    if (!stashed || !this.host) return false;
 
     const af = this.host.getActiveFile();
     if (!af || af.filename !== stashed.filename) {
       // Stashed write is for a different file — irrelevant.
       this.stashedDiskWrite = null;
-      return;
+      return false;
     }
 
     // Consume the stash.
@@ -234,9 +283,49 @@ class SyncEngine {
         useSyncStore.getState().bumpApplied();
         useSyncStore.getState().markSynced();
       }
+      return ok;
     } catch (e) {
       console.warn(TAG, "Post-open reload failed:", e);
+      return false;
     }
+  }
+
+  /**
+   * Re-check for a stashed disk write after a short delay. This covers the race
+   * where the vault was opened just before an in-flight pull completes and
+   * writes to disk.
+   */
+  private stashRecheckTimer: ReturnType<typeof setTimeout> | null = null;
+  private stashRecheckAttempts = 0;
+  private static readonly MAX_STASH_RECHECK_ATTEMPTS = 10;
+  private static readonly STASH_RECHECK_INTERVAL_MS = 500;
+
+  private scheduleStashRecheck() {
+    if (this.stashRecheckTimer) clearTimeout(this.stashRecheckTimer);
+    this.stashRecheckAttempts = 0;
+    this.doStashRecheck();
+  }
+
+  private doStashRecheck() {
+    this.stashRecheckTimer = setTimeout(async () => {
+      this.stashRecheckTimer = null;
+      this.stashRecheckAttempts++;
+
+      // Stop if the vault was closed in the meantime.
+      if (!this.host?.isVaultOpen()) return;
+
+      const consumed = await this.tryConsumeStash();
+      if (consumed) return;
+
+      // Keep retrying as long as pulls are in-flight and we haven't exceeded
+      // the maximum number of re-checks.
+      if (
+        this.activePulls.size > 0 &&
+        this.stashRecheckAttempts < SyncEngine.MAX_STASH_RECHECK_ATTEMPTS
+      ) {
+        this.doStashRecheck();
+      }
+    }, SyncEngine.STASH_RECHECK_INTERVAL_MS);
   }
 
   /** Broadcast a push_request to all peers after a successful local save. */
@@ -320,9 +409,7 @@ class SyncEngine {
         break;
       case SyncMsg.PUSH_RESPONSE:
         this.activePushes.delete(peerId);
-        if (this.activePushes.size === 0 && this.activePulls.size === 0) {
-          useSyncStore.getState().markSynced();
-        }
+        this.settleIfIdle();
         break;
       default:
         break;
@@ -383,7 +470,7 @@ class SyncEngine {
           filename: af.filename,
         });
       } else {
-        useSyncStore.getState().markSynced();
+        this.settleIfIdle();
       }
     } catch (e) {
       console.warn(TAG, "onMetadataInfo failed:", e);
@@ -433,7 +520,7 @@ class SyncEngine {
 
       // LWW: ignore unless the remote is meaningfully newer.
       if (!(msg.lastModified - localMtime > LWW_THRESHOLD_MS)) {
-        useSyncStore.getState().markSynced();
+        this.settleIfIdle();
         ackPush("ignored", "Local copy is newer or equal");
         this.flushDeferredAdvertise(peerId);
         return;
@@ -457,7 +544,7 @@ class SyncEngine {
             remoteMtime: msg.lastModified,
             writtenAt: Date.now(),
           };
-          useSyncStore.getState().markSynced();
+          this.settleIfIdle();
           ackPush("success", "Applied to disk");
         } else {
           this.setStatus("error");
@@ -477,7 +564,7 @@ class SyncEngine {
         fromPeerId: peerId,
         mode: dirty ? "conflict" : "reload",
       });
-      useSyncStore.getState().markSynced();
+      this.settleIfIdle();
       ackPush("success", "Queued for user review");
       this.flushDeferredAdvertise(peerId);
     } catch (e) {

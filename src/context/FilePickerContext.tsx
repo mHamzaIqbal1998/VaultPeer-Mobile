@@ -125,6 +125,13 @@ export function FilePickerProvider({
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(false);
   const [recentVaults, setRecentVaults] = useState<RecentVault[]>([]);
   const saveChain = useRef<Promise<any>>(Promise.resolve());
+  /**
+   * Monotonic counter that forces the active-file effect to re-run even when
+   * the user re-selects the same vault (same URI). Without this, React’s
+   * Object.is comparison on `fileUri` would skip the effect entirely and no
+   * sync round would be triggered after a lock → reopen cycle.
+   */
+  const [syncTrigger, setSyncTrigger] = useState(0);
 
   // Live snapshot of the active file for the sync engine (host is registered
   // once, but the underlying file can change as the user switches vaults).
@@ -172,11 +179,12 @@ export function FilePickerProvider({
   }, []);
 
   // Keep the sync engine's view of the active file in sync with state, and
-  // re-advertise to peers whenever it changes.
+  // re-advertise to peers whenever it changes. The `syncTrigger` counter
+  // ensures this fires even when re-selecting the same vault after a lock.
   useEffect(() => {
     activeFileRef.current = fileUri ? { uri: fileUri, bookmark } : null;
     syncEngine.onActiveFileChanged();
-  }, [fileUri, bookmark]);
+  }, [fileUri, bookmark, syncTrigger]);
 
   // Register the file/vault host once. The engine pulls live values through the
   // refs and the global vault store, so this never needs to re-run.
@@ -249,16 +257,22 @@ export function FilePickerProvider({
 
     syncEngine.init(host);
 
-    // Subscribe to the vault store: when _db transitions from null to non-null
-    // (vault was just opened/decrypted), notify the sync engine. This handles
-    // the case where a remote file was synced to disk while the vault was still
-    // locked — the engine will reload from the (updated) disk file.
+    // Subscribe to the vault store to handle lifecycle transitions:
+    //   • null → non-null (vault opened): consume any stashed disk write.
+    //   • non-null → null (vault locked): kick a fresh metadata exchange so
+    //     the sync status indicator and "syncing" pill show up immediately on
+    //     the unlock screen, rather than waiting for the user to re-select
+    //     the same vault.
     let prevDb: unknown = null;
     const unsub = useVaultStore.subscribe((state) => {
       const nowDb = state._db;
       if (prevDb === null && nowDb !== null) {
         // Vault just opened — fire-and-forget; errors handled inside.
         void syncEngine.onVaultOpened();
+      } else if (prevDb !== null && nowDb === null) {
+        // Vault just locked — start a fresh sync round so the unlock screen
+        // shows the current sync state and any incoming pushes are handled.
+        syncEngine.onActiveFileChanged();
       }
       prevDb = nowDb;
     });
@@ -613,6 +627,11 @@ export function FilePickerProvider({
     setFileUri(vault.uri);
     setBookmark(vault.bookmark);
     setHasSavedVault(true);
+
+    // Bump the trigger so the active-file effect re-runs even when re-selecting
+    // the same vault. This ensures a fresh metadata exchange happens with peers
+    // after every lock → reopen cycle.
+    setSyncTrigger((n) => n + 1);
 
     const updated = recentVaults.map((v) =>
       v.uri === uri ? { ...v, lastOpened: Date.now() } : v
