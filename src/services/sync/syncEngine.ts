@@ -117,8 +117,9 @@ class SyncEngine {
    * Pull requests that arrived while we were mid-receive (active pull) from
    * the same peer. Served after our pull completes to avoid a bidirectional
    * chunked transfer storm on mobile data channels.
+   * Uses an array queue per peer to prevent losing requests.
    */
-  private deferredPullRequests = new Map<string, string>(); // peerId → filename
+  private deferredPullRequests = new Map<string, string[]>(); // peerId → [filename, ...]
   private taskTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   public getActivePushesCount(): number {
@@ -687,12 +688,70 @@ class SyncEngine {
       case SyncMsg.SYNC_COMPLETE:
         this.onSyncCompleteReceived(peerId, msg);
         break;
+      case SyncMsg.TRANSFER_NACK:
+        this.onTransferNack(peerId, msg);
+        break;
+      case SyncMsg.DC_PING:
+      case SyncMsg.DC_PONG:
+        // Heartbeat messages handled by WebRTCManager, ignore here.
+        break;
       default:
         break;
     }
   }
 
   // ── Handlers ─────────────────────────────────
+
+  /**
+   * Handle a transfer_nack from a peer — the receiver failed to reassemble
+   * a chunked transfer we sent. Mark the relevant queue task as failed.
+   */
+  private onTransferNack(
+    peerId: string,
+    msg: { transferId: string; filename: string; reason: string }
+  ) {
+    console.warn(
+      TAG,
+      `Transfer NACK from ${peerId} for "${msg.filename}": ${msg.reason}`
+    );
+    // Try to match against push tasks (pull_response NACKs are uncommon
+    // since the receiver initiated the pull)
+    const pushTaskId = `${peerId}_${msg.filename}_push`;
+    const pullTaskId = `${peerId}_${msg.filename}_pull`;
+
+    const queue = useSyncStore.getState().syncQueue;
+    const pushItem = queue.find(
+      (q) => q.id === pushTaskId && q.status === "syncing"
+    );
+    const pullItem = queue.find(
+      (q) => q.id === pullTaskId && q.status === "syncing"
+    );
+
+    if (pushItem) {
+      this.clearTaskTimeout(pushTaskId);
+      this.activePushes.delete(peerId);
+      useSyncStore
+        .getState()
+        .updateQueueItemStatus(
+          pushTaskId,
+          "failed",
+          `Receiver NACK: ${msg.reason}`
+        );
+    }
+    if (pullItem) {
+      this.clearTaskTimeout(pullTaskId);
+      this.activePulls.delete(peerId);
+      useSyncStore
+        .getState()
+        .updateQueueItemStatus(
+          pullTaskId,
+          "failed",
+          `Transfer failed: ${msg.reason}`
+        );
+      this.serveDeferredPullRequest(peerId);
+    }
+    this.settleIfIdle();
+  }
 
   private async advertiseTo(peerId: string, withComplete: boolean) {
     const af = this.host?.getActiveFile();
@@ -782,14 +841,19 @@ class SyncEngine {
    */
   private handleIncomingPullRequest(peerId: string, filename: string) {
     if (this.activePulls.has(peerId)) {
-      // We're mid-receive from this peer. Sending 360 chunks back while
-      // receiving 360 chunks simultaneously will saturate the data channel
+      // We're mid-receive from this peer. Sending chunks back while
+      // receiving chunks simultaneously will saturate the data channel
       // on mobile connections. Queue it and serve after our pull completes.
       console.log(
         TAG,
         `Deferring pull_request from ${peerId} — active pull in-flight`
       );
-      this.deferredPullRequests.set(peerId, filename);
+      const queue = this.deferredPullRequests.get(peerId) || [];
+      // Only queue if this filename isn't already queued
+      if (!queue.includes(filename)) {
+        queue.push(filename);
+        this.deferredPullRequests.set(peerId, queue);
+      }
       return;
     }
     void this.servePullRequest(peerId, filename);
@@ -800,15 +864,21 @@ class SyncEngine {
    * has completed (or timed out).
    */
   private serveDeferredPullRequest(peerId: string) {
-    const filename = this.deferredPullRequests.get(peerId);
-    if (filename) {
+    const queue = this.deferredPullRequests.get(peerId);
+    if (!queue || queue.length === 0) {
       this.deferredPullRequests.delete(peerId);
-      console.log(
-        TAG,
-        `Serving deferred pull_request to ${peerId} for "${filename}"`
-      );
-      void this.servePullRequest(peerId, filename);
+      return;
     }
+    // Serve the oldest request first (FIFO)
+    const filename = queue.shift()!;
+    if (queue.length === 0) {
+      this.deferredPullRequests.delete(peerId);
+    }
+    console.log(
+      TAG,
+      `Serving deferred pull_request to ${peerId} for "${filename}" (${queue?.length ?? 0} remaining)`
+    );
+    void this.servePullRequest(peerId, filename);
   }
 
   private async servePullRequest(peerId: string, filename: string) {

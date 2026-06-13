@@ -41,6 +41,17 @@ export interface SyncQueueItem {
   timestamp: number;
 }
 
+export interface TransferProgress {
+  /** Number of active chunked transfers being received. */
+  activeTransfers: number;
+  /** Total chunks across all active transfers. */
+  totalChunks: number;
+  /** Received chunks across all active transfers. */
+  receivedChunks: number;
+  /** Overall progress percentage (0-100). */
+  percent: number;
+}
+
 interface SyncStoreState {
   status: SyncStatus;
   lastSyncAt: number | null;
@@ -53,6 +64,8 @@ interface SyncStoreState {
   appliedRevision: number;
   /** Queue of active and failed sync tasks. */
   syncQueue: SyncQueueItem[];
+  /** Real-time transfer progress for active chunk transfers. */
+  transferProgress: TransferProgress | null;
 
   setStatus: (status: SyncStatus) => void;
   setActivePeers: (n: number) => void;
@@ -71,6 +84,7 @@ interface SyncStoreState {
   ) => void;
   removeFromQueue: (id: string) => void;
   clearQueue: () => void;
+  setTransferProgress: (progress: TransferProgress | null) => void;
   reset: () => void;
 }
 
@@ -81,6 +95,7 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   pendingRemote: null,
   appliedRevision: 0,
   syncQueue: [],
+  transferProgress: null,
 
   setStatus: (status) => set({ status }),
   setActivePeers: (n) => set({ activePeers: n }),
@@ -118,6 +133,7 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
       syncQueue: state.syncQueue.filter((item) => item.id !== id),
     })),
   clearQueue: () => set({ syncQueue: [] }),
+  setTransferProgress: (progress) => set({ transferProgress: progress }),
   reset: () =>
     set({
       status: "idle",
@@ -125,5 +141,6 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
       activePeers: 0,
       pendingRemote: null,
       syncQueue: [],
+      transferProgress: null,
     }),
 }));

@@ -3,12 +3,28 @@ import { AppState, AppStateStatus } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSignalingStore } from "../stores/useSignalingStore";
 
+/** Grace period before tearing down connections when backgrounded (ms). */
+const BACKGROUND_GRACE_MS = 30_000;
+
 /**
  * Custom hook to ensure signaling WebSocket connects/reconnects actively
  * when the screen is focused or the app returns to the foreground.
+ *
+ * When the app goes to background, connections are kept alive for a grace
+ * period (30s) to survive brief app switches without losing in-flight
+ * transfers. Only if the app remains backgrounded beyond the grace period
+ * are connections torn down.
  */
 export function useActiveConnection() {
   const lastAppState = useRef<AppStateStatus>(AppState.currentState);
+  const backgroundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelBackgroundTimer = useCallback(() => {
+    if (backgroundTimer.current) {
+      clearTimeout(backgroundTimer.current);
+      backgroundTimer.current = null;
+    }
+  }, []);
 
   const checkAndConnect = useCallback((force = false) => {
     const { syncMode, isConfigured, connectionStatus, connect } =
@@ -42,15 +58,22 @@ export function useActiveConnection() {
         nextAppState === "active"
       ) {
         console.log(
-          "[useActiveConnection] App returned to foreground, forcing reconnect"
+          "[useActiveConnection] App returned to foreground, cancelling background timer & forcing reconnect"
         );
+        cancelBackgroundTimer();
         checkAndConnect(true);
       } else if (nextAppState === "background") {
         console.log(
-          "[useActiveConnection] App went to background, disconnecting signaling and destroying peer connections"
+          `[useActiveConnection] App went to background, scheduling disconnect in ${BACKGROUND_GRACE_MS / 1000}s`
         );
-        const { disconnect } = useSignalingStore.getState();
-        disconnect();
+        cancelBackgroundTimer();
+        backgroundTimer.current = setTimeout(() => {
+          console.log(
+            "[useActiveConnection] Background grace period expired, disconnecting"
+          );
+          const { disconnect } = useSignalingStore.getState();
+          disconnect();
+        }, BACKGROUND_GRACE_MS);
       }
       lastAppState.current = nextAppState;
     };
@@ -60,7 +83,8 @@ export function useActiveConnection() {
       handleAppStateChange
     );
     return () => {
+      cancelBackgroundTimer();
       subscription.remove();
     };
-  }, [checkAndConnect]);
+  }, [checkAndConnect, cancelBackgroundTimer]);
 }
