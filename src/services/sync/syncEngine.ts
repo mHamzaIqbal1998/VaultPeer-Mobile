@@ -32,6 +32,13 @@ const TAG = "[SyncEngine]";
  *  Must be generous enough for large KDBX file transfers over mobile WebRTC. */
 const SYNC_TIMEOUT_MS = 15_000;
 
+/**
+ * Per-task timeout for individual pull/push operations.
+ * Must be generous for ~5 MB files over slow mobile data channels,
+ * especially when bidirectional traffic serialization causes queuing.
+ */
+const TASK_TIMEOUT_MS = 45_000;
+
 export interface ActiveFile {
   uri: string;
   bookmark: string | null;
@@ -101,6 +108,18 @@ class SyncEngine {
    * Peers for which we have an in-flight push (waiting on push_response).
    */
   private activePushes = new Set<string>();
+  /**
+   * Peers to whom we are currently sending a chunked pull_response.
+   * Guards against serving duplicate pull_requests for the same file.
+   */
+  private activeServes = new Set<string>();
+  /**
+   * Pull requests that arrived while we were mid-receive (active pull) from
+   * the same peer. Served after our pull completes to avoid a bidirectional
+   * chunked transfer storm on mobile data channels.
+   */
+  private deferredPullRequests = new Map<string, string>(); // peerId → filename
+  private taskTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   public getActivePushesCount(): number {
     return this.activePushes.size;
@@ -195,6 +214,26 @@ class SyncEngine {
     this.activePulls.delete(peerId);
     this.activePushes.delete(peerId);
     this.refreshPeerCount();
+
+    // Fail all active/pending tasks for this peer
+    const queue = useSyncStore.getState().syncQueue;
+    for (const item of queue) {
+      if (
+        item.peerId === peerId &&
+        (item.status === "syncing" || item.status === "pending")
+      ) {
+        const taskId = item.id;
+        const timer = this.taskTimers.get(taskId);
+        if (timer) {
+          clearTimeout(timer);
+          this.taskTimers.delete(taskId);
+        }
+        useSyncStore
+          .getState()
+          .updateQueueItemStatus(taskId, "failed", "Peer disconnected");
+      }
+    }
+
     if (this.openChannels.size === 0 && this.host?.getActiveFile()) {
       this.setStatus("offline");
     }
@@ -207,6 +246,42 @@ class SyncEngine {
     // Clear any stashed disk-write from a different file.
     this.stashedDiskWrite = null;
     this.activePushes.clear();
+    this.activePulls.clear();
+    this.activeServes.clear();
+    this.deferredPullRequests.clear();
+
+    // Clear timeouts for all syncing tasks
+    for (const timer of this.taskTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.taskTimers.clear();
+    const activeFile = this.host?.getActiveFile();
+    const activeFilename = activeFile ? activeFile.filename : null;
+
+    // Transition any active or pending tasks to failed since they are being interrupted
+    const currentQueue = useSyncStore.getState().syncQueue;
+    const updatedQueue = currentQueue.map((item) => {
+      if (item.status === "syncing" || item.status === "pending") {
+        return {
+          ...item,
+          status: "failed" as const,
+          error: "Sync interrupted by vault lock",
+          timestamp: Date.now(),
+        };
+      }
+      return item;
+    });
+
+    // Keep failed tasks:
+    // If activeFilename is null, we keep all failed tasks in the queue (e.g. so they survive locking)
+    // If activeFilename is non-null, we filter to keep only failed tasks for this active file
+    const newQueue = updatedQueue.filter((item) => {
+      if (item.status !== "failed") return false;
+      if (activeFilename === null) return true;
+      return item.filename === activeFilename;
+    });
+
+    useSyncStore.setState({ syncQueue: newQueue });
 
     // Guard: host may not be wired yet (React effect ordering). init() will
     // call us again once the host is set.
@@ -337,7 +412,30 @@ class SyncEngine {
     if (this.openChannels.size === 0) return;
     this.beginSyncing();
     for (const peerId of this.openChannels) {
+      const taskId = `${peerId}_${filename}_push`;
+
+      // If a push is already in-flight to this peer, the new data supersedes
+      // it. The WebRTC layer's generation counter will cancel the old chunked
+      // send. We just reset the timeout so it doesn't fire prematurely.
+      if (this.activePushes.has(peerId)) {
+        console.log(
+          TAG,
+          `Superseding in-flight push to ${peerId} with newer data`
+        );
+        this.clearTaskTimeout(taskId);
+      }
+
       this.activePushes.add(peerId);
+
+      useSyncStore.getState().addToQueue({
+        peerId,
+        filename,
+        type: "push",
+        lastModified: logicalMtime,
+        status: "syncing",
+      });
+      this.startTaskTimeout(taskId, peerId, "push");
+
       webRTCManager.sendToPeer(peerId, {
         type: SyncMsg.PUSH_REQUEST,
         filename,
@@ -378,7 +476,168 @@ class SyncEngine {
     }
   }
 
-  // ── Message dispatch ─────────────────────────
+  private startTaskTimeout(
+    taskId: string,
+    peerId: string,
+    type: "pull" | "push"
+  ) {
+    const existing = this.taskTimers.get(taskId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      this.taskTimers.delete(taskId);
+      const item = useSyncStore
+        .getState()
+        .syncQueue.find((q) => q.id === taskId);
+      if (item && item.status === "syncing") {
+        console.warn(TAG, `Sync timeout for task: ${taskId}`);
+        useSyncStore
+          .getState()
+          .updateQueueItemStatus(taskId, "failed", "Sync timed out");
+        if (type === "pull") {
+          this.activePulls.delete(peerId);
+          // Flush any deferred pull request from this peer
+          this.serveDeferredPullRequest(peerId);
+        } else {
+          this.activePushes.delete(peerId);
+        }
+        this.settleIfIdle();
+      }
+    }, TASK_TIMEOUT_MS);
+    this.taskTimers.set(taskId, timer);
+  }
+
+  private clearTaskTimeout(taskId: string) {
+    const timer = this.taskTimers.get(taskId);
+    if (timer) {
+      clearTimeout(timer);
+      this.taskTimers.delete(taskId);
+    }
+  }
+
+  /** Manually retry a failed or pending sync queue item. */
+  public async retrySync(
+    peerId: string,
+    filename: string,
+    type: "pull" | "push"
+  ) {
+    const af = this.host?.getActiveFile();
+    if (!af || af.filename !== filename || !this.host) {
+      console.warn(TAG, "Cannot retry sync: no active file or host mismatch");
+      return;
+    }
+
+    // Verify the data channel is actually open before retrying.
+    if (!this.openChannels.has(peerId)) {
+      const taskId = `${peerId}_${filename}_${type}`;
+      console.warn(TAG, `Cannot retry sync to ${peerId}: peer not connected`);
+      useSyncStore
+        .getState()
+        .updateQueueItemStatus(taskId, "failed", "Peer not connected");
+      return;
+    }
+
+    const taskId = `${peerId}_${filename}_${type}`;
+    useSyncStore.getState().updateQueueItemStatus(taskId, "syncing");
+    this.beginSyncing();
+
+    if (type === "pull") {
+      this.activePulls.add(peerId);
+      this.startTaskTimeout(taskId, peerId, "pull");
+      webRTCManager.sendToPeer(peerId, {
+        type: SyncMsg.PULL_REQUEST,
+        filename,
+      });
+    } else {
+      // push — verify vault is open so we can read the file
+      if (!this.host.isVaultOpen()) {
+        console.warn(TAG, "Cannot retry push: vault is locked");
+        useSyncStore
+          .getState()
+          .updateQueueItemStatus(taskId, "failed", "Vault is locked");
+        this.settleIfIdle();
+        return;
+      }
+      try {
+        // Cancel any stale in-flight push to this peer (the WebRTC generation
+        // counter handles the actual cancellation in sendChunkedToPeer).
+        if (this.activePushes.has(peerId)) {
+          console.log(TAG, `Superseding stale push to ${peerId} with retry`);
+          this.clearTaskTimeout(taskId);
+        }
+
+        const b64 = await this.host.readActiveFileBase64();
+        const mtime = await getEffectiveMtime(af.uri, af.bookmark ?? undefined);
+        this.activePushes.add(peerId);
+        this.startTaskTimeout(taskId, peerId, "push");
+        webRTCManager.sendToPeer(peerId, {
+          type: SyncMsg.PUSH_REQUEST,
+          filename,
+          fileData: b64,
+          lastModified: mtime,
+        });
+      } catch (e: any) {
+        console.warn(TAG, "Failed to read file for push retry:", e);
+        useSyncStore
+          .getState()
+          .updateQueueItemStatus(
+            taskId,
+            "failed",
+            e?.message || "Failed to read file"
+          );
+        this.activePushes.delete(peerId);
+        this.settleIfIdle();
+      }
+    }
+  }
+
+  private onSyncCompleteReceived(
+    peerId: string,
+    msg: {
+      filename: string;
+      lastModified: number;
+      status: "success" | "ignored" | "error";
+      message?: string;
+    }
+  ) {
+    const pushTaskId = `${peerId}_${msg.filename}_push`;
+    const pullTaskId = `${peerId}_${msg.filename}_pull`;
+
+    const queue = useSyncStore.getState().syncQueue;
+    const pushItem = queue.find((q) => q.id === pushTaskId);
+    const pullItem = queue.find((q) => q.id === pullTaskId);
+
+    const handleItemComplete = (taskId: string, type: "pull" | "push") => {
+      this.clearTaskTimeout(taskId);
+      if (type === "pull") {
+        this.activePulls.delete(peerId);
+      } else {
+        this.activePushes.delete(peerId);
+      }
+
+      if (msg.status === "success" || msg.status === "ignored") {
+        useSyncStore.getState().removeFromQueue(taskId);
+      } else {
+        useSyncStore
+          .getState()
+          .updateQueueItemStatus(
+            taskId,
+            "failed",
+            msg.message || "Remote sync check failed"
+          );
+      }
+    };
+
+    if (pushItem && pushItem.status === "syncing") {
+      handleItemComplete(pushTaskId, "push");
+    }
+    if (pullItem && pullItem.status === "syncing") {
+      handleItemComplete(pullTaskId, "pull");
+    }
+
+    this.settleIfIdle();
+  }
 
   private handlePeerMessage(peerId: string, msg: any) {
     switch (msg?.type) {
@@ -401,15 +660,32 @@ class SyncEngine {
         }
         break;
       case SyncMsg.PULL_REQUEST:
-        void this.servePullRequest(peerId, msg.filename);
+        void this.handleIncomingPullRequest(peerId, msg.filename);
         break;
       case SyncMsg.PULL_RESPONSE:
       case SyncMsg.PUSH_REQUEST:
         void this.applyIncomingFile(peerId, msg as FileTransferMessage);
         break;
-      case SyncMsg.PUSH_RESPONSE:
+      case SyncMsg.PUSH_RESPONSE: {
+        const taskId = `${peerId}_${msg.filename}_push`;
+        this.clearTaskTimeout(taskId);
         this.activePushes.delete(peerId);
+        if (msg.status === "success" || msg.status === "ignored") {
+          useSyncStore.getState().removeFromQueue(taskId);
+        } else {
+          useSyncStore
+            .getState()
+            .updateQueueItemStatus(
+              taskId,
+              "failed",
+              msg.message || "Failed to push"
+            );
+        }
         this.settleIfIdle();
+        break;
+      }
+      case SyncMsg.SYNC_COMPLETE:
+        this.onSyncCompleteReceived(peerId, msg);
         break;
       default:
         break;
@@ -453,6 +729,17 @@ class SyncEngine {
     const af = this.host?.getActiveFile();
     if (!af || af.filename !== msg.filename) return;
 
+    // Guard: if we already have a pull in-flight from this peer, ignore
+    // duplicate metadata_info messages to prevent sending redundant
+    // pull_requests and creating parallel inbound transfers.
+    if (this.activePulls.has(peerId)) {
+      console.log(
+        TAG,
+        `Already pulling from ${peerId}, ignoring duplicate metadata_info`
+      );
+      return;
+    }
+
     try {
       const localMtime = await getEffectiveMtime(
         af.uri,
@@ -465,6 +752,17 @@ class SyncEngine {
         this.beginSyncing();
         // Track the pull so deferred advertisement waits for completion.
         this.activePulls.add(peerId);
+
+        const taskId = `${peerId}_${af.filename}_pull`;
+        useSyncStore.getState().addToQueue({
+          peerId,
+          filename: af.filename,
+          type: "pull",
+          lastModified: msg.lastModified,
+          status: "syncing",
+        });
+        this.startTaskTimeout(taskId, peerId, "pull");
+
         webRTCManager.sendToPeer(peerId, {
           type: SyncMsg.PULL_REQUEST,
           filename: af.filename,
@@ -477,9 +775,57 @@ class SyncEngine {
     }
   }
 
+  /**
+   * Route an incoming pull_request: if we're currently receiving data from
+   * this peer (active pull), defer our response to avoid a bidirectional
+   * chunked transfer storm that saturates mobile data channels.
+   */
+  private handleIncomingPullRequest(peerId: string, filename: string) {
+    if (this.activePulls.has(peerId)) {
+      // We're mid-receive from this peer. Sending 360 chunks back while
+      // receiving 360 chunks simultaneously will saturate the data channel
+      // on mobile connections. Queue it and serve after our pull completes.
+      console.log(
+        TAG,
+        `Deferring pull_request from ${peerId} — active pull in-flight`
+      );
+      this.deferredPullRequests.set(peerId, filename);
+      return;
+    }
+    void this.servePullRequest(peerId, filename);
+  }
+
+  /**
+   * Serve any deferred pull_request from a peer after our pull from them
+   * has completed (or timed out).
+   */
+  private serveDeferredPullRequest(peerId: string) {
+    const filename = this.deferredPullRequests.get(peerId);
+    if (filename) {
+      this.deferredPullRequests.delete(peerId);
+      console.log(
+        TAG,
+        `Serving deferred pull_request to ${peerId} for "${filename}"`
+      );
+      void this.servePullRequest(peerId, filename);
+    }
+  }
+
   private async servePullRequest(peerId: string, filename: string) {
     const af = this.host?.getActiveFile();
     if (!af || af.filename !== filename || !this.host) return;
+
+    // Guard: if we're already serving a pull_response to this peer, skip
+    // to avoid duplicate parallel transfers.
+    if (this.activeServes.has(peerId)) {
+      console.log(
+        TAG,
+        `Already serving pull_response to ${peerId}, skipping duplicate`
+      );
+      return;
+    }
+
+    this.activeServes.add(peerId);
     try {
       const b64 = await this.host.readActiveFileBase64();
       const mtime = await getEffectiveMtime(af.uri, af.bookmark ?? undefined);
@@ -491,12 +837,17 @@ class SyncEngine {
       });
     } catch (e) {
       console.warn(TAG, "servePullRequest failed:", e);
+    } finally {
+      this.activeServes.delete(peerId);
     }
   }
 
   private async applyIncomingFile(peerId: string, msg: FileTransferMessage) {
     const af = this.host?.getActiveFile();
     if (!af || af.filename !== msg.filename || !this.host) return;
+
+    const pullTaskId = `${peerId}_${msg.filename}_pull`;
+    const isPull = msg.type === SyncMsg.PULL_RESPONSE;
 
     const ackPush = (
       status: "success" | "ignored" | "error",
@@ -512,6 +863,39 @@ class SyncEngine {
       }
     };
 
+    const sendSyncComplete = (
+      status: "success" | "ignored" | "error",
+      message: string
+    ) => {
+      webRTCManager.sendToPeer(peerId, {
+        type: SyncMsg.SYNC_COMPLETE,
+        filename: msg.filename,
+        lastModified: msg.lastModified,
+        status,
+        message,
+      });
+    };
+
+    const handlePullComplete = (
+      status: "success" | "ignored" | "error",
+      errorMsg?: string
+    ) => {
+      if (isPull) {
+        this.clearTaskTimeout(pullTaskId);
+        if (status === "success" || status === "ignored") {
+          useSyncStore.getState().removeFromQueue(pullTaskId);
+        } else {
+          useSyncStore
+            .getState()
+            .updateQueueItemStatus(
+              pullTaskId,
+              "failed",
+              errorMsg || "Failed to pull file"
+            );
+        }
+      }
+    };
+
     try {
       const localMtime = await getEffectiveMtime(
         af.uri,
@@ -522,6 +906,8 @@ class SyncEngine {
       if (!(msg.lastModified - localMtime > LWW_THRESHOLD_MS)) {
         this.settleIfIdle();
         ackPush("ignored", "Local copy is newer or equal");
+        sendSyncComplete("ignored", "Local copy is newer or equal");
+        handlePullComplete("ignored");
         this.flushDeferredAdvertise(peerId);
         return;
       }
@@ -546,9 +932,13 @@ class SyncEngine {
           };
           this.settleIfIdle();
           ackPush("success", "Applied to disk");
+          sendSyncComplete("success", "Applied to disk");
+          handlePullComplete("success");
         } else {
           this.setStatus("error");
           ackPush("error", "Failed to write file");
+          sendSyncComplete("error", "Failed to write file");
+          handlePullComplete("error", "Failed to write file");
         }
         this.flushDeferredAdvertise(peerId);
         return;
@@ -566,11 +956,15 @@ class SyncEngine {
       });
       this.settleIfIdle();
       ackPush("success", "Queued for user review");
+      sendSyncComplete("success", "Queued for user review");
+      handlePullComplete("success");
       this.flushDeferredAdvertise(peerId);
-    } catch (e) {
+    } catch (e: any) {
       console.warn(TAG, "applyIncomingFile failed:", e);
       this.setStatus("error");
       ackPush("error", "Exception while applying");
+      sendSyncComplete("error", "Exception while applying");
+      handlePullComplete("error", e?.message || "Exception while applying");
       this.flushDeferredAdvertise(peerId);
     }
   }
@@ -584,6 +978,9 @@ class SyncEngine {
     if (this.pendingAdvertise.delete(peerId)) {
       void this.advertiseTo(peerId, false);
     }
+    // Now that our pull is done, serve any deferred pull_request from this peer.
+    // This serializes bidirectional transfers: receive first, then send.
+    this.serveDeferredPullRequest(peerId);
   }
 }
 

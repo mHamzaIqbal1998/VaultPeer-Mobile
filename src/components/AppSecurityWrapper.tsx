@@ -41,10 +41,12 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
       if (inactivityTimeoutRef.current) {
         clearTimeout(inactivityTimeoutRef.current);
       }
-      if (db && autoLockTimeout > 0) {
+      // Retry soon rather than waiting the full autoLockTimeout, so we lock
+      // promptly once the sync/save finishes.
+      if (db) {
         inactivityTimeoutRef.current = setTimeout(() => {
           lockDatabase();
-        }, autoLockTimeout);
+        }, 5000);
       }
       return;
     }
@@ -74,7 +76,7 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
       );
       closeDatabase();
     }
-  }, [db, closeDatabase, saveVault, autoLockTimeout]);
+  }, [db, closeDatabase, saveVault]);
 
   // Inactivity timeout reset
   const resetInactivityTimer = useCallback(() => {

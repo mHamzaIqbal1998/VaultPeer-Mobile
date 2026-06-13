@@ -46,6 +46,7 @@ export const SyncMsg = {
   FILE_CHUNK_START: "file_chunk_start",
   FILE_CHUNK: "file_chunk",
   FILE_CHUNK_END: "file_chunk_end",
+  SYNC_COMPLETE: "sync_complete",
 } as const;
 
 /** Message types whose `fileData` payload must be transmitted in chunks. */
@@ -87,6 +88,14 @@ export interface PushResponseMessage {
   filename: string;
   status: "success" | "ignored" | "error";
   message: string;
+}
+
+export interface SyncCompleteMessage {
+  type: "sync_complete";
+  filename: string;
+  lastModified: number;
+  status: "success" | "ignored" | "error";
+  message?: string;
 }
 
 // ────────────────────────────────────────────

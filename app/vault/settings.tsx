@@ -942,7 +942,7 @@ export default function VaultSettingsScreen() {
       const engine = syncEngine;
 
       let attempts = 0;
-      const maxAttempts = 30; // 3 seconds timeout
+      const maxAttempts = 150; // 15 seconds timeout to allow sync to complete
 
       const poll = () => {
         const pushes = engine.getActivePushesCount();

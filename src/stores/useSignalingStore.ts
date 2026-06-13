@@ -74,9 +74,17 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
     set({ connectionStatus: "connecting", lastError: null });
 
     try {
+      console.log(
+        "[SignalingStore] Connecting to signaling server at:",
+        serverUrl
+      );
       ws = new WebSocket(serverUrl);
 
       ws.onopen = () => {
+        console.log(
+          "[SignalingStore] WebSocket successfully connected to:",
+          serverUrl
+        );
         set({ connectionStatus: "connected", lastError: null });
         backoffTime = 1000; // Reset backoff on successful connection
         if (roomId) {
@@ -113,7 +121,11 @@ export const useSignalingStore = create<SignalingStoreState>((set, get) => {
       };
 
       ws.onerror = (error) => {
-        console.warn("[SignalingStore] WebSocket error:", error);
+        console.warn(
+          "[SignalingStore] WebSocket error for URL:",
+          serverUrl,
+          error
+        );
         set({
           lastError:
             "WebSocket connection failed. Verify URL and server state.",

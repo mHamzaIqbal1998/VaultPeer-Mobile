@@ -7,6 +7,7 @@ import {
   Pressable,
   FlatList,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -19,6 +20,8 @@ import {
 } from "../constants/theme";
 import { useWebRTCStore, PeerInfo } from "../stores/useWebRTCStore";
 import { useSignalingStore } from "../stores/useSignalingStore";
+import { useSyncStore } from "../stores/useSyncStore";
+import { syncEngine } from "../services/sync/syncEngine";
 import { useClipboard } from "../hooks/useClipboard";
 import { webRTCManager } from "../services/webrtc/webRTCManager";
 
@@ -31,6 +34,7 @@ export function PeerListDrawer({ visible, onClose }: PeerListDrawerProps) {
   const colors = useThemeColors();
   const peersMap = useWebRTCStore((state) => state.peers);
   const { clientId, roomId } = useSignalingStore();
+  const syncQueue = useSyncStore((state) => state.syncQueue);
   const { copyToClipboard } = useClipboard();
 
   const peersList = Object.values(peersMap);
@@ -43,6 +47,15 @@ export function PeerListDrawer({ visible, onClose }: PeerListDrawerProps) {
   const handleDisconnectPeer = (peerId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     webRTCManager.cleanupPeer(peerId);
+  };
+
+  const handleRetrySync = (
+    peerId: string,
+    filename: string,
+    type: "pull" | "push"
+  ) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    syncEngine.retrySync(peerId, filename, type);
   };
 
   const getStatusColor = (peer: PeerInfo) => {
@@ -281,6 +294,165 @@ export function PeerListDrawer({ visible, onClose }: PeerListDrawerProps) {
             </View>
           </View>
 
+          {/* Sync Queue Section */}
+          {syncQueue.length > 0 ? (
+            <View style={styles.queueContainer}>
+              <Text
+                style={[
+                  styles.listHeader,
+                  {
+                    color: colors.textMuted,
+                    paddingHorizontal: 0,
+                    marginBottom: Spacing.sm,
+                  },
+                ]}
+              >
+                PENDING & FAILED SYNCS ({syncQueue.length})
+              </Text>
+              {syncQueue.map((item) => {
+                const shortPeer =
+                  item.peerId.length > 12
+                    ? `${item.peerId.slice(0, 8)}...${item.peerId.slice(-4)}`
+                    : item.peerId;
+
+                const isSyncing = item.status === "syncing";
+                const isFailed = item.status === "failed";
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.queueCard,
+                      {
+                        backgroundColor: colors.surfaceElevated,
+                        borderColor: isFailed
+                          ? colors.statusError
+                          : colors.borderSage,
+                      },
+                    ]}
+                  >
+                    <View style={styles.queueCardLeft}>
+                      <View
+                        style={[
+                          styles.typeBadge,
+                          {
+                            backgroundColor:
+                              item.type === "push"
+                                ? colors.accentMintDim
+                                : `${colors.statusWarning}1A`,
+                            borderColor:
+                              item.type === "push"
+                                ? colors.accentMint
+                                : colors.statusWarning,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            item.type === "push"
+                              ? "arrow-up-outline"
+                              : "arrow-down-outline"
+                          }
+                          size={12}
+                          color={
+                            item.type === "push"
+                              ? colors.accentMint
+                              : colors.statusWarning
+                          }
+                        />
+                        <Text
+                          style={[
+                            styles.typeBadgeText,
+                            {
+                              color:
+                                item.type === "push"
+                                  ? colors.accentMint
+                                  : colors.statusWarning,
+                            },
+                          ]}
+                        >
+                          {item.type.toUpperCase()}
+                        </Text>
+                      </View>
+
+                      <View style={styles.queueCardInfo}>
+                        <Text
+                          style={[
+                            styles.queueFilename,
+                            { color: colors.textPrimary },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.filename}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.queuePeerText,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          Peer: {shortPeer}
+                        </Text>
+                        {isFailed && item.error ? (
+                          <Text
+                            style={[
+                              styles.queueErrorText,
+                              { color: colors.statusError },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            Error: {item.error}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <View style={styles.queueCardRight}>
+                      {isSyncing ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.accentMint}
+                        />
+                      ) : (
+                        <Pressable
+                          onPress={() =>
+                            handleRetrySync(
+                              item.peerId,
+                              item.filename,
+                              item.type
+                            )
+                          }
+                          style={[
+                            styles.syncButton,
+                            {
+                              backgroundColor: colors.accentMintDim,
+                              borderColor: colors.accentMint,
+                            },
+                          ]}
+                          hitSlop={8}
+                        >
+                          <Ionicons
+                            name="sync-outline"
+                            size={12}
+                            color={colors.accentMint}
+                          />
+                          <Text
+                            style={[
+                              styles.syncButtonText,
+                              { color: colors.accentMint },
+                            ]}
+                          >
+                            Sync
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+
           <Text style={[styles.listHeader, { color: colors.textMuted }]}>
             CONNECTED PEERS ({peersList.length})
           </Text>
@@ -479,5 +651,72 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.caption,
     textAlign: "center",
     paddingHorizontal: Spacing.xl,
+  },
+  queueContainer: {
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.lg,
+  },
+  queueCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    marginBottom: Spacing.sm,
+  },
+  queueCardLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: Spacing.md,
+  },
+  typeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  typeBadgeText: {
+    fontSize: 9,
+    fontFamily: Fonts.heading.semiBold,
+  },
+  queueCardInfo: {
+    flex: 1,
+  },
+  queueFilename: {
+    fontSize: FontSizes.bodySmall,
+    fontFamily: Fonts.heading.medium,
+  },
+  queuePeerText: {
+    fontSize: FontSizes.caption,
+    fontFamily: Fonts.mono.regular,
+    marginTop: 2,
+  },
+  queueErrorText: {
+    fontSize: FontSizes.micro,
+    fontFamily: Fonts.body.regular,
+    marginTop: 2,
+  },
+  queueCardRight: {
+    marginLeft: Spacing.sm,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  syncButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: Radii.sm,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.md,
+  },
+  syncButtonText: {
+    fontSize: FontSizes.caption,
+    fontFamily: Fonts.heading.medium,
   },
 });

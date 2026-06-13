@@ -761,7 +761,7 @@ export default function VaultBrowserScreen() {
       const engine = syncEngine;
 
       let attempts = 0;
-      const maxAttempts = 30; // 3 seconds timeout
+      const maxAttempts = 500; // 50 seconds — must exceed TASK_TIMEOUT_MS (45s) so pushes finish naturally
 
       const poll = () => {
         const pushes = engine.getActivePushesCount();

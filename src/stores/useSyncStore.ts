@@ -30,6 +30,17 @@ export interface PendingRemote {
   mode: "reload" | "conflict";
 }
 
+export interface SyncQueueItem {
+  id: string; // unique identifier: `${peerId}_${filename}_${type}`
+  peerId: string;
+  filename: string;
+  type: "pull" | "push";
+  status: "pending" | "syncing" | "completed" | "failed";
+  lastModified: number;
+  error?: string;
+  timestamp: number;
+}
+
 interface SyncStoreState {
   status: SyncStatus;
   lastSyncAt: number | null;
@@ -40,12 +51,26 @@ interface SyncStoreState {
   /** Incremented whenever the engine applies a remote vault to the open DB,
    * so screens can re-derive after a silent reload. */
   appliedRevision: number;
+  /** Queue of active and failed sync tasks. */
+  syncQueue: SyncQueueItem[];
 
   setStatus: (status: SyncStatus) => void;
   setActivePeers: (n: number) => void;
   markSynced: () => void;
   setPendingRemote: (pending: PendingRemote | null) => void;
   bumpApplied: () => void;
+  addToQueue: (
+    item: Omit<SyncQueueItem, "id" | "timestamp" | "status"> & {
+      status?: SyncQueueItem["status"];
+    }
+  ) => void;
+  updateQueueItemStatus: (
+    id: string,
+    status: SyncQueueItem["status"],
+    error?: string
+  ) => void;
+  removeFromQueue: (id: string) => void;
+  clearQueue: () => void;
   reset: () => void;
 }
 
@@ -55,17 +80,50 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   activePeers: 0,
   pendingRemote: null,
   appliedRevision: 0,
+  syncQueue: [],
 
   setStatus: (status) => set({ status }),
   setActivePeers: (n) => set({ activePeers: n }),
   markSynced: () => set({ status: "synced", lastSyncAt: Date.now() }),
   setPendingRemote: (pending) => set({ pendingRemote: pending }),
   bumpApplied: () => set((s) => ({ appliedRevision: s.appliedRevision + 1 })),
+  addToQueue: (item) =>
+    set((state) => {
+      const id = `${item.peerId}_${item.filename}_${item.type}`;
+      const existingIndex = state.syncQueue.findIndex((q) => q.id === id);
+      const newItem: SyncQueueItem = {
+        ...item,
+        id,
+        status: item.status ?? "pending",
+        timestamp: Date.now(),
+      };
+      let newQueue = [...state.syncQueue];
+      if (existingIndex > -1) {
+        newQueue[existingIndex] = newItem;
+      } else {
+        newQueue = [newItem, ...newQueue];
+      }
+      return { syncQueue: newQueue };
+    }),
+  updateQueueItemStatus: (id, status, error) =>
+    set((state) => ({
+      syncQueue: state.syncQueue.map((item) =>
+        item.id === id
+          ? { ...item, status, error, timestamp: Date.now() }
+          : item
+      ),
+    })),
+  removeFromQueue: (id) =>
+    set((state) => ({
+      syncQueue: state.syncQueue.filter((item) => item.id !== id),
+    })),
+  clearQueue: () => set({ syncQueue: [] }),
   reset: () =>
     set({
       status: "idle",
       lastSyncAt: null,
       activePeers: 0,
       pendingRemote: null,
+      syncQueue: [],
     }),
 }));

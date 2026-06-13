@@ -14,9 +14,9 @@ import {
 const TAG = "[WebRTCManager]";
 
 /** Pause chunk sending while the channel's send buffer exceeds this (bytes). */
-const MAX_BUFFERED_AMOUNT = 1024 * 1024; // 1 MB
+const MAX_BUFFERED_AMOUNT = 128 * 1024; // 128 KB
 /** Max time (ms) to wait for the send buffer to drain before aborting. */
-const BUFFER_DRAIN_TIMEOUT_MS = 10_000;
+const BUFFER_DRAIN_TIMEOUT_MS = 60_000; // 60s timeout
 
 /**
  * Hooks the sync engine registers to receive data-channel lifecycle and
@@ -56,6 +56,12 @@ interface PeerState {
 class WebRTCManager {
   private peers = new Map<string, PeerState>();
   private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Per-peer transfer generation counter. Incremented each time a new chunked
+   * transfer starts. The send loop checks whether its captured generation still
+   * matches; if not, it aborts because a newer transfer has superseded it.
+   */
+  private transferGeneration = new Map<string, number>();
   private syncHooks: SyncHooks | null = null;
 
   /**
@@ -91,8 +97,13 @@ class WebRTCManager {
         this.handleCandidate(senderId, msg.candidate, msg.mid);
         break;
       case "leave":
-        this.cleanupPeer(senderId);
+      case "peer_left": {
+        const idToCleanup = senderId || msg.peerId;
+        if (idToCleanup) {
+          this.cleanupPeer(idToCleanup);
+        }
         break;
+      }
       default:
         console.log(TAG, `Ignored signaling message type: ${type}`);
     }
@@ -734,8 +745,25 @@ class WebRTCManager {
   /**
    * Stream a large file-bearing message as ordered chunks, pausing when the
    * data channel's send buffer grows too large to avoid overrunning it.
+   *
+   * Only ONE chunked transfer per peer is active at a time. If a new transfer
+   * is started while a previous one is still in-flight, the previous one is
+   * implicitly cancelled via a generation counter.
    */
   private async sendChunkedToPeer(peerId: string, msg: any): Promise<boolean> {
+    // Increment the generation counter — any previous in-flight transfer for
+    // this peer will notice the mismatch and abort.
+    const prevGen = this.transferGeneration.get(peerId) ?? 0;
+    const myGen = prevGen + 1;
+    this.transferGeneration.set(peerId, myGen);
+
+    if (prevGen > 0) {
+      console.log(
+        TAG,
+        `Superseding previous chunked transfer to ${peerId} (gen ${prevGen} → ${myGen})`
+      );
+    }
+
     const chunks = createChunkMessages(msg);
     console.log(
       TAG,
@@ -743,6 +771,15 @@ class WebRTCManager {
     );
 
     for (const chunk of chunks) {
+      // Check if a newer transfer has superseded this one.
+      if (this.transferGeneration.get(peerId) !== myGen) {
+        console.log(
+          TAG,
+          `Chunked send to ${peerId} superseded by newer transfer (gen ${myGen}). Aborting.`
+        );
+        return false;
+      }
+
       const state = this.peers.get(peerId);
       if (!state || !state.dc || state.dc.readyState !== "open") {
         console.warn(TAG, `Aborting chunked send to ${peerId}: channel gone`);
@@ -757,6 +794,14 @@ class WebRTCManager {
           console.warn(TAG, `Aborting chunked send to ${peerId}: buffer stuck`);
           return false;
         }
+        // Re-check generation after waiting for drain
+        if (this.transferGeneration.get(peerId) !== myGen) {
+          console.log(
+            TAG,
+            `Chunked send to ${peerId} superseded after buffer drain (gen ${myGen}). Aborting.`
+          );
+          return false;
+        }
       }
 
       try {
@@ -765,6 +810,11 @@ class WebRTCManager {
         console.error(TAG, `Failed to send chunk to ${peerId}:`, err);
         return false;
       }
+
+      // Pace chunk transmission to prevent flooding the React Native bridge
+      // and overloading the native WebRTC socket buffer on slow networks.
+      // 45ms per chunk translates to ~360 KB/s, which is a safe, stable rate.
+      await new Promise((r) => setTimeout(r, 45));
     }
     return true;
   }
