@@ -71,7 +71,15 @@
         }
       ],
       "react-native-quick-crypto",
-      "./modules/vaultpeer-autofill/app.plugin.js"
+      "./modules/vaultpeer-autofill/app.plugin.js",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow VaultPeer to access your camera to scan sync channel QR codes.",
+          "barcodeScannerEnabled": true
+        }
+      ],
+      "@config-plugins/react-native-webrtc"
     ],
     "experiments": {
       "typedRoutes": true,

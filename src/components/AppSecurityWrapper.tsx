@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { AppState, View, StyleSheet, AppStateStatus } from "react-native";
 import { useVaultStore } from "@/src/stores/useVaultStore";
+import { useFilePicker } from "@/src/context/FilePickerContext";
+import { useSyncStore } from "@/src/stores/useSyncStore";
+import { syncEngine } from "@/src/services/sync/syncEngine";
 
 interface AppSecurityWrapperProps {
   children: React.ReactNode;
@@ -21,14 +24,59 @@ export function AppSecurityWrapper({ children }: AppSecurityWrapperProps) {
   );
   const backgroundTimeRef = useRef<number | null>(null);
 
-  const lockDatabase = useCallback(() => {
+  const { saveVault } = useFilePicker();
+
+  const lockDatabase = useCallback(async () => {
+    // Prevent locking if we are currently saving or syncing
+    const isSaving = useVaultStore.getState().isSaving;
+    const isSyncing =
+      useSyncStore.getState().status === "syncing" ||
+      syncEngine.getActivePushesCount() > 0 ||
+      syncEngine.getActivePullsCount() > 0;
+
+    if (isSaving || isSyncing) {
+      console.log(
+        `[AppSecurityWrapper] Auto-lock triggered (saving: ${isSaving}, syncing: ${isSyncing}) but postponed because sync/save is in progress.`
+      );
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+      }
+      // Retry soon rather than waiting the full autoLockTimeout, so we lock
+      // promptly once the sync/save finishes.
+      if (db) {
+        inactivityTimeoutRef.current = setTimeout(() => {
+          lockDatabase();
+        }, 5000);
+      }
+      return;
+    }
+
     if (db) {
+      const { isDirty, autoSave, markClean, setIsSaving } =
+        useVaultStore.getState();
+      if (isDirty && autoSave) {
+        console.log(
+          "[AppSecurityWrapper] Auto-save is on and vault is dirty. Saving changes before lock..."
+        );
+        try {
+          setIsSaving(true);
+          await saveVault(db);
+          markClean();
+          console.log(
+            "[AppSecurityWrapper] Auto-save on lock completed successfully."
+          );
+        } catch (e) {
+          console.error("[AppSecurityWrapper] Auto-save on lock failed:", e);
+        } finally {
+          setIsSaving(false);
+        }
+      }
       console.log(
         "[AppSecurityWrapper] Auto-locking vault due to security trigger."
       );
       closeDatabase();
     }
-  }, [db, closeDatabase]);
+  }, [db, closeDatabase, saveVault]);
 
   // Inactivity timeout reset
   const resetInactivityTimer = useCallback(() => {

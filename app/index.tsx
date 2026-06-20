@@ -16,6 +16,9 @@ import React, {
   useRef,
 } from "react";
 import { useRouter } from "expo-router";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useActiveConnection } from "@/src/hooks/useActiveConnection";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import {
   View,
   Text,
@@ -53,6 +56,7 @@ import { parseMeta } from "@/src/services/crypto";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import type { VaultMeta } from "@/src/types/kdbx";
 import { CyberCard } from "@/src/components/CyberCard";
+import { SyncStatusPill } from "@/src/components/SyncStatusPill";
 import {
   isBiometricEnabled,
   getStoredPassword,
@@ -109,6 +113,7 @@ function formatLastOpened(timestamp: number): string {
 type ScreenMode = "select" | "unlock" | "create" | "recent";
 
 export default function FileSetupScreen() {
+  useActiveConnection();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
@@ -118,6 +123,7 @@ export default function FileSetupScreen() {
     error: fsError,
     hasSavedVault,
     recentVaults,
+    isRestored,
     selectVaultFile,
     createNewVault,
     loadVault,
@@ -127,6 +133,128 @@ export default function FileSetupScreen() {
     removeRecentVault,
   } = useFilePicker();
   const { openDatabase, closeDatabase } = useVaultStore();
+
+  // Signaling & Onboarding State
+  const syncMode = useSignalingStore((state) => state.syncMode);
+  const connectionStatus = useSignalingStore((state) => state.connectionStatus);
+  const roomId = useSignalingStore((state) => state.roomId);
+  const serverUrl = useSignalingStore((state) => state.serverUrl);
+  const isConfigured = useSignalingStore((state) => state.isConfigured);
+  const { setSyncMode, setServerUrl, setIsConfigured, createRoom, joinRoom } =
+    useSignalingStore();
+
+  const [onboardingStep, setOnboardingStep] = useState<
+    "select" | "network_config" | "channel_setup" | "join_channel"
+  >("select");
+  const [inputServerUrl, setInputServerUrl] = useState(serverUrl);
+  const [inputRoomId, setInputRoomId] = useState("");
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [isScanning, setIsScanning] = useState(false);
+  const [connectingServer, setConnectingServer] = useState(false);
+
+  // Monitor connection status during Network Config flow
+  useEffect(() => {
+    if (onboardingStep === "network_config" && connectingServer) {
+      if (connectionStatus === "connected") {
+        setConnectingServer(false);
+        setOnboardingStep("channel_setup");
+      }
+    }
+  }, [connectionStatus, onboardingStep, connectingServer]);
+
+  const handleSelectOfflineMode = async () => {
+    setFormError(null);
+    try {
+      await setSyncMode("offline");
+      await setIsConfigured(false);
+    } catch (e: any) {
+      setFormError(e?.message || "Failed to set Offline Mode.");
+    }
+  };
+
+  const handleSelectNetworkMode = () => {
+    setFormError(null);
+    setInputServerUrl(serverUrl || "ws://10.0.2.2:8080");
+    setOnboardingStep("network_config");
+  };
+
+  const handleConnectServer = async () => {
+    if (!inputServerUrl.trim()) {
+      setFormError("Please enter a signaling server URL.");
+      return;
+    }
+    setFormError(null);
+    setConnectingServer(true);
+    try {
+      await setServerUrl(inputServerUrl.trim());
+      await setIsConfigured(true);
+      // Wait, force connect just in case
+      useSignalingStore.getState().connect();
+      // Set a timeout to check if connection failed
+      setTimeout(() => {
+        if (useSignalingStore.getState().connectionStatus !== "connected") {
+          setConnectingServer(false);
+          setFormError(
+            "Could not connect to signaling server. Ensure server is running at " +
+              inputServerUrl
+          );
+        }
+      }, 5000);
+    } catch (e: any) {
+      setConnectingServer(false);
+      setFormError(e?.message || "Failed to save server URL.");
+    }
+  };
+
+  const handleCreateChannel = async () => {
+    setFormError(null);
+    try {
+      const newChanId = await createRoom();
+      await setSyncMode("network");
+      setModalConfig({
+        visible: true,
+        title: "Channel Created",
+        description: `Your sync channel ID is:\n\n${newChanId}\n\nShare this ID or scan its QR code on other devices to connect.`,
+        icon: "checkmark-circle",
+        iconColor: colors.accentMint,
+        buttons: [{ text: "Proceed", onPress: hideModal, variant: "primary" }],
+      });
+    } catch (e: any) {
+      setFormError(e?.message || "Failed to create channel.");
+    }
+  };
+
+  const handleJoinChannel = async () => {
+    if (!inputRoomId.trim()) {
+      setFormError("Please enter or scan a channel ID.");
+      return;
+    }
+    setFormError(null);
+    try {
+      await joinRoom(inputRoomId.trim());
+      await setSyncMode("network");
+    } catch (e: any) {
+      setFormError(e?.message || "Failed to join channel.");
+    }
+  };
+
+  const handleStartScan = async () => {
+    setFormError(null);
+    if (!cameraPermission) {
+      const status = await requestCameraPermission();
+      if (!status.granted) {
+        setFormError("Camera permission is required to scan QR codes.");
+        return;
+      }
+    } else if (!cameraPermission.granted) {
+      const status = await requestCameraPermission();
+      if (!status.granted) {
+        setFormError("Camera permission is required to scan QR codes.");
+        return;
+      }
+    }
+    setIsScanning(true);
+  };
 
   const [mode, setMode] = useState<ScreenMode>("select");
   const [password, setPassword] = useState("");
@@ -221,17 +349,30 @@ export default function FileSetupScreen() {
     opacity: glowOpacity.value,
   }));
 
+  const isInitialLoad = useRef(true);
+
   // Auto-transition depending on active vault or recent vaults list
   useEffect(() => {
     if (storeDb) return;
-    if (fileUri) {
-      setMode("unlock");
-    } else if (recentVaults.length > 0) {
-      setMode("recent");
+    if (!isRestored) return;
+
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      if (recentVaults.length > 0) {
+        setMode("recent");
+      } else {
+        setMode("select");
+      }
     } else {
-      setMode("select");
+      if (fileUri) {
+        setMode("unlock");
+      } else if (recentVaults.length > 0) {
+        setMode("recent");
+      } else {
+        setMode("select");
+      }
     }
-  }, [fileUri, recentVaults.length, storeDb]);
+  }, [fileUri, recentVaults.length, storeDb, isRestored]);
 
   // Clear file errors and form errors on screen mode transition
   useEffect(() => {
@@ -437,6 +578,307 @@ export default function FileSetupScreen() {
   // Render Helpers
   // ────────────────────────────────────────────
 
+  const renderOnboarding = () => {
+    switch (onboardingStep) {
+      case "select":
+        return (
+          <Animated.View entering={FadeInDown.duration(400)}>
+            <CyberCard
+              style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name="settings-outline"
+                  size={22}
+                  color={colors.accentMint}
+                />
+                <Text style={styles.cardTitle}>Select Sync Mode</Text>
+              </View>
+              <Text style={styles.infoLabel}>
+                Choose how VaultPeer should manage and sync your database files.
+              </Text>
+
+              <Pressable
+                onPress={handleSelectOfflineMode}
+                style={({ pressed }) => [
+                  styles.optionCard,
+                  pressed && styles.optionCardPressed,
+                ]}
+              >
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={28}
+                  color={colors.accentMint}
+                />
+                <View style={styles.optionCardContent}>
+                  <Text style={styles.optionCardTitle}>Offline Mode</Text>
+                  <Text style={styles.optionCardDesc}>
+                    Keep your vault local-only. Securely open and edit files
+                    in-place without network synchronization.
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSelectNetworkMode}
+                style={({ pressed }) => [
+                  styles.optionCard,
+                  pressed && styles.optionCardPressed,
+                ]}
+              >
+                <Ionicons
+                  name="sync-outline"
+                  size={28}
+                  color={colors.accentMint}
+                />
+                <View style={styles.optionCardContent}>
+                  <Text style={styles.optionCardTitle}>Network Sync Mode</Text>
+                  <Text style={styles.optionCardDesc}>
+                    Sync your vault peer-to-peer (P2P) across devices via secure
+                    WebRTC signaling.
+                  </Text>
+                </View>
+              </Pressable>
+            </CyberCard>
+          </Animated.View>
+        );
+
+      case "network_config":
+        return (
+          <Animated.View entering={FadeInDown.duration(400)}>
+            <CyberCard
+              style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name="globe-outline"
+                  size={22}
+                  color={colors.accentMint}
+                />
+                <Text style={styles.cardTitle}>Signaling Server</Text>
+              </View>
+              <Text style={styles.infoLabel}>
+                Configure the WebSockets signaling server. This is used only to
+                bridge peer discovery and WebRTC handshakes.
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="link"
+                  size={18}
+                  color={colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  value={inputServerUrl}
+                  onChangeText={setInputServerUrl}
+                  placeholder="ws://10.0.2.2:8080"
+                  placeholderTextColor={colors.textDisabled}
+                  editable={!connectingServer}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <Pressable
+                onPress={handleConnectServer}
+                disabled={connectingServer}
+                style={({ pressed }) => [
+                  styles.button,
+                  pressed && styles.buttonPressed,
+                  connectingServer && styles.buttonDisabled,
+                ]}
+              >
+                {connectingServer ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.backgroundPrimary}
+                  />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="cloud-upload"
+                      size={16}
+                      color={colors.backgroundPrimary}
+                      style={styles.buttonIcon}
+                    />
+                    <Text style={styles.buttonText}>Connect to Server</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={() => setOnboardingStep("select")}
+                disabled={connectingServer}
+                style={styles.textButton}
+              >
+                <Text style={styles.textButtonText}>Back</Text>
+              </Pressable>
+            </CyberCard>
+          </Animated.View>
+        );
+
+      case "channel_setup":
+        return (
+          <Animated.View entering={FadeInDown.duration(400)}>
+            <CyberCard
+              style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name="link-outline"
+                  size={22}
+                  color={colors.accentMint}
+                />
+                <Text style={styles.cardTitle}>Signaling Connected</Text>
+              </View>
+              <Text style={styles.infoLabel}>
+                Select whether you want to host a new synchronization channel or
+                connect to an existing active channel.
+              </Text>
+
+              <Pressable
+                onPress={handleCreateChannel}
+                style={({ pressed }) => [
+                  styles.optionCard,
+                  pressed && styles.optionCardPressed,
+                ]}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={28}
+                  color={colors.accentMint}
+                />
+                <View style={styles.optionCardContent}>
+                  <Text style={styles.optionCardTitle}>
+                    Create Sync Channel
+                  </Text>
+                  <Text style={styles.optionCardDesc}>
+                    Generate a new secure synchronization room and receive a
+                    unique channel ID.
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setOnboardingStep("join_channel")}
+                style={({ pressed }) => [
+                  styles.optionCard,
+                  pressed && styles.optionCardPressed,
+                ]}
+              >
+                <Ionicons
+                  name="enter-outline"
+                  size={28}
+                  color={colors.accentMint}
+                />
+                <View style={styles.optionCardContent}>
+                  <Text style={styles.optionCardTitle}>Join Sync Channel</Text>
+                  <Text style={styles.optionCardDesc}>
+                    Connect to an active room by typing or scanning a channel ID
+                    from another device.
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setIsConfigured(false);
+                  setOnboardingStep("network_config");
+                }}
+                style={styles.textButton}
+              >
+                <Text style={styles.textButtonText}>Back</Text>
+              </Pressable>
+            </CyberCard>
+          </Animated.View>
+        );
+
+      case "join_channel":
+        return (
+          <Animated.View entering={FadeInDown.duration(400)}>
+            <CyberCard
+              style={{ marginBottom: Spacing.xl, padding: Spacing.xl }}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons name="enter" size={22} color={colors.accentMint} />
+                <Text style={styles.cardTitle}>Join Sync Channel</Text>
+              </View>
+              <Text style={styles.infoLabel}>
+                Input the synchronization room ID manually, or trigger the
+                camera scanner.
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="key-outline"
+                  size={18}
+                  color={colors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  value={inputRoomId}
+                  onChangeText={setInputRoomId}
+                  placeholder="Enter Room/Channel ID"
+                  placeholderTextColor={colors.textDisabled}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <View style={styles.buttonRow}>
+                <Pressable
+                  onPress={handleStartScan}
+                  style={({ pressed }) => [
+                    styles.buttonSecondary,
+                    { flex: 1, marginTop: 0 },
+                    pressed && styles.buttonSecondaryPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name="camera-outline"
+                    size={18}
+                    color={colors.accentMint}
+                    style={styles.buttonIcon}
+                  />
+                  <Text style={styles.buttonSecondaryText}>Scan QR</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={handleJoinChannel}
+                  style={({ pressed }) => [
+                    styles.button,
+                    { flex: 1, marginTop: 0 },
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={18}
+                    color={colors.backgroundPrimary}
+                    style={styles.buttonIcon}
+                  />
+                  <Text style={styles.buttonText}>Join</Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={() => setOnboardingStep("channel_setup")}
+                style={styles.textButton}
+              >
+                <Text style={styles.textButtonText}>Back</Text>
+              </Pressable>
+            </CyberCard>
+          </Animated.View>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   const renderHeader = () => (
     <View style={styles.headerContainer}>
       <View style={styles.shieldContainer}>
@@ -447,6 +889,43 @@ export default function FileSetupScreen() {
       <Text style={styles.subtitle}>Secure, In-place KeePass Vaults</Text>
     </View>
   );
+
+  if (isScanning) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.container,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: ["qr"],
+          }}
+          onBarcodeScanned={({ data }) => {
+            setIsScanning(false);
+            if (data) {
+              setInputRoomId(data);
+            }
+          }}
+        />
+        <View style={styles.scannerOverlay}>
+          <View style={styles.scannerCutout} />
+          <Text style={styles.scannerText}>
+            Align sync channel QR code within the frame
+          </Text>
+          <Pressable
+            onPress={() => setIsScanning(false)}
+            style={styles.cancelScanButton}
+          >
+            <Text style={styles.buttonText}>Cancel Scan</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -544,6 +1023,8 @@ export default function FileSetupScreen() {
                 </Pressable>
               </CyberCard>
             </Animated.View>
+          ) : syncMode === null ? (
+            renderOnboarding()
           ) : (
             /* Locked / Entry Flows */
             <>
@@ -563,9 +1044,12 @@ export default function FileSetupScreen() {
                     <Text style={styles.filenameLabel}>
                       File:{" "}
                       <Text style={styles.filename}>
-                        {getFilenameFromUri(fileUri)}
+                        {recentVaults.find((v) => v.uri === fileUri)?.name ||
+                          getFilenameFromUri(fileUri)}
                       </Text>
                     </Text>
+
+                    {syncMode === "network" && <SyncStatusPill />}
 
                     <View style={styles.inputContainer}>
                       <Ionicons
@@ -689,7 +1173,10 @@ export default function FileSetupScreen() {
                           style={styles.recentItemContainer}
                         >
                           <Pressable
-                            onPress={() => selectRecentVault(vault.uri)}
+                            onPress={async () => {
+                              await selectRecentVault(vault.uri);
+                              setMode("unlock");
+                            }}
                             style={({ pressed }) => [
                               styles.recentItemPressable,
                               pressed && styles.recentItemPressed,
@@ -1133,6 +1620,41 @@ export default function FileSetupScreen() {
             </>
           )}
 
+          {/* Connection Status Indicator */}
+          {syncMode === "network" && (
+            <View
+              style={[
+                styles.infoBox,
+                { marginBottom: Spacing.md, marginTop: -Spacing.xs },
+              ]}
+            >
+              <Ionicons
+                name="wifi-outline"
+                size={14}
+                color={
+                  connectionStatus === "connected"
+                    ? colors.accentMint
+                    : colors.statusError
+                }
+              />
+              <Text style={styles.infoBoxText}>
+                Sync Status:{" "}
+                <Text
+                  style={{
+                    color:
+                      connectionStatus === "connected"
+                        ? colors.accentMint
+                        : colors.statusError,
+                  }}
+                >
+                  {connectionStatus}
+                </Text>
+                {roomId ? ` | Room: ${roomId}` : ""}
+                {isConfigured ? ` | Server: ${serverUrl}` : ""}
+              </Text>
+            </View>
+          )}
+
           {/* Secure Sync Notice Info */}
           <View style={styles.infoBox}>
             <Ionicons
@@ -1146,6 +1668,49 @@ export default function FileSetupScreen() {
               Drive, Syncthing).
             </Text>
           </View>
+
+          {syncMode !== null && (
+            <Pressable
+              onPress={async () => {
+                setModalConfig({
+                  visible: true,
+                  title: "Change Sync Mode",
+                  description:
+                    "Are you sure you want to reset your sync configurations? This will disconnect you from signaling and return you to the onboarding wizard.",
+                  icon: "refresh-circle-outline",
+                  iconColor: colors.statusWarning,
+                  buttons: [
+                    {
+                      text: "Cancel",
+                      onPress: hideModal,
+                      variant: "secondary",
+                    },
+                    {
+                      text: "Reset Mode",
+                      variant: "destructive",
+                      onPress: async () => {
+                        hideModal();
+                        await setSyncMode(null);
+                        await setIsConfigured(false);
+                        setOnboardingStep("select");
+                      },
+                    },
+                  ],
+                });
+              }}
+              style={styles.resetProtocolBtn}
+            >
+              <Ionicons
+                name="refresh-outline"
+                size={14}
+                color={colors.textMuted}
+                style={{ marginRight: Spacing.xs }}
+              />
+              <Text style={styles.resetProtocolBtnText}>
+                Reset Sync Mode Settings
+              </Text>
+            </Pressable>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1586,5 +2151,80 @@ const createStyles = (colors: any) =>
     },
     recentItemRemoveBtnPressed: {
       opacity: 0.6,
+    },
+    optionCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+      gap: Spacing.md,
+    },
+    optionCardPressed: {
+      backgroundColor: colors.accentMintDim,
+    },
+    optionCardContent: {
+      flex: 1,
+    },
+    optionCardTitle: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    optionCardDesc: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.caption,
+      lineHeight: LineHeights.caption,
+      color: colors.textMuted,
+    },
+    scannerOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "rgba(0,0,0,0.6)",
+    },
+    scannerCutout: {
+      width: 260,
+      height: 260,
+      borderWidth: 2,
+      borderColor: colors.accentMint,
+      borderRadius: Radii.md,
+      backgroundColor: "transparent",
+      marginBottom: Spacing.xl,
+    },
+    scannerText: {
+      fontFamily: Fonts.body.regular,
+      fontSize: FontSizes.body,
+      color: "#ffffff",
+      textAlign: "center",
+      marginBottom: Spacing.xxl,
+      paddingHorizontal: Spacing.xl,
+    },
+    cancelScanButton: {
+      backgroundColor: colors.statusError,
+      paddingHorizontal: Spacing.xl,
+      minWidth: 160,
+      marginTop: 0,
+    },
+    resetProtocolBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: Spacing.md,
+      marginTop: Spacing.xl,
+      alignSelf: "center",
+    },
+    resetProtocolBtnText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.textMuted,
     },
   });

@@ -5,6 +5,25 @@ const VaultPeerFileSystem = requireNativeModule("VaultPeerFileSystem");
 export interface PickResult {
   uri: string;
   bookmark: string;
+  name?: string;
+}
+
+export interface FileMetadata {
+  /** Last-modified time in milliseconds since the Unix epoch (OS-reported). 0 if unknown. */
+  mtime: number;
+  /** File size in bytes. 0 if unknown. */
+  size: number;
+  /** Whether the file currently exists / is reachable. */
+  exists: boolean;
+}
+
+export interface DirectoryEntry {
+  /** Document URI of the entry, usable with deleteDocument/readFile. */
+  uri: string;
+  /** Display name of the entry. */
+  name: string;
+  /** Last-modified time in ms since the Unix epoch (OS-reported). 0 if unknown. */
+  mtime: number;
 }
 
 /**
@@ -62,4 +81,64 @@ export async function writeFile(
  */
 export async function writeTempFile(contentBase64: string): Promise<string> {
   return await VaultPeerFileSystem.writeTempFile(contentBase64);
+}
+
+/**
+ * Read-only file metadata (OS-reported last-modified time and size).
+ *
+ * NOTE: This is read-only by design. Android's Storage Access Framework does
+ * not expose an API to *set* a document's last-modified time, so the sync
+ * layer maintains its own logical clock and uses this native mtime only to
+ * detect external (out-of-app) edits.
+ *
+ * @param uri The URI of the file.
+ * @param bookmark The security-scoped bookmark data (iOS only).
+ */
+export async function getMetadata(
+  uri: string,
+  bookmark?: string
+): Promise<FileMetadata> {
+  return await VaultPeerFileSystem.getMetadata(uri, bookmark || "");
+}
+
+// ─────────────────────────────────────────────────────────────
+// Directory operations (Android-only; back the backup-retention feature)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Let the user pick a directory. The returned URI is a persisted-permission
+ * tree URI (Android SAF) usable with the directory operations below.
+ */
+export async function pickDirectory(): Promise<PickResult> {
+  return await VaultPeerFileSystem.pickDirectory();
+}
+
+/**
+ * Create (or overwrite) a file with the given display name inside a previously
+ * picked directory, writing Base64 content. Returns the new document's URI.
+ */
+export async function createFileInDirectory(
+  dirUri: string,
+  displayName: string,
+  contentBase64: string
+): Promise<{ uri: string }> {
+  return await VaultPeerFileSystem.createFileInDirectory(
+    dirUri,
+    displayName,
+    contentBase64
+  );
+}
+
+/**
+ * List the immediate children of a previously picked directory.
+ */
+export async function listDirectory(dirUri: string): Promise<DirectoryEntry[]> {
+  return await VaultPeerFileSystem.listDirectory(dirUri);
+}
+
+/**
+ * Delete a single document by its URI.
+ */
+export async function deleteDocument(uri: string): Promise<boolean> {
+  return await VaultPeerFileSystem.deleteDocument(uri);
 }

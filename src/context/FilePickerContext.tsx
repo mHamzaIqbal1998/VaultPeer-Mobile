@@ -21,6 +21,13 @@ import {
   base64ToArrayBuffer,
 } from "@/src/services/base64";
 import { disableBiometric } from "@/src/services/biometricService";
+import { useVaultStore } from "@/src/stores/useVaultStore";
+import { syncEngine, type ActiveFile } from "@/src/services/sync/syncEngine";
+import { basenameFromUri } from "@/src/services/sync/syncProtocol";
+import {
+  recordLocalWrite,
+  forgetSyncMeta,
+} from "@/src/services/sync/syncMetaStore";
 
 export interface RecentVault {
   uri: string;
@@ -33,6 +40,7 @@ interface FilePickerContextType {
   fileUri: string | null;
   bookmark: string | null;
   isLoading: boolean;
+  isRestored: boolean;
   error: string | null;
   hasSavedVault: boolean;
   recentVaults: RecentVault[];
@@ -112,10 +120,37 @@ export function FilePickerProvider({
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [bookmark, setBookmark] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isRestored, setIsRestored] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(false);
   const [recentVaults, setRecentVaults] = useState<RecentVault[]>([]);
   const saveChain = useRef<Promise<any>>(Promise.resolve());
+  /**
+   * Monotonic counter that forces the active-file effect to re-run even when
+   * the user re-selects the same vault (same URI). Without this, React’s
+   * Object.is comparison on `fileUri` would skip the effect entirely and no
+   * sync round would be triggered after a lock → reopen cycle.
+   */
+  const [syncTrigger, setSyncTrigger] = useState(0);
+
+  // Live snapshot of the active file for the sync engine (host is registered
+  // once, but the underlying file can change as the user switches vaults).
+  const activeFileRef = useRef<{ uri: string; bookmark: string | null } | null>(
+    null
+  );
+
+  /**
+   * Run a file operation exclusively on the shared save queue so reads, user
+   * saves, and sync-applied writes never interleave on the same file.
+   */
+  const runExclusive = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const result = saveChain.current.then(fn, fn);
+    saveChain.current = result.then(
+      () => {},
+      () => {}
+    );
+    return result;
+  }, []);
 
   // Restore saved vault path on app launch
   useEffect(() => {
@@ -136,10 +171,116 @@ export function FilePickerProvider({
         }
       } catch (err) {
         console.warn("[FilePickerContext] Failed to restore saved vault:", err);
+      } finally {
+        setIsRestored(true);
       }
     }
     restoreSavedVault();
   }, []);
+
+  // Keep the sync engine's view of the active file in sync with state, and
+  // re-advertise to peers whenever it changes. The `syncTrigger` counter
+  // ensures this fires even when re-selecting the same vault after a lock.
+  useEffect(() => {
+    activeFileRef.current = fileUri ? { uri: fileUri, bookmark } : null;
+    syncEngine.onActiveFileChanged();
+  }, [fileUri, bookmark, syncTrigger]);
+
+  // Register the file/vault host once. The engine pulls live values through the
+  // refs and the global vault store, so this never needs to re-run.
+  useEffect(() => {
+    const host = {
+      getActiveFile(): ActiveFile | null {
+        const af = activeFileRef.current;
+        if (!af) return null;
+        return {
+          uri: af.uri,
+          bookmark: af.bookmark,
+          filename: basenameFromUri(af.uri),
+        };
+      },
+
+      async readActiveFileBase64(): Promise<string> {
+        const af = activeFileRef.current;
+        if (!af) throw new Error("No active file to read.");
+        return runExclusive(() => readFile(af.uri, af.bookmark || ""));
+      },
+
+      async writeActiveFileBase64(b64: string): Promise<boolean> {
+        const af = activeFileRef.current;
+        if (!af) return false;
+        return runExclusive(() => writeFile(af.uri, b64, af.bookmark || ""));
+      },
+
+      isVaultOpen(): boolean {
+        const vs = useVaultStore.getState();
+        const af = activeFileRef.current;
+        // Open AND backed by the current active file.
+        return vs._db !== null && !!af && vs.filePath === af.uri;
+      },
+
+      isVaultDirty(): boolean {
+        return useVaultStore.getState().isDirty;
+      },
+
+      async reloadOpenVaultFromDisk(): Promise<boolean> {
+        const af = activeFileRef.current;
+        if (!af) return false;
+        const vs = useVaultStore.getState();
+        const currentDb = vs._db;
+        if (!currentDb) return false;
+
+        try {
+          const base64Content = await runExclusive(() =>
+            readFile(af.uri, af.bookmark || "")
+          );
+          const arrayBuffer = base64ToArrayBuffer(base64Content);
+          validateKdbxSignature(arrayBuffer);
+
+          // Silent re-decrypt: reuse the in-memory credentials so the user is
+          // never re-prompted for their master password.
+          const newDb = await kdbxweb.Kdbx.load(
+            arrayBuffer,
+            currentDb.credentials
+          );
+          useVaultStore.getState().openDatabase(newDb, af.uri);
+          return true;
+        } catch (e) {
+          console.warn(
+            "[FilePickerContext] reloadOpenVaultFromDisk failed:",
+            e
+          );
+          return false;
+        }
+      },
+    };
+
+    syncEngine.init(host);
+
+    // Subscribe to the vault store to handle lifecycle transitions:
+    //   • null → non-null (vault opened): consume any stashed disk write.
+    //   • non-null → null (vault locked): kick a fresh metadata exchange so
+    //     the sync status indicator and "syncing" pill show up immediately on
+    //     the unlock screen, rather than waiting for the user to re-select
+    //     the same vault.
+    let prevDb: unknown = null;
+    const unsub = useVaultStore.subscribe((state) => {
+      const nowDb = state._db;
+      if (prevDb === null && nowDb !== null) {
+        // Vault just opened — fire-and-forget; errors handled inside.
+        void syncEngine.onVaultOpened();
+      } else if (prevDb !== null && nowDb === null) {
+        // Vault just locked — start a fresh sync round so the unlock screen
+        // shows the current sync state and any incoming pushes are handled.
+        syncEngine.onActiveFileChanged();
+      }
+      prevDb = nowDb;
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [runExclusive]);
 
   /**
    * Let the user pick a file and attempt to open it with the provided password.
@@ -180,7 +321,7 @@ export function FilePickerProvider({
       setHasSavedVault(true);
 
       // Add to recent vaults
-      const name = getNameFromUri(pickResult.uri);
+      const name = pickResult.name || getNameFromUri(pickResult.uri);
       const newRecent: RecentVault = {
         uri: pickResult.uri,
         bookmark: pickResult.bookmark || null,
@@ -233,7 +374,7 @@ export function FilePickerProvider({
       setHasSavedVault(true);
 
       // Add to recent vaults
-      const name = getNameFromUri(pickResult.uri);
+      const name = pickResult.name || getNameFromUri(pickResult.uri);
       const newRecent: RecentVault = {
         uri: pickResult.uri,
         bookmark: pickResult.bookmark || null,
@@ -339,6 +480,10 @@ export function FilePickerProvider({
     setIsLoading(true);
     setError(null);
 
+    // Capture identifiers up front so async work is not affected by later state changes.
+    const targetUri = fileUri;
+    const targetBookmark = bookmark;
+
     // Append this save operation to the sequential queue
     const resultPromise = saveChain.current.then(async () => {
       try {
@@ -347,7 +492,31 @@ export function FilePickerProvider({
         const base64Content = arrayBufferToBase64(arrayBuffer);
 
         // 2. Call native write file (handles atomic write: temp file -> replace)
-        const success = await writeFile(fileUri, base64Content, bookmark || "");
+        const success = await writeFile(
+          targetUri,
+          base64Content,
+          targetBookmark || ""
+        );
+
+        // 3. Advance the logical clock for this file and proactively push the
+        //    new version to connected peers (mirrors the server node behavior).
+        if (success) {
+          try {
+            const logicalMtime = await recordLocalWrite(
+              targetUri,
+              targetBookmark || undefined
+            );
+            void syncEngine.broadcastLocalChange(
+              basenameFromUri(targetUri),
+              base64Content,
+              logicalMtime
+            );
+          } catch (syncErr) {
+            // Sync is best-effort; never fail a save because a broadcast failed.
+            console.warn("[FilePickerContext] push-on-save failed:", syncErr);
+          }
+        }
+
         return success;
       } catch (err) {
         const msg =
@@ -384,7 +553,11 @@ export function FilePickerProvider({
     setIsLoading(true);
     setError(null);
     try {
-      const base64Content = await readFile(fileUri, bookmark || "");
+      // Serialize through the save queue so we never read while the sync
+      // engine is mid-write to the same file.
+      const base64Content = await runExclusive(() =>
+        readFile(fileUri, bookmark || "")
+      );
       const arrayBuffer = base64ToArrayBuffer(base64Content);
 
       // Validate KeePass signature
@@ -393,7 +566,8 @@ export function FilePickerProvider({
       const db = await decryptDatabase(arrayBuffer, password);
 
       // Add/update in recent vaults
-      const name = getNameFromUri(fileUri);
+      const existingVault = recentVaults.find((v) => v.uri === fileUri);
+      const name = existingVault ? existingVault.name : getNameFromUri(fileUri);
       const newRecent: RecentVault = {
         uri: fileUri,
         bookmark: bookmark || null,
@@ -454,6 +628,11 @@ export function FilePickerProvider({
     setBookmark(vault.bookmark);
     setHasSavedVault(true);
 
+    // Bump the trigger so the active-file effect re-runs even when re-selecting
+    // the same vault. This ensures a fresh metadata exchange happens with peers
+    // after every lock → reopen cycle.
+    setSyncTrigger((n) => n + 1);
+
     const updated = recentVaults.map((v) =>
       v.uri === uri ? { ...v, lastOpened: Date.now() } : v
     );
@@ -468,6 +647,13 @@ export function FilePickerProvider({
   async function removeRecentVault(uri: string): Promise<void> {
     // Purge biometric data for this URI
     await disableBiometric(uri);
+
+    // Drop the persisted logical clock so a future re-add starts clean.
+    try {
+      await forgetSyncMeta(uri);
+    } catch (e) {
+      console.warn("[FilePickerContext] forgetSyncMeta failed:", e);
+    }
 
     const updated = recentVaults.filter((v) => v.uri !== uri);
     setRecentVaults(updated);
@@ -492,6 +678,7 @@ export function FilePickerProvider({
         fileUri,
         bookmark,
         isLoading,
+        isRestored,
         error,
         hasSavedVault,
         recentVaults,

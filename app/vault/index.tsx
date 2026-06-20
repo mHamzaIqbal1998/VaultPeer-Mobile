@@ -20,8 +20,21 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  Keyboard,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -36,10 +49,16 @@ import {
 } from "@/src/constants/theme";
 import { useVaultStore } from "@/src/stores/useVaultStore";
 import { useFilePicker } from "@/src/context/FilePickerContext";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useActiveConnection } from "@/src/hooks/useActiveConnection";
+import { useSyncStore } from "@/src/stores/useSyncStore";
 import { searchEntries } from "@/src/services/searchService";
 import { getKdbxIconName, GROUP_DEFAULT_ICON } from "@/src/constants/kdbxIcons";
 import type { VaultEntry, VaultGroup } from "@/src/types/kdbx";
 import { ActionModal } from "@/src/components/ActionModal";
+import { PeerListDrawer } from "@/src/components/PeerListDrawer";
+import { RemoteUpdateBanner } from "@/src/components/RemoteUpdateBanner";
+import { syncEngine } from "@/src/services/sync/syncEngine";
 
 // ────────────────────────────────────────────
 // Sub-Components
@@ -126,6 +145,195 @@ function EntryRow({
   );
 }
 
+/**
+ * SyncStatusButton — Header sync indicator
+ *
+ * Shows:
+ *   • Sync icon with peer count badge when connected
+ *   • Spinning sync icon when actively syncing/pushing
+ *   • Spinning sync icon when saving (which triggers push to peers)
+ *   • Offline icon when no peers
+ *   • Error state when sync fails
+ */
+function SyncStatusButton({ onPress }: { onPress: () => void }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { syncMode, connectionStatus } = useSignalingStore();
+
+  const syncStatus = useSyncStore((s) => s.status);
+  const activePeers = useSyncStore((s) => s.activePeers);
+  const pendingRemote = useSyncStore((s) => s.pendingRemote);
+  const isSaving = useVaultStore((s) => s.isSaving);
+  const isDirty = useVaultStore((s) => s.isDirty);
+  const autoSave = useVaultStore((s) => s.autoSave);
+
+  // Spinner animation for syncing/saving/connecting state
+  const spinValue = useSharedValue(0);
+  const shouldSpin =
+    syncStatus === "syncing" ||
+    isSaving ||
+    (isDirty && autoSave) ||
+    connectionStatus === "connecting";
+
+  React.useEffect(() => {
+    if (shouldSpin) {
+      spinValue.value = withRepeat(
+        withTiming(360, { duration: 1200, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      spinValue.value = 0;
+    }
+  }, [shouldSpin, spinValue]);
+
+  const spinStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${spinValue.value}deg` }],
+    };
+  });
+
+  // Pulse animation for active state
+  const pulseScale = useSharedValue(1);
+  const shouldPulse =
+    connectionStatus === "connecting" ||
+    (connectionStatus === "connected" && activePeers > 0);
+
+  React.useEffect(() => {
+    if (shouldPulse) {
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 1000 }),
+          withTiming(1.0, { duration: 1000 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      pulseScale.value = 1;
+    }
+  }, [shouldPulse, pulseScale]);
+
+  const pulseStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: pulseScale.value }],
+    };
+  });
+
+  if (syncMode !== "network") return null;
+
+  // Determine appearance based on combined state
+  let iconName: React.ComponentProps<typeof Ionicons>["name"] = "globe-outline";
+  let iconColor: string = colors.textMuted;
+  let text = "";
+  let capsuleStyle: any = styles.syncCapsule;
+  let textStyle: any = styles.syncCapsuleText;
+  let accessibilityLabel = "Sync status: idle";
+
+  // 1. Connection states (signaling server)
+  if (connectionStatus === "disconnected") {
+    iconName = "cloud-offline-outline";
+    iconColor = colors.statusError;
+    text = "Offline";
+    capsuleStyle = [styles.syncCapsule, styles.syncCapsuleError];
+    textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextError];
+    accessibilityLabel = "Sync offline · disconnected from signaling server";
+  } else if (connectionStatus === "connecting") {
+    iconName = "sync-outline";
+    iconColor = colors.statusWarning;
+    text = "Connecting";
+    capsuleStyle = [styles.syncCapsule, styles.syncCapsuleWarning];
+    textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextWarning];
+    accessibilityLabel = "Connecting to signaling server…";
+  } else {
+    // connectionStatus === "connected"
+    // Check active saving operations first (independent of peer count)
+    if (isSaving || (isDirty && autoSave)) {
+      iconName = "save";
+      iconColor = colors.accentMint;
+      text = activePeers > 0 ? `${activePeers}` : "Saving";
+      capsuleStyle = [styles.syncCapsule, styles.syncCapsuleActive];
+      textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextActive];
+      accessibilityLabel = `Saving changes and pushing to ${activePeers} peers…`;
+    } else if (activePeers === 0) {
+      iconName = "globe-outline";
+      iconColor = colors.textMuted;
+      text = "0";
+      capsuleStyle = styles.syncCapsule;
+      textStyle = styles.syncCapsuleText;
+      accessibilityLabel = "Connected to signaling · waiting for peers";
+    } else {
+      // We have peers connected!
+      iconName = "people-outline";
+      iconColor = colors.accentMint;
+      text = `${activePeers}`;
+      capsuleStyle = [styles.syncCapsule, styles.syncCapsuleActive];
+      textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextActive];
+      accessibilityLabel = `Connected · ${activePeers} peer${activePeers !== 1 ? "s" : ""} active`;
+
+      // Handle active operations
+      if (syncStatus === "syncing") {
+        iconName = "sync";
+        accessibilityLabel = `Syncing with ${activePeers} peer${activePeers !== 1 ? "s" : ""}…`;
+      } else if (pendingRemote) {
+        iconName =
+          pendingRemote.mode === "conflict"
+            ? "warning-outline"
+            : "cloud-download-outline";
+        iconColor =
+          pendingRemote.mode === "conflict"
+            ? colors.statusWarning
+            : colors.accentMint;
+        text = pendingRemote.mode === "conflict" ? "Conflict" : "Update";
+        capsuleStyle = [
+          styles.syncCapsule,
+          pendingRemote.mode === "conflict"
+            ? styles.syncCapsuleWarning
+            : styles.syncCapsuleActive,
+        ];
+        textStyle = [
+          styles.syncCapsuleText,
+          pendingRemote.mode === "conflict"
+            ? styles.syncCapsuleTextWarning
+            : styles.syncCapsuleTextActive,
+        ];
+        accessibilityLabel =
+          pendingRemote.mode === "conflict"
+            ? "Sync conflict · action required"
+            : "Remote update available · tap to apply";
+      } else if (syncStatus === "error") {
+        iconName = "alert-circle-outline";
+        iconColor = colors.statusError;
+        text = "Error";
+        capsuleStyle = [styles.syncCapsule, styles.syncCapsuleError];
+        textStyle = [styles.syncCapsuleText, styles.syncCapsuleTextError];
+        accessibilityLabel = "Sync error occurred";
+      }
+    }
+  }
+
+  const RenderedIcon = () => (
+    <Ionicons name={iconName} size={15} color={iconColor} />
+  );
+
+  return (
+    <Animated.View style={pulseStyle}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [capsuleStyle, pressed && { opacity: 0.7 }]}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+      >
+        <Animated.View style={spinStyle}>
+          <RenderedIcon />
+        </Animated.View>
+        {text ? <Text style={textStyle}>{text}</Text> : null}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 const getTemplateCardStyle = (title: string, colors: any) => {
   switch (title.toLowerCase()) {
     case "credit card":
@@ -184,6 +392,7 @@ const getTemplateCardStyle = (title: string, colors: any) => {
 // ────────────────────────────────────────────
 
 export default function VaultBrowserScreen() {
+  useActiveConnection();
   const router = useRouter();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -216,6 +425,7 @@ export default function VaultBrowserScreen() {
   const isGroupInRecycleBin = useVaultStore(
     (state) => state.isGroupInRecycleBin
   );
+  const [showPeerDrawer, setShowPeerDrawer] = useState(false);
 
   const activeGroup = useVaultStore((state) => {
     if (!state.activeGroupUuid || !state.groupIndex) return null;
@@ -224,12 +434,18 @@ export default function VaultBrowserScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
-
-  const [showRenameInput, setShowRenameInput] = useState(false);
-  const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
-  const [renameGroupName, setRenameGroupName] = useState("");
+  const [groupModalConfig, setGroupModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    placeholder: string;
+    onConfirm: (name: string) => void;
+  }>({
+    visible: false,
+    title: "",
+    placeholder: "",
+    onConfirm: () => {},
+  });
+  const [groupModalValue, setGroupModalValue] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [modalConfig, setModalConfig] = useState<{
@@ -345,13 +561,6 @@ export default function VaultBrowserScreen() {
     [router]
   );
 
-  const handleCreateGroup = useCallback(() => {
-    if (!newGroupName.trim() || !activeGroupUuid) return;
-    createGroup(activeGroupUuid, newGroupName.trim());
-    setNewGroupName("");
-    setShowNewGroupInput(false);
-  }, [newGroupName, activeGroupUuid, createGroup]);
-
   const handleCreateEntry = useCallback(() => {
     if (!activeGroupUuid) return;
     if (meta?.entryTemplatesEnabled) {
@@ -372,14 +581,6 @@ export default function VaultBrowserScreen() {
     );
   }, [activeGroupUuid, rootGroup?.uuid, db?.meta.recycleBinUuid?.id]);
 
-  const handleRenameGroup = useCallback(() => {
-    if (!renameGroupName.trim() || !renameGroupId) return;
-    renameGroup(renameGroupId, renameGroupName.trim());
-    setRenameGroupName("");
-    setRenameGroupId(null);
-    setShowRenameInput(false);
-  }, [renameGroupName, renameGroupId, renameGroup]);
-
   const handleGroupOptions = useCallback(
     (group: VaultGroup) => {
       if (
@@ -397,9 +598,15 @@ export default function VaultBrowserScreen() {
           label: "Rename",
           onPress: () => {
             hideModal();
-            setRenameGroupId(group.uuid);
-            setRenameGroupName(group.name);
-            setShowRenameInput(true);
+            setGroupModalValue(group.name);
+            setGroupModalConfig({
+              visible: true,
+              title: "Rename Group",
+              placeholder: "New group name...",
+              onConfirm: (name) => {
+                renameGroup(group.uuid, name);
+              },
+            });
           },
         },
         {
@@ -445,6 +652,7 @@ export default function VaultBrowserScreen() {
       isGroupInRecycleBin,
       colors.statusError,
       hideModal,
+      renameGroup,
     ]
   );
 
@@ -458,9 +666,15 @@ export default function VaultBrowserScreen() {
         label: "Rename",
         onPress: () => {
           hideModal();
-          setRenameGroupId(activeGroup.uuid);
-          setRenameGroupName(activeGroup.name);
-          setShowRenameInput(true);
+          setGroupModalValue(activeGroup.name);
+          setGroupModalConfig({
+            visible: true,
+            title: "Rename Group",
+            placeholder: "New group name...",
+            onConfirm: (name) => {
+              renameGroup(activeGroup.uuid, name);
+            },
+          });
         },
       },
       {
@@ -504,6 +718,7 @@ export default function VaultBrowserScreen() {
     isGroupInRecycleBin,
     colors.statusError,
     hideModal,
+    renameGroup,
   ]);
 
   const handleSave = useCallback(async () => {
@@ -524,7 +739,7 @@ export default function VaultBrowserScreen() {
         setSaving(false);
         setIsSaving(false);
       }
-    }, 50);
+    }, 150);
   }, [
     db,
     saveVault,
@@ -536,87 +751,139 @@ export default function VaultBrowserScreen() {
   ]);
 
   const handleLock = useCallback(() => {
+    Keyboard.dismiss();
     const performLock = () => {
       closeDatabase();
       router.replace("/");
     };
 
-    if (isSaving) {
-      // Show saving indicator modal and lock when done
-      setModalConfig({
-        visible: true,
-        title: "Saving Changes",
-        description: "Saving changes to your vault file. Please wait...",
-        icon: "cloud-upload-outline",
-        iconColor: colors.accentMint,
-        buttons: [],
-      });
+    const waitAndLock = () => {
+      const engine = syncEngine;
 
-      const checkAndLock = () => {
-        if (useVaultStore.getState().isSaving) {
-          setTimeout(checkAndLock, 100);
+      let attempts = 0;
+      const maxAttempts = 500; // 50 seconds — must exceed TASK_TIMEOUT_MS (45s) so pushes finish naturally
+
+      const poll = () => {
+        const pushes = engine.getActivePushesCount();
+        const pulls = engine.getActivePullsCount();
+        const localSaving = useVaultStore.getState().isSaving;
+
+        if (
+          (localSaving || pushes > 0 || pulls > 0) &&
+          attempts < maxAttempts
+        ) {
+          attempts++;
+          let title = "Saving Changes";
+          let desc = "Saving changes to your vault file. Please wait...";
+          if (pushes > 0 || pulls > 0) {
+            title = "Syncing with Peers";
+            desc = `Syncing changes with connected peers. Please wait...`;
+          }
+          setModalConfig({
+            visible: true,
+            title,
+            description: desc,
+            icon: pushes > 0 || pulls > 0 ? "sync-outline" : "save-outline",
+            iconColor: colors.accentMint,
+            buttons: [],
+          });
+          setTimeout(poll, 100);
         } else {
           setModalConfig((prev) => ({ ...prev, visible: false }));
           performLock();
         }
       };
-      setTimeout(checkAndLock, 100);
+
+      poll();
+    };
+
+    if (isSaving) {
+      waitAndLock();
       return;
     }
 
-    if (isDirty && !autoSave) {
-      setModalConfig({
-        visible: true,
-        title: "Unsaved Changes",
-        description:
-          "You have unsaved changes. Do you want to save them before locking, or discard them?",
-        icon: "alert-circle-outline",
-        iconColor: colors.statusError,
-        buttons: [
-          {
-            text: "Save & Lock",
-            variant: "primary",
-            onPress: async () => {
-              setModalConfig((prev) => ({ ...prev, visible: false }));
-              setSaving(true);
-              setIsSaving(true);
-              try {
-                if (db) {
-                  await saveVault(db);
-                  markClean();
-                }
+    if (isDirty) {
+      if (autoSave) {
+        // Trigger save immediately, then wait for saving and syncing to finish
+        setSaving(true);
+        setIsSaving(true);
+        setTimeout(async () => {
+          try {
+            if (db) {
+              await saveVault(db);
+              markClean();
+            }
+            waitAndLock();
+          } catch (e: any) {
+            showErrorModal(
+              "Error Saving",
+              e?.message || "Failed to write database file."
+            );
+          } finally {
+            setSaving(false);
+            setIsSaving(false);
+          }
+        }, 150);
+        return;
+      } else {
+        // Manual save prompt
+        setModalConfig({
+          visible: true,
+          title: "Unsaved Changes",
+          description:
+            "You have unsaved changes. Do you want to save them before locking, or discard them?",
+          icon: "alert-circle-outline",
+          iconColor: colors.statusError,
+          buttons: [
+            {
+              text: "Save & Lock",
+              variant: "primary",
+              onPress: async () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+                setSaving(true);
+                setIsSaving(true);
+                setTimeout(async () => {
+                  try {
+                    if (db) {
+                      await saveVault(db);
+                      markClean();
+                    }
+                    waitAndLock();
+                  } catch (e: any) {
+                    showErrorModal(
+                      "Error Saving",
+                      e?.message || "Failed to write database file."
+                    );
+                  } finally {
+                    setSaving(false);
+                    setIsSaving(false);
+                  }
+                }, 150);
+              },
+            },
+            {
+              text: "Discard & Lock",
+              variant: "destructive",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
                 performLock();
-              } catch (e: any) {
-                showErrorModal(
-                  "Error Saving",
-                  e?.message || "Failed to write database file."
-                );
-              } finally {
-                setSaving(false);
-                setIsSaving(false);
-              }
+              },
             },
-          },
-          {
-            text: "Discard & Lock",
-            variant: "destructive",
-            onPress: () => {
-              setModalConfig((prev) => ({ ...prev, visible: false }));
-              performLock();
+            {
+              text: "Cancel",
+              variant: "secondary",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+              },
             },
-          },
-          {
-            text: "Cancel",
-            variant: "secondary",
-            onPress: () => {
-              setModalConfig((prev) => ({ ...prev, visible: false }));
-            },
-          },
-        ],
-      });
-    } else {
-      performLock();
+          ],
+        });
+        return;
+      }
     }
+
+    // If not dirty, check if we need to wait for any active sync/pushes first
+    waitAndLock();
   }, [
     isDirty,
     autoSave,
@@ -738,7 +1005,7 @@ export default function VaultBrowserScreen() {
             <Text style={styles.headerTitle} numberOfLines={1}>
               {activeGroup.name}
             </Text>
-            {isDirty && (
+            {isDirty && !autoSave && (
               <View style={styles.dirtyBadge}>
                 <Text style={styles.dirtyBadgeText}>Unsaved</Text>
               </View>
@@ -747,24 +1014,24 @@ export default function VaultBrowserScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          {(isDirty || isSaving) && (
+          {!autoSave && (isDirty || isSaving) && (
             <Animated.View
               entering={FadeIn.duration(300)}
               exiting={FadeOut.duration(200)}
             >
               <Pressable
                 onPress={handleSave}
-                disabled={saving || isSaving || (autoSave && isDirty)}
+                disabled={saving || isSaving}
                 style={[
                   styles.iconButton,
-                  (saving || isSaving || (autoSave && isDirty)) && {
+                  (saving || isSaving) && {
                     opacity: 0.6,
                   },
                 ]}
                 hitSlop={8}
                 accessibilityLabel="Save changes"
               >
-                {saving || isSaving || (autoSave && isDirty) ? (
+                {saving || isSaving ? (
                   <ActivityIndicator size="small" color={colors.accentMint} />
                 ) : (
                   <Ionicons
@@ -776,6 +1043,7 @@ export default function VaultBrowserScreen() {
               </Pressable>
             </Animated.View>
           )}
+          <SyncStatusButton onPress={() => setShowPeerDrawer(true)} />
           <Pressable
             onPress={handleLock}
             style={styles.iconButton}
@@ -819,6 +1087,9 @@ export default function VaultBrowserScreen() {
           )}
         </View>
       </View>
+
+      {/* ── Remote sync update / conflict prompt ── */}
+      <RemoteUpdateBanner />
 
       {/* ── Breadcrumbs ── */}
       {breadcrumbLabels.length > 1 && !isSearching && (
@@ -951,80 +1222,123 @@ export default function VaultBrowserScreen() {
         }
       />
 
-      {/* ── Rename Group Input (inline) ── */}
-      {showRenameInput && (
-        <Animated.View
-          entering={FadeInDown.duration(200)}
-          exiting={FadeOut.duration(150)}
-          style={styles.newGroupBar}
-        >
-          <TextInput
-            style={styles.newGroupInput}
-            value={renameGroupName}
-            onChangeText={setRenameGroupName}
-            placeholder="Rename group..."
-            placeholderTextColor={colors.textDisabled}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={handleRenameGroup}
+      {/* ── Group Name Input Modal ── */}
+      <Modal
+        visible={groupModalConfig.visible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() =>
+          setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+        }
+      >
+        <View style={styles.modalOverlay}>
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: colors.overlay },
+            ]}
           />
           <Pressable
-            onPress={handleRenameGroup}
-            style={styles.newGroupConfirm}
-            hitSlop={4}
+            style={StyleSheet.absoluteFillObject}
+            onPress={() =>
+              setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+            }
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboardAvoidingContainer}
           >
-            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setShowRenameInput(false);
-              setRenameGroupId(null);
-              setRenameGroupName("");
-            }}
-            style={styles.newGroupCancel}
-            hitSlop={4}
-          >
-            <Ionicons name="close" size={22} color={colors.textMuted} />
-          </Pressable>
-        </Animated.View>
-      )}
+            <Animated.View
+              entering={FadeInDown.duration(200)}
+              exiting={FadeOut.duration(150)}
+              style={styles.inputModalContainer}
+            >
+              <View style={styles.inputModalHeader}>
+                <View style={styles.inputModalIconContainer}>
+                  <Ionicons
+                    name="folder-outline"
+                    size={20}
+                    color={colors.accentMint}
+                  />
+                </View>
+                <Text style={styles.inputModalTitle}>
+                  {groupModalConfig.title}
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+                  }
+                  hitSlop={12}
+                  style={styles.inputModalCloseBtn}
+                >
+                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                </Pressable>
+              </View>
 
-      {/* ── New Group Input (inline) ── */}
-      {showNewGroupInput && (
-        <Animated.View
-          entering={FadeInDown.duration(200)}
-          exiting={FadeOut.duration(150)}
-          style={styles.newGroupBar}
-        >
-          <TextInput
-            style={styles.newGroupInput}
-            value={newGroupName}
-            onChangeText={setNewGroupName}
-            placeholder="New group name..."
-            placeholderTextColor={colors.textDisabled}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={handleCreateGroup}
-          />
-          <Pressable
-            onPress={handleCreateGroup}
-            style={styles.newGroupConfirm}
-            hitSlop={4}
-          >
-            <Ionicons name="checkmark" size={22} color={colors.accentMint} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setShowNewGroupInput(false);
-              setNewGroupName("");
-            }}
-            style={styles.newGroupCancel}
-            hitSlop={4}
-          >
-            <Ionicons name="close" size={22} color={colors.textMuted} />
-          </Pressable>
-        </Animated.View>
-      )}
+              <View style={styles.inputModalBody}>
+                <TextInput
+                  style={styles.inputModalTextInput}
+                  value={groupModalValue}
+                  onChangeText={setGroupModalValue}
+                  placeholder={groupModalConfig.placeholder}
+                  placeholderTextColor={colors.textDisabled}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    if (groupModalValue.trim()) {
+                      groupModalConfig.onConfirm(groupModalValue.trim());
+                      setGroupModalConfig((prev) => ({
+                        ...prev,
+                        visible: false,
+                      }));
+                    }
+                  }}
+                />
+              </View>
+
+              <View style={styles.inputModalButtons}>
+                <Pressable
+                  onPress={() =>
+                    setGroupModalConfig((prev) => ({ ...prev, visible: false }))
+                  }
+                  style={({ pressed }) => [
+                    styles.inputModalBtn,
+                    styles.inputModalBtnSecondary,
+                    pressed && styles.inputModalBtnSecondaryPressed,
+                  ]}
+                >
+                  <Text style={styles.inputModalBtnTextSecondary}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (groupModalValue.trim()) {
+                      groupModalConfig.onConfirm(groupModalValue.trim());
+                      setGroupModalConfig((prev) => ({
+                        ...prev,
+                        visible: false,
+                      }));
+                    }
+                  }}
+                  disabled={!groupModalValue.trim()}
+                  style={({ pressed }) => [
+                    styles.inputModalBtn,
+                    styles.inputModalBtnPrimary,
+                    !groupModalValue.trim() && styles.inputModalBtnDisabled,
+                    pressed &&
+                      groupModalValue.trim() &&
+                      styles.inputModalBtnPrimaryPressed,
+                  ]}
+                >
+                  <Text style={styles.inputModalBtnTextPrimary}>Save</Text>
+                </Pressable>
+              </View>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       {/* ── FAB (Add) ── */}
       {!isSearching && (
@@ -1043,7 +1357,16 @@ export default function VaultBrowserScreen() {
                   label: "New Group",
                   onPress: () => {
                     hideModal();
-                    setShowNewGroupInput(true);
+                    setGroupModalValue("");
+                    setGroupModalConfig({
+                      visible: true,
+                      title: "New Group",
+                      placeholder: "Group name...",
+                      onConfirm: (name) => {
+                        if (!activeGroupUuid) return;
+                        createGroup(activeGroupUuid, name);
+                      },
+                    });
                   },
                 },
               ];
@@ -1216,6 +1539,12 @@ export default function VaultBrowserScreen() {
         iconColor={modalConfig.iconColor}
         options={modalConfig.options}
         buttons={modalConfig.buttons}
+        hideOverlay
+      />
+
+      <PeerListDrawer
+        visible={showPeerDrawer}
+        onClose={() => setShowPeerDrawer(false)}
       />
     </SafeAreaView>
   );
@@ -1262,7 +1591,7 @@ function createStyles(colors: any) {
     },
     headerTitle: {
       fontFamily: Fonts.heading.semiBold,
-      fontSize: FontSizes.heading,
+      fontSize: FontSizes.subheading,
       color: colors.textPrimary,
       flexShrink: 1,
     },
@@ -1279,6 +1608,7 @@ function createStyles(colors: any) {
     },
     headerRight: {
       flexDirection: "row",
+      alignItems: "center",
       gap: Spacing.sm,
     },
     iconButton: {
@@ -1286,6 +1616,44 @@ function createStyles(colors: any) {
       minHeight: TouchTarget.min,
       alignItems: "center",
       justifyContent: "center",
+    },
+    syncCapsule: {
+      height: 32,
+      borderRadius: Radii.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      gap: 6,
+    },
+    syncCapsuleActive: {
+      backgroundColor: colors.accentMintDim,
+      borderColor: colors.accentMint,
+    },
+    syncCapsuleWarning: {
+      backgroundColor: colors.statusWarningDim,
+      borderColor: colors.statusWarning,
+    },
+    syncCapsuleError: {
+      backgroundColor: colors.statusErrorDim,
+      borderColor: colors.statusError,
+    },
+    syncCapsuleText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      fontWeight: "bold",
+      color: colors.textMuted,
+    },
+    syncCapsuleTextActive: {
+      color: colors.accentMint,
+    },
+    syncCapsuleTextWarning: {
+      color: colors.statusWarning,
+    },
+    syncCapsuleTextError: {
+      color: colors.statusError,
     },
 
     // Breadcrumbs
@@ -1438,42 +1806,113 @@ function createStyles(colors: any) {
       color: colors.textDisabled,
     },
 
-    // New Group Input
-    newGroupBar: {
-      position: "absolute",
-      bottom: 96,
-      left: Spacing.lg,
-      right: Spacing.lg,
-      flexDirection: "row",
+    // Group Modal Styles
+    modalOverlay: {
+      flex: 1,
+      justifyContent: "center",
       alignItems: "center",
+    },
+    keyboardAvoidingContainer: {
+      width: "100%",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    inputModalContainer: {
+      width: "90%",
+      maxWidth: 360,
       backgroundColor: colors.surfaceCard,
+      borderRadius: Radii.xl,
       borderWidth: 1,
-      borderColor: colors.borderSageActive,
-      borderRadius: Radii.lg,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
+      borderColor: colors.borderSage,
+      padding: Spacing.lg,
       ...Shadows.elevated,
     },
-    newGroupInput: {
+    inputModalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+      paddingBottom: Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderSage,
+    },
+    inputModalIconContainer: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.md,
+      backgroundColor: colors.accentMintDim,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    inputModalTitle: {
       flex: 1,
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.body,
+      color: colors.textPrimary,
+    },
+    inputModalCloseBtn: {
+      width: TouchTarget.min,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    inputModalBody: {
+      marginTop: Spacing.lg,
+      marginBottom: Spacing.md,
+    },
+    inputModalTextInput: {
+      height: 48,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSageActive,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
       fontFamily: Fonts.body.regular,
       fontSize: FontSizes.body,
       color: colors.textPrimary,
-      paddingVertical: Spacing.xs,
     },
-    newGroupConfirm: {
-      padding: Spacing.sm,
-      minWidth: TouchTarget.min,
-      minHeight: TouchTarget.min,
-      alignItems: "center",
-      justifyContent: "center",
+    inputModalButtons: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: Spacing.sm,
+      marginTop: Spacing.md,
+      paddingTop: Spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSage,
     },
-    newGroupCancel: {
-      padding: Spacing.sm,
-      minWidth: TouchTarget.min,
-      minHeight: TouchTarget.min,
-      alignItems: "center",
+    inputModalBtn: {
+      height: TouchTarget.min,
+      borderRadius: Radii.md,
       justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: Spacing.lg,
+      minWidth: 80,
+    },
+    inputModalBtnPrimary: {
+      backgroundColor: colors.accentMint,
+    },
+    inputModalBtnPrimaryPressed: {
+      backgroundColor: "#2BC48A",
+    },
+    inputModalBtnSecondary: {
+      backgroundColor: colors.transparent,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    inputModalBtnSecondaryPressed: {
+      backgroundColor: colors.surfaceElevated,
+    },
+    inputModalBtnDisabled: {
+      opacity: 0.5,
+    },
+    inputModalBtnTextPrimary: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    inputModalBtnTextSecondary: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textMuted,
     },
 
     // FAB

@@ -340,3 +340,92 @@ Enables native Android system save prompts when entering credentials manually, a
   - Automatically add a custom field `"ANDROIDAPP"` containing the calling package name (e.g. `com.instagram.android`).
   - Redirect user to this pre-populated creation screen so they can choose a folder/group and confirm saving.
 - [x] Write tests to verify save request node parsing, payload URL parameter generation, and pre-fill state mapping.
+
+### Phase 20: WebRTC Signaling Server Connection Handling
+
+Integrates signaling server connection states, persistent room creation/joining flows, background connection heartbeats, and database header connection indicators.
+
+- [x] Create a global signaling store `src/stores/useSignalingStore.ts`:
+  - Manage state properties: `serverUrl`, `roomId`, `connectionStatus` (`"offline" | "disconnected" | "connecting" | "connected"`), and `isConfigured` (whether network mode is selected).
+  - Implement dynamic WebSocket lifecycle handling: connection setup, event handlers (`onopen`, `onmessage`, `onclose`, `onerror`), and automatic retry backoff.
+  - Implement heartbeat logic: reply to `{ type: 'ping' }` with `{ type: 'pong' }` packets to keep connection alive.
+  - Implement room management actions: `joinRoom(roomId)` sends `{ type: 'join', roomId }` payload, and `createRoom()` generates a new UUID and joins.
+  - Persist connection configurations (`serverUrl`, `roomId`, `isConfigured`) to local storage on modification.
+- [x] Add an onboarding protocol selector screen in `app/index.tsx` (shown on first run or if not configured):
+  - Provide cards to choose between "Offline Mode" (default/local-only) and "Network Sync Mode" (P2P).
+  - If "Network Sync Mode" is chosen:
+    - Input fields for WebSocket server URL and port with "Connect" button.
+    - Post-connection flow: "Create Vault Channel" (generates room ID and joins) vs "Join Vault Channel".
+    - "Join Vault Channel" must support launching `expo-camera` via `CameraView` to scan room ID QR code, or manual text ID inputs.
+- [x] Update settings controls in `app/vault/settings.tsx`:
+  - Add a network/sync settings card: enable/disable sync, change server URL, test connection button, view/copy active room ID, show QR code modal.
+  - Provide options to create or join a new sync channel if the client is active.
+- [x] Add connection state indicators to the database file header in `app/vault/index.tsx`:
+  - Beside the filename, show a glowing green WiFi/Check icon (if connected), a red alert icon (if disconnected/reconnecting), or hide it entirely (if offline).
+- [x] Write unit tests (`src/stores/__tests__/useSignalingStore.test.ts`) to verify connection state machines, ping/pong reply loops, and message parsing.
+
+### Phase 21: WebRTC P2P Connection & Peer Lifecycle Management
+
+Integrates peer-to-peer WebRTC connections (using `react-native-webrtc`), orchestrates polite/impolite signaling handshake negotiation, manages data channel lifecycle, tracks connected peers, and builds a premium "Cyber-Sage" dashboard showing connected peers.
+
+- [x] **Dependency Installation & Expo Config Plugin Integration**
+  - Install `react-native-webrtc` (compatible with Expo SDK 54, e.g., `~124.0.0` or standard version) into dependencies.
+  - Add `"react-native-webrtc"` to the `plugins` array in `app.json`.
+  - Add camera/microphone permissions to the configuration (if required by the library's config plugin defaults, though we are only using DataChannels, config-plugins often stub these).
+  - Verify and execute `npx expo prebuild` to configure native iOS and Android build trees.
+- [x] **Implement signaling client updates in `useSignalingStore.ts`**
+  - Retrieve or generate a unique persistent `clientId` (using `expo-crypto.randomUUID()` and saving to `SecureStore` as `vault_client_id`) on initialization.
+  - Modify the WebSocket connection handler (`attemptConnect`) in `useSignalingStore.ts` to automatically send `{ type: "announce", senderId: clientId }` as soon as the WebSocket opens and the room is joined.
+  - Extend the `ws.onmessage` handler to dispatch signaling messages (`announce`, `offer`, `answer`, `candidate`, `leave`) directly to the WebRTC manager instance.
+  - Implement dynamic cleanup hooks: when disconnecting from a room or locking the vault, broadcast a `{ type: "leave" }` or equivalent message to signaling and notify active peers.
+- [x] **Implement WebRTC Peer Connection Manager (`src/services/webrtc/webRTCManager.ts`)**
+  - Create the `WebRTCManager` class to encapsulate local RTCPeerConnection instances, managing a Map of active peer connections: `peers: Map<string, RTCPeerConnectionState>`.
+  - Define `ICE_SERVERS` configuration matching the Node.js server reference: `['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']`.
+  - Implement peer-connection cleanup routine `cleanupPeer(remotePeerId)` to close the datachannel, close the peer connection, and clean up the reference in the peer map.
+  - Create a public `destroy()` method to clean up all connections during vault lock or app backgrounding.
+- [x] **Polite/Impolite Signaling Handshake & SDP/ICE Negotiation**
+  - Implement collision resolution using a tie-breaking string comparison of local `clientId` vs remote `senderId`:
+    - If `localClientId > remoteClientId`, this client is **impolite (offerer)** and initiates the SDP offer.
+    - If `localClientId < remoteClientId`, this client is **polite (answerer)** and waits for the incoming SDP offer.
+  - Handle SDP Offer Generation:
+    - Impolite peer creates the offer, sets it as local description, and sends `{ type: "offer", senderId: localId, targetId: remoteId, sdp }` to the signaling server.
+    - Polite peer receives the offer, sets it as remote description, generates an answer, sets it as local description, and sends `{ type: "answer", senderId: localId, targetId: remoteId, sdp }` back.
+  - Handle SDP Answer:
+    - Impolite peer receives answer and sets it as remote description.
+  - Handle ICE Candidates:
+    - Listen for `onicecandidate` and send `{ type: "candidate", senderId: localId, targetId: remoteId, candidate, mid }` via signaling server.
+    - When receiving `candidate` message, parse and call `addIceCandidate` on the appropriate peer connection.
+- [x] **Establish "vault-sync" Data Channel & Event Binding**
+  - For the offerer role, instantiate the Data Channel using `pc.createDataChannel("vault-sync")` before creating the SDP offer.
+  - For the answerer role, listen for the channel via the `ondatachannel` event on the `RTCPeerConnection` instance.
+  - Bind Data Channel state event handlers:
+    - `onopen`: Set connection status in store, trigger peer synchronization handshake (such as exchanging catalog timestamps, though full sync logic is left to future phases).
+    - `onclose` & `onerror`: Log state transition, close connection, and trigger cleanup/reconnect procedures.
+    - `onmessage`: Safely parse incoming data packages (and stub chunked assembly similar to the Node.js implementation if payload size exceeds 16KB limit).
+- [x] **Create WebRTC state store (`useWebRTCStore.ts` or extending `useSignalingStore`)**
+  - Expose active peer structures to React UI components:
+    - `connectedPeers`: Map of peer metadata (peer ID, state: `"connecting" | "connected" | "failed" | "disconnected"`, role: `"offerer" | "answerer"`, dataChannelState: `"connecting" | "open" | "closing" | "closed"`).
+    - `activePeersCount`: Number of connected peers with active `"open"` data channels.
+  - Expose store actions:
+    - `addPeer(peerId, state)` / `removePeer(peerId)`.
+    - `updatePeerConnectionState(peerId, newState)`.
+    - `updatePeerDataChannelState(peerId, newState)`.
+- [x] **Design and implement premium "Cyber-Sage" Peer Indicator & Bottom Drawer UI**
+  - **Connection Indicator Icon (in `app/vault/index.tsx` header):**
+    - Replace the standard sync connection icon with an interactive badge showing the number of connected peers (e.g. a glowing mint green circle with the number of peers inside it, pulsing if there are connected peers, or showing gray if offline).
+    - Add a subtle glow shadow utilizing `color-accent-mint` (`rgba(52, 211, 153, 0.4)`) with pulsing scaling animation via `react-native-reanimated` (`useSharedValue` / `withRepeat` / `withSequence`).
+  - **Connected Peers Drawer:**
+    - Tapping the peer indicator badge triggers a premium bottom drawer or slide-up panel (`PeerListDrawer`) that presents active connections.
+    - Style cards in the list using the Cyber-Sage design tokens: dark card background (`color-surface-card` - `#141A18`), glass border (`color-border-sage` - `#232E2A`), and clear typography using `Inter`.
+    - Each row displays: Remote Peer ID (with a "copy to clipboard" button), connection role (Offerer / Answerer), and a colored status indicator pill (Green for active, Yellow for connecting, Red for failed).
+    - Provide a "Reconnect" button for any failed connections, and a "Disconnect" action button.
+    - Apply smooth transition animations for drawer entry/exit and item insertion/removal using `react-native-reanimated` layout transitions (`Layout.springify()`).
+    - Use `expo-haptics` for physical feedback when opening/closing the drawer and pressing control buttons, with touch targets sized to `44x44px` or above.
+- [x] **Write comprehensive unit & integration tests**
+  - Write unit tests in `src/services/webrtc/__tests__/webRTCManager.test.ts` to mock `RTCPeerConnection` and verify:
+    - Polite/impolite negotiation rules (tiebreaker logic outputs correctly for varying client IDs).
+    - Generation and routing of SDP descriptions and ICE candidates to the signaling handler.
+    - Data channel binding and state transition callbacks.
+  - Write unit tests in `src/stores/__tests__/useWebRTCStore.test.ts` to check:
+    - Adding, updating, and removing peers from the state list.
+    - Correct calculation of the `activePeersCount` getter.

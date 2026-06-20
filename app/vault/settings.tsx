@@ -8,6 +8,8 @@ import {
   TextInput,
   ActivityIndicator,
   Modal,
+  Image,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -49,6 +51,16 @@ import {
 import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
 import * as kdbxweb from "kdbxweb";
 import * as AutofillBridge from "@/modules/vaultpeer-autofill";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useClipboard } from "@/src/hooks/useClipboard";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { syncEngine } from "@/src/services/sync/syncEngine";
+import { pickDirectory } from "vaultpeer-file-system";
+import {
+  useBackupStore,
+  MIN_BACKUP_RETENTION,
+  MAX_BACKUP_RETENTION,
+} from "@/src/stores/useBackupStore";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -348,6 +360,49 @@ export default function VaultSettingsScreen() {
   } = useVaultStore();
   const { clearVault, hasSavedVault, saveVault, loadVault } = useFilePicker();
 
+  const {
+    syncMode,
+    setSyncMode,
+    serverUrl,
+    setServerUrl,
+    roomId,
+    connectionStatus,
+    setIsConfigured,
+    connect,
+    disconnect,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    lastError,
+    iceServers,
+    setIceServers,
+  } = useSignalingStore();
+
+  const {
+    enabled: backupEnabled,
+    retention: backupRetention,
+    dirUri: backupDirUri,
+    dirName: backupDirName,
+    setEnabled: setBackupEnabled,
+    setRetention: setBackupRetention,
+    setBackupDir,
+    clearBackupDir,
+  } = useBackupStore();
+
+  const { copyToClipboard } = useClipboard();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showServerEditModal, setShowServerEditModal] = useState(false);
+  const [showIceServersModal, setShowIceServersModal] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [newServerUrl, setNewServerUrl] = useState(serverUrl);
+  const [newIceServersText, setNewIceServersText] = useState("");
+  const [newRoomId, setNewRoomId] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<SettingsTab>("database");
 
   const themeIndicatorX = useSharedValue(theme === "dark" ? 0 : 1);
@@ -461,6 +516,117 @@ export default function VaultSettingsScreen() {
     },
     [colors.statusError]
   );
+
+  const handleTestConnection = useCallback(() => {
+    if (isTestingConnection) return;
+    setIsTestingConnection(true);
+
+    connect();
+
+    setTimeout(() => {
+      setIsTestingConnection(false);
+      const newStatus = useSignalingStore.getState().connectionStatus;
+      const errorMsg = useSignalingStore.getState().lastError;
+      if (newStatus === "connected") {
+        showNotificationModal(
+          "Connection Successful",
+          `Successfully connected to the signaling server at:\n${useSignalingStore.getState().serverUrl}`,
+          "wifi-outline"
+        );
+      } else {
+        showErrorModal(
+          "Connection Failed",
+          `Could not connect to the signaling server at:\n${useSignalingStore.getState().serverUrl}\n\nDetails: ${errorMsg || "Verify server URL and network connection"}\n\nCurrent Status: ${newStatus}\n\nPlease verify that the server is online.`
+        );
+      }
+    }, 2500);
+  }, [isTestingConnection, connect, showNotificationModal, showErrorModal]);
+
+  // ── Backup retention handlers ──
+
+  const handlePickBackupDir = useCallback(async () => {
+    try {
+      const result = await pickDirectory();
+      if (!result || !result.uri) return;
+      await setBackupDir(result.uri, result.name || null);
+      return result.uri;
+    } catch (e: any) {
+      // ERR_CANCELLED is expected when the user dismisses the picker.
+      if (e?.code !== "ERR_CANCELLED" && !`${e?.message}`.includes("cancel")) {
+        showErrorModal(
+          "Folder Selection Failed",
+          e?.message || "Could not select a backup folder."
+        );
+      }
+      return undefined;
+    }
+  }, [setBackupDir, showErrorModal]);
+
+  const handleToggleBackup = useCallback(async () => {
+    if (backupEnabled) {
+      await setBackupEnabled(false);
+      return;
+    }
+    // Enabling requires a destination folder. Prompt for one if needed.
+    let dir = backupDirUri;
+    if (!dir) {
+      dir = (await handlePickBackupDir()) ?? null;
+      if (!dir) return; // user cancelled or it failed — leave disabled
+    }
+    await setBackupEnabled(true);
+  }, [backupEnabled, backupDirUri, handlePickBackupDir, setBackupEnabled]);
+
+  const handleChangeRetention = useCallback(
+    (delta: number) => {
+      void setBackupRetention(backupRetention + delta);
+    },
+    [backupRetention, setBackupRetention]
+  );
+
+  const handleClearBackupDir = useCallback(() => {
+    setModalConfig({
+      visible: true,
+      title: "Remove Backup Folder",
+      description:
+        "Backups will be turned off until you choose a new folder. Existing backup files will not be deleted.",
+      icon: "folder-open-outline",
+      buttons: [
+        {
+          text: "Cancel",
+          onPress: () =>
+            setModalConfig((prev) => ({ ...prev, visible: false })),
+          variant: "secondary",
+        },
+        {
+          text: "Remove",
+          onPress: async () => {
+            setModalConfig((prev) => ({ ...prev, visible: false }));
+            await clearBackupDir();
+          },
+          variant: "destructive",
+        },
+      ],
+    });
+  }, [clearBackupDir]);
+
+  const handleStartScan = useCallback(async () => {
+    if (!cameraPermission) {
+      const status = await requestCameraPermission();
+      if (!status.granted) {
+        setFormError("Camera permission is required to scan QR codes.");
+        return;
+      }
+    } else if (!cameraPermission.granted) {
+      const status = await requestCameraPermission();
+      if (!status.granted) {
+        setFormError("Camera permission is required to scan QR codes.");
+        return;
+      }
+    }
+    setFormError(null);
+    setIsScanning(true);
+    setShowJoinModal(false);
+  }, [cameraPermission, requestCameraPermission]);
 
   const templateGroupName = useMemo(() => {
     if (!storeMeta?.entryTemplatesGroup) return "Templates";
@@ -850,36 +1016,153 @@ export default function VaultSettingsScreen() {
   }, [kdfInfo]);
 
   const handleLock = useCallback(() => {
+    Keyboard.dismiss();
     const performLock = () => {
       closeDatabase();
       router.replace("/");
     };
 
-    if (isSaving) {
-      // Show saving indicator modal and lock when done
-      setModalConfig({
-        visible: true,
-        title: "Saving Changes",
-        description: "Saving changes to your vault file. Please wait...",
-        icon: "cloud-upload-outline",
-        iconColor: colors.accentMint,
-        buttons: [],
-      });
+    const waitAndLock = () => {
+      const engine = syncEngine;
 
-      const checkAndLock = () => {
-        if (useVaultStore.getState().isSaving) {
-          setTimeout(checkAndLock, 100);
+      let attempts = 0;
+      const maxAttempts = 150; // 15 seconds timeout to allow sync to complete
+
+      const poll = () => {
+        const pushes = engine.getActivePushesCount();
+        const pulls = engine.getActivePullsCount();
+        const localSaving = useVaultStore.getState().isSaving;
+
+        if (
+          (localSaving || pushes > 0 || pulls > 0) &&
+          attempts < maxAttempts
+        ) {
+          attempts++;
+          let title = "Saving Changes";
+          let desc = "Saving changes to your vault file. Please wait...";
+          if (pushes > 0 || pulls > 0) {
+            title = "Syncing with Peers";
+            desc = `Syncing changes with connected peers. Please wait...`;
+          }
+          setModalConfig({
+            visible: true,
+            title,
+            description: desc,
+            icon: pushes > 0 || pulls > 0 ? "sync-outline" : "save-outline",
+            iconColor: colors.accentMint,
+            buttons: [],
+          });
+          setTimeout(poll, 100);
         } else {
           setModalConfig((prev) => ({ ...prev, visible: false }));
           performLock();
         }
       };
-      setTimeout(checkAndLock, 100);
+
+      poll();
+    };
+
+    if (isSaving) {
+      waitAndLock();
       return;
     }
 
-    performLock();
-  }, [closeDatabase, router, isSaving, colors.accentMint]);
+    if (isDirty) {
+      if (autoSave) {
+        // Trigger save immediately, then wait for saving and syncing to finish
+        setSaving(true);
+        setIsSaving(true);
+        setTimeout(async () => {
+          try {
+            if (db) {
+              await saveVault(db);
+              markClean();
+            }
+            waitAndLock();
+          } catch (e: any) {
+            showErrorModal(
+              "Error Saving",
+              e?.message || "Failed to write database file."
+            );
+          } finally {
+            setSaving(false);
+            setIsSaving(false);
+          }
+        }, 150);
+        return;
+      } else {
+        // Manual save prompt
+        setModalConfig({
+          visible: true,
+          title: "Unsaved Changes",
+          description:
+            "You have unsaved changes. Do you want to save them before locking, or discard them?",
+          icon: "alert-circle-outline",
+          iconColor: colors.statusError,
+          buttons: [
+            {
+              text: "Save & Lock",
+              variant: "primary",
+              onPress: async () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+                setSaving(true);
+                setIsSaving(true);
+                setTimeout(async () => {
+                  try {
+                    if (db) {
+                      await saveVault(db);
+                      markClean();
+                    }
+                    waitAndLock();
+                  } catch (e: any) {
+                    showErrorModal(
+                      "Error Saving",
+                      e?.message || "Failed to write database file."
+                    );
+                  } finally {
+                    setSaving(false);
+                    setIsSaving(false);
+                  }
+                }, 150);
+              },
+            },
+            {
+              text: "Discard & Lock",
+              variant: "destructive",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+                performLock();
+              },
+            },
+            {
+              text: "Cancel",
+              variant: "secondary",
+              onPress: () => {
+                setModalConfig((prev) => ({ ...prev, visible: false }));
+              },
+            },
+          ],
+        });
+        return;
+      }
+    }
+
+    // If not dirty, check if we need to wait for any active sync/pushes first
+    waitAndLock();
+  }, [
+    isDirty,
+    autoSave,
+    db,
+    saveVault,
+    markClean,
+    closeDatabase,
+    router,
+    colors.statusError,
+    colors.accentMint,
+    showErrorModal,
+    isSaving,
+    setIsSaving,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (!db || saving) return;
@@ -899,7 +1182,7 @@ export default function VaultSettingsScreen() {
         setSaving(false);
         setIsSaving(false);
       }
-    }, 50);
+    }, 150);
   }, [
     db,
     saveVault,
@@ -1692,6 +1975,340 @@ export default function VaultSettingsScreen() {
               </CyberCard>
             </Animated.View>
 
+            {/* Network & Peer Sync */}
+            <Animated.View entering={FadeInDown.duration(200).delay(130)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="wifi-outline"
+                    size={18}
+                    color={colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Network & Peer Sync</Text>
+                </View>
+
+                {/* Enable/Disable Sync */}
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>
+                      {syncMode === "network"
+                        ? "Sync Mode: Network Sync"
+                        : "Sync Mode: Offline Local"}
+                    </Text>
+                    <Text style={rowStyles.subtitle}>
+                      {syncMode === "network"
+                        ? "Real-time vault syncing with other devices"
+                        : "Vault remains strictly on this local device"}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={async () => {
+                      const nextMode =
+                        syncMode === "network" ? "offline" : "network";
+                      await setSyncMode(nextMode);
+                      await setIsConfigured(nextMode === "network");
+                      if (nextMode === "offline") {
+                        disconnect();
+                      }
+                    }}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={
+                        syncMode === "network" ? "toggle" : "toggle-outline"
+                      }
+                      size={38}
+                      color={
+                        syncMode === "network"
+                          ? colors.accentMint
+                          : colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+
+                {syncMode === "network" && (
+                  <>
+                    <View style={styles.divider} />
+                    {/* Server URL */}
+                    <SettingsRow
+                      icon="server-outline"
+                      title="Signaling Server"
+                      subtitle="Endpoint for secure peer negotiation"
+                      value={serverUrl}
+                      onPress={() => {
+                        setNewServerUrl(serverUrl);
+                        setShowServerEditModal(true);
+                      }}
+                    />
+
+                    <View style={styles.divider} />
+                    {/* ICE Servers */}
+                    <SettingsRow
+                      icon="shield-outline"
+                      title="ICE Servers (STUN/TURN)"
+                      subtitle="Relay configuration for symmetric NATs"
+                      value={
+                        iceServers.length > 0
+                          ? `${iceServers.length} custom server${
+                              iceServers.length > 1 ? "s" : ""
+                            }`
+                          : "Default (STUN only)"
+                      }
+                      onPress={() => {
+                        setNewIceServersText(
+                          iceServers.length > 0
+                            ? JSON.stringify(iceServers, null, 2)
+                            : ""
+                        );
+                        setShowIceServersModal(true);
+                      }}
+                    />
+
+                    <View style={styles.divider} />
+                    {/* Connection Status & Test Connection */}
+                    <View style={rowStyles.row}>
+                      <Ionicons
+                        name="link-outline"
+                        size={20}
+                        color={
+                          connectionStatus === "connected"
+                            ? colors.accentMint
+                            : connectionStatus === "connecting"
+                              ? colors.statusWarning
+                              : colors.statusError
+                        }
+                      />
+                      <View style={rowStyles.textCol}>
+                        <Text style={rowStyles.title}>Connection Status</Text>
+                        <Text style={rowStyles.subtitle}>
+                          {connectionStatus === "connected" && "Connected"}
+                          {connectionStatus === "connecting" && "Connecting..."}
+                          {connectionStatus === "disconnected" &&
+                            "Disconnected / Reconnecting"}
+                          {connectionStatus === "offline" && "Offline"}
+                        </Text>
+                        {connectionStatus !== "connected" && lastError ? (
+                          <Text
+                            style={[
+                              rowStyles.subtitle,
+                              {
+                                color: colors.statusError,
+                                marginTop: 2,
+                                fontSize: 11,
+                              },
+                            ]}
+                          >
+                            {lastError}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Pressable
+                        onPress={handleTestConnection}
+                        style={[
+                          styles.testButton,
+                          isTestingConnection && { opacity: 0.6 },
+                        ]}
+                        disabled={isTestingConnection}
+                      >
+                        {isTestingConnection ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accentMint}
+                          />
+                        ) : (
+                          <Text style={styles.testButtonText}>
+                            Test Connection
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.divider} />
+                    {/* Room ID and options */}
+                    {roomId ? (
+                      <>
+                        <SettingsRow
+                          icon="qr-code-outline"
+                          title="Show Sync QR Code"
+                          subtitle="Scan this from another device to sync"
+                          value={roomId.substring(0, 8) + "..."}
+                          onPress={() => setShowQrModal(true)}
+                        />
+                        <View style={styles.divider} />
+                        <SettingsRow
+                          icon="swap-horizontal-outline"
+                          title="Change Sync Channel"
+                          subtitle="Connect to a different channel"
+                          onPress={() => {
+                            setNewRoomId(roomId);
+                            setShowJoinModal(true);
+                          }}
+                        />
+                        <View style={styles.divider} />
+                        <SettingsRow
+                          icon="exit-outline"
+                          title="Leave Sync Channel"
+                          subtitle="Disconnect from the active channel"
+                          onPress={async () => {
+                            await leaveRoom();
+                            showNotificationModal(
+                              "Channel Left",
+                              "Successfully left the sync channel."
+                            );
+                          }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <SettingsRow
+                          icon="add-circle-outline"
+                          title="Create Sync Channel"
+                          subtitle="Generate a new secure peer sync channel"
+                          onPress={async () => {
+                            const genId = await createRoom();
+                            showNotificationModal(
+                              "Channel Created",
+                              `Sync Channel generated successfully:\n\n${genId}`
+                            );
+                          }}
+                        />
+                        <View style={styles.divider} />
+                        <SettingsRow
+                          icon="enter-outline"
+                          title="Join Sync Channel"
+                          subtitle="Scan a QR code or input manual channel ID"
+                          onPress={() => {
+                            setNewRoomId("");
+                            setShowJoinModal(true);
+                          }}
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+              </CyberCard>
+            </Animated.View>
+
+            {/* Vault Backups */}
+            <Animated.View entering={FadeInDown.duration(200).delay(140)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="albums-outline"
+                    size={18}
+                    color={colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Vault Backups</Text>
+                </View>
+
+                {/* Enable / Disable backup retention */}
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Backup on Sync</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Keep previous versions when a newer vault is pulled from a
+                      peer
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={handleToggleBackup}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={backupEnabled ? "toggle" : "toggle-outline"}
+                      size={38}
+                      color={
+                        backupEnabled ? colors.accentMint : colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Backup folder */}
+                <SettingsRow
+                  icon="folder-outline"
+                  title="Backup Folder"
+                  subtitle={
+                    backupDirUri
+                      ? "Where retained versions are stored"
+                      : "Choose a folder to store backups"
+                  }
+                  value={
+                    backupDirName || (backupDirUri ? "Selected" : "Not set")
+                  }
+                  onPress={handlePickBackupDir}
+                />
+                {backupDirUri ? (
+                  <Pressable
+                    onPress={handleClearBackupDir}
+                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                    hitSlop={6}
+                  >
+                    <Text style={styles.backupClearLink}>Remove folder</Text>
+                  </Pressable>
+                ) : null}
+
+                <View style={styles.divider} />
+
+                {/* Retention count stepper */}
+                <View style={rowStyles.row}>
+                  <Ionicons
+                    name="layers-outline"
+                    size={20}
+                    color={colors.textPrimary}
+                  />
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Backups to Keep</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Oldest versions beyond this are removed
+                    </Text>
+                  </View>
+                  <View style={styles.stepper}>
+                    <Pressable
+                      onPress={() => handleChangeRetention(-1)}
+                      disabled={backupRetention <= MIN_BACKUP_RETENTION}
+                      style={[
+                        styles.stepperBtn,
+                        backupRetention <= MIN_BACKUP_RETENTION && {
+                          opacity: 0.4,
+                        },
+                      ]}
+                      hitSlop={6}
+                    >
+                      <Ionicons
+                        name="remove"
+                        size={18}
+                        color={colors.textPrimary}
+                      />
+                    </Pressable>
+                    <Text style={styles.stepperValue}>{backupRetention}</Text>
+                    <Pressable
+                      onPress={() => handleChangeRetention(1)}
+                      disabled={backupRetention >= MAX_BACKUP_RETENTION}
+                      style={[
+                        styles.stepperBtn,
+                        backupRetention >= MAX_BACKUP_RETENTION && {
+                          opacity: 0.4,
+                        },
+                      ]}
+                      hitSlop={6}
+                    >
+                      <Ionicons
+                        name="add"
+                        size={18}
+                        color={colors.textPrimary}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              </CyberCard>
+            </Animated.View>
+
             {/* About */}
             <Animated.View entering={FadeInDown.duration(200).delay(150)}>
               <CyberCard style={styles.card}>
@@ -2168,6 +2785,446 @@ export default function VaultSettingsScreen() {
         </View>
       </Modal>
 
+      {/* Edit Server URL Modal */}
+      <Modal
+        visible={showServerEditModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowServerEditModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="server-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>Signaling Server URL</Text>
+            </View>
+
+            <View style={styles.modalInputContainer}>
+              <Text style={styles.inputLabel}>Server URL</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newServerUrl}
+                onChangeText={(text) => {
+                  setNewServerUrl(text);
+                  setFormError(null);
+                }}
+                placeholder="ws://... or wss://..."
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {formError && (
+                <Text style={{ color: colors.statusError, fontSize: 12 }}>
+                  {formError}
+                </Text>
+              )}
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={async () => {
+                if (!newServerUrl.trim()) {
+                  setFormError("Server URL cannot be empty");
+                  return;
+                }
+                if (
+                  !newServerUrl.startsWith("ws://") &&
+                  !newServerUrl.startsWith("wss://")
+                ) {
+                  setFormError("URL must start with ws:// or wss://");
+                  return;
+                }
+                setServerUrl(newServerUrl.trim());
+                setShowServerEditModal(false);
+                setFormError(null);
+                // Trigger reconnection
+                connect();
+              }}
+            >
+              <Text style={styles.modalButtonText}>Save URL</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.modalButtonSecondary}
+              onPress={() => {
+                setShowServerEditModal(false);
+                setFormError(null);
+              }}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* Edit ICE Servers Modal */}
+      <Modal
+        visible={showIceServersModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowIceServersModal(false);
+          setFormError(null);
+        }}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>
+                ICE Servers Configuration
+              </Text>
+            </View>
+
+            <View style={styles.modalInputContainer}>
+              <Text style={styles.inputLabel}>ICE Servers (JSON Array)</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    height: 120,
+                    textAlignVertical: "top",
+                    paddingTop: 8,
+                    paddingBottom: 8,
+                    fontFamily: "SpaceMono-Regular",
+                    fontSize: 12,
+                  },
+                ]}
+                multiline
+                numberOfLines={6}
+                value={newIceServersText}
+                onChangeText={(text) => {
+                  setNewIceServersText(text);
+                  setFormError(null);
+                }}
+                placeholder={`[\n  { "urls": ["stun:stun.l.google.com:19302"] },\n  { "urls": ["turn:your-turn-server.com:3478"], "username": "user", "credential": "pwd" }\n]`}
+                placeholderTextColor={colors.textDisabled}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {formError && (
+                <Text
+                  style={{
+                    color: colors.statusError,
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  {formError}
+                </Text>
+              )}
+              <Text
+                style={{ marginTop: 8, fontSize: 11, color: colors.textMuted }}
+              >
+                Input must be a valid JSON array of RTCIceServer objects. Leave
+                empty to reset to default Google STUN.
+              </Text>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={async () => {
+                const trimmed = newIceServersText.trim();
+                if (!trimmed) {
+                  await setIceServers([]);
+                  setShowIceServersModal(false);
+                  setFormError(null);
+                  return;
+                }
+
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  if (!Array.isArray(parsed)) {
+                    setFormError("Configuration must be a JSON array");
+                    return;
+                  }
+                  for (let i = 0; i < parsed.length; i++) {
+                    const item = parsed[i];
+                    if (typeof item !== "object" || item === null) {
+                      setFormError(`Item at index ${i} must be an object`);
+                      return;
+                    }
+                    if (!item.urls) {
+                      setFormError(
+                        `Item at index ${i} is missing "urls" field`
+                      );
+                      return;
+                    }
+                  }
+
+                  await setIceServers(parsed);
+                  setShowIceServersModal(false);
+                  setFormError(null);
+                } catch (e: any) {
+                  setFormError(`Invalid JSON: ${e.message}`);
+                }
+              }}
+            >
+              <Text style={styles.modalButtonText}>Save Configuration</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.modalButtonSecondary}
+              onPress={() => {
+                setShowIceServersModal(false);
+                setFormError(null);
+              }}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* QR Code Modal */}
+      <Modal
+        visible={showQrModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowQrModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="qr-code-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>Scan to Sync</Text>
+            </View>
+
+            <Text
+              style={{
+                fontFamily: Fonts.body.regular,
+                fontSize: FontSizes.bodySmall,
+                color: colors.textSecondary,
+                textAlign: "center",
+                marginBottom: Spacing.sm,
+              }}
+            >
+              Scan this QR code from another VaultPeer device to securely join
+              this channel.
+            </Text>
+
+            <View style={styles.qrContainer}>
+              {roomId ? (
+                <Image
+                  source={{
+                    uri: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(roomId)}`,
+                  }}
+                  style={styles.qrImage}
+                  resizeMode="contain"
+                />
+              ) : null}
+            </View>
+
+            <Text style={styles.qrCodeText}>{roomId}</Text>
+
+            <View style={styles.qrButtonsRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  { flex: 1 },
+                  pressed && { opacity: 0.8 },
+                ]}
+                onPress={() => {
+                  copyToClipboard(roomId);
+                  showNotificationModal(
+                    "Copied",
+                    "Sync Channel ID copied to clipboard."
+                  );
+                }}
+              >
+                <Text style={styles.modalButtonText}>Copy ID</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalButtonSecondary,
+                  { flex: 1, marginTop: 0 },
+                  pressed && { opacity: 0.8 },
+                ]}
+                onPress={() => setShowQrModal(false)}
+              >
+                <Text style={styles.modalButtonSecondaryText}>Close</Text>
+              </Pressable>
+            </View>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* Join / Change Channel Modal */}
+      <Modal
+        visible={showJoinModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowJoinModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <CyberCard style={modalStyles.modalContainer}>
+            <View style={modalStyles.header}>
+              <Ionicons
+                name="enter-outline"
+                size={24}
+                color={colors.accentMint}
+              />
+              <Text style={modalStyles.headerTitle}>Join Sync Channel</Text>
+            </View>
+
+            <View style={styles.modalInputContainer}>
+              <Text style={styles.inputLabel}>Channel / Room ID</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newRoomId}
+                onChangeText={(text) => {
+                  setNewRoomId(text);
+                  setFormError(null);
+                }}
+                placeholder="Enter room ID or scan QR code"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {formError && (
+                <Text
+                  style={{
+                    color: colors.statusError,
+                    fontSize: 12,
+                    marginBottom: Spacing.xs,
+                  }}
+                >
+                  {formError}
+                </Text>
+              )}
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={async () => {
+                if (!newRoomId.trim()) {
+                  setFormError("Room ID cannot be empty");
+                  return;
+                }
+                await joinRoom(newRoomId.trim());
+                setShowJoinModal(false);
+                setFormError(null);
+                showNotificationModal(
+                  "Channel Joined",
+                  `Successfully joined sync channel:\n\n${newRoomId.trim()}`
+                );
+              }}
+            >
+              <Text style={styles.modalButtonText}>Join Channel</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButtonSecondary,
+                { borderStyle: "dashed", borderColor: colors.accentMint },
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={handleStartScan}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: Spacing.xs,
+                }}
+              >
+                <Ionicons
+                  name="camera-outline"
+                  size={16}
+                  color={colors.accentMint}
+                />
+                <Text
+                  style={[
+                    styles.modalButtonSecondaryText,
+                    { color: colors.accentMint },
+                  ]}
+                >
+                  Scan QR Code
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={[styles.modalButtonSecondary, { marginTop: Spacing.xs }]}
+              onPress={() => {
+                setShowJoinModal(false);
+                setFormError(null);
+              }}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+          </CyberCard>
+        </View>
+      </Modal>
+
+      {/* Full screen Camera QR Scanner overlay */}
+      {isScanning && (
+        <View style={styles.scannerOverlay}>
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            barcodeScannerSettings={{
+              barcodeTypes: ["qr"],
+            }}
+            onBarcodeScanned={async ({ data }) => {
+              if (data) {
+                setIsScanning(false);
+                await joinRoom(data);
+                showNotificationModal(
+                  "Channel Joined",
+                  `Successfully joined sync channel:\n\n${data}`
+                );
+              }
+            }}
+          />
+          <View
+            style={{
+              alignItems: "center",
+              position: "absolute",
+              bottom: 60,
+              left: 20,
+              right: 20,
+            }}
+          >
+            <View style={styles.scannerCutout} />
+            <Text style={styles.scannerText}>
+              Position the sync QR code inside the frame
+            </Text>
+            <Pressable
+              style={styles.cancelScanButton}
+              onPress={() => {
+                setIsScanning(false);
+                setShowJoinModal(true);
+              }}
+            >
+              <Text style={styles.cancelScanButtonText}>Cancel Scan</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Reusable Action Modal */}
       <ActionModal
         visible={modalConfig.visible}
@@ -2178,6 +3235,7 @@ export default function VaultSettingsScreen() {
         iconColor={modalConfig.iconColor}
         options={modalConfig.options}
         buttons={modalConfig.buttons}
+        hideOverlay
       />
     </SafeAreaView>
   );
@@ -2292,6 +3350,35 @@ function createStyles(colors: any) {
       paddingHorizontal: Spacing.xs,
       minHeight: TouchTarget.min,
       minWidth: TouchTarget.min,
+    },
+    stepper: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+    },
+    stepperBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.sm,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    stepperValue: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.body,
+      color: colors.accentMint,
+      minWidth: 24,
+      textAlign: "center",
+    },
+    backupClearLink: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+      paddingVertical: Spacing.xs,
+      marginLeft: 32,
     },
     confirmPasswordContainer: {
       marginTop: Spacing.sm,
@@ -2492,6 +3579,133 @@ function createStyles(colors: any) {
       fontSize: FontSizes.micro,
       color: colors.textMuted,
       marginTop: Spacing.xxs,
+    },
+    testButton: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.sm,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.xs,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    testButtonText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.accentMint,
+    },
+    qrContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+      marginVertical: Spacing.md,
+      padding: Spacing.md,
+      backgroundColor: "#ffffff",
+      borderRadius: Radii.md,
+    },
+    qrImage: {
+      width: 200,
+      height: 200,
+    },
+    qrCodeText: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.caption,
+      color: colors.textSecondary,
+      textAlign: "center",
+      marginTop: Spacing.sm,
+      backgroundColor: colors.surfaceElevated,
+      padding: Spacing.sm,
+      borderRadius: Radii.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    qrButtonsRow: {
+      flexDirection: "row",
+      gap: Spacing.md,
+      marginTop: Spacing.md,
+      justifyContent: "center",
+    },
+    scannerOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.85)",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 1000,
+    },
+    scannerCutout: {
+      width: 250,
+      height: 250,
+      borderWidth: 2,
+      borderColor: colors.accentMint,
+      backgroundColor: "transparent",
+      borderRadius: Radii.lg,
+      marginBottom: Spacing.lg,
+    },
+    scannerText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: "#ffffff",
+      textAlign: "center",
+      marginBottom: Spacing.lg,
+    },
+    cancelScanButton: {
+      backgroundColor: colors.statusError,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.md,
+    },
+    cancelScanButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: "#ffffff",
+    },
+    modalInputContainer: {
+      marginBottom: Spacing.md,
+    },
+    modalInput: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      color: colors.textPrimary,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.bodySmall,
+      height: TouchTarget.min,
+      marginBottom: Spacing.sm,
+    },
+    modalButton: {
+      backgroundColor: colors.accentMint,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: Spacing.xs,
+    },
+    modalButtonText: {
+      fontFamily: Fonts.heading.semiBold,
+      fontSize: FontSizes.bodySmall,
+      color: colors.backgroundPrimary,
+    },
+    modalButtonSecondary: {
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+      borderRadius: Radii.md,
+      height: TouchTarget.min,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: Spacing.sm,
+    },
+    modalButtonSecondaryText: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.bodySmall,
+      color: colors.textSecondary,
     },
   });
 }

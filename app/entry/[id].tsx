@@ -30,7 +30,13 @@ import type { VaultAttachment, VaultHistorySnapshot } from "@/src/types/kdbx";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useCallback, useEffect, useState } from "react";
+import React, {
+  useMemo,
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -287,6 +293,8 @@ export default function EntryDetailScreen() {
     VaultHistorySnapshot[]
   >([]);
   const [restoringSnapshot, setRestoringSnapshot] = useState(false);
+  const deletingRef = useRef(false);
+  const restoringRef = useRef(false);
 
   const [modalConfig, setModalConfig] = useState<{
     visible: boolean;
@@ -414,7 +422,7 @@ export default function EntryDetailScreen() {
     : false;
 
   const handleDelete = useCallback(() => {
-    if (!entry || deleting) return;
+    if (!entry || deleting || deletingRef.current) return;
     const title = inRecycleBin ? "Permanently Delete Entry" : "Delete Entry";
     const message = inRecycleBin
       ? `Are you sure you want to permanently delete "${entry.title}"? This action cannot be undone.`
@@ -433,6 +441,8 @@ export default function EntryDetailScreen() {
           text: deleteBtnText,
           variant: "destructive",
           onPress: () => {
+            if (deletingRef.current) return;
+            deletingRef.current = true;
             hideModal();
             setDeleting(true);
             setTimeout(() => {
@@ -441,6 +451,7 @@ export default function EntryDetailScreen() {
                 logAccess(entry.uuid, entry.title, "deleted");
                 router.back();
               } catch (err) {
+                deletingRef.current = false;
                 setDeleting(false);
                 console.error(err);
               }
@@ -461,7 +472,7 @@ export default function EntryDetailScreen() {
   ]);
 
   const handleRestore = useCallback(() => {
-    if (!entry || restoring) return;
+    if (!entry || restoring || restoringRef.current) return;
     setModalConfig({
       visible: true,
       title: "Restore Entry",
@@ -474,6 +485,8 @@ export default function EntryDetailScreen() {
           text: "Restore",
           variant: "primary",
           onPress: () => {
+            if (restoringRef.current) return;
+            restoringRef.current = true;
             hideModal();
             setRestoring(true);
             setTimeout(() => {
@@ -483,10 +496,12 @@ export default function EntryDetailScreen() {
                   logAccess(entry.uuid, entry.title, "updated");
                   router.back();
                 } else {
+                  restoringRef.current = false;
                   setRestoring(false);
                   showErrorModal("Error", "Failed to restore entry.");
                 }
               } catch (err) {
+                restoringRef.current = false;
                 setRestoring(false);
                 console.error(err);
               }
