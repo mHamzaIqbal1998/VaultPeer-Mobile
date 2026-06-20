@@ -237,6 +237,24 @@ public class VaultPeerFileSystemModule: Module, UIDocumentPickerDelegate {
         promise.reject("ERR_METADATA_FAILED", "Failed to get file metadata: \(error.localizedDescription)")
       }
     }
+
+    // Directory operations back the vault backup-retention feature, which is
+    // currently Android-only. These stubs keep the JS API surface consistent.
+    AsyncFunction("pickDirectory") { (promise: Promise) in
+      promise.reject("ERR_UNSUPPORTED", "Directory backups are not supported on this platform")
+    }
+
+    AsyncFunction("createFileInDirectory") { (dirUri: String, displayName: String, contentBase64: String, promise: Promise) in
+      promise.reject("ERR_UNSUPPORTED", "Directory backups are not supported on this platform")
+    }
+
+    AsyncFunction("listDirectory") { (dirUri: String, promise: Promise) in
+      promise.reject("ERR_UNSUPPORTED", "Directory backups are not supported on this platform")
+    }
+
+    AsyncFunction("deleteDocument") { (uri: String, promise: Promise) in
+      promise.reject("ERR_UNSUPPORTED", "Directory backups are not supported on this platform")
+    }
   }
 
   // MARK: - UIDocumentPickerDelegate

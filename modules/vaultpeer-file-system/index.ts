@@ -17,6 +17,15 @@ export interface FileMetadata {
   exists: boolean;
 }
 
+export interface DirectoryEntry {
+  /** Document URI of the entry, usable with deleteDocument/readFile. */
+  uri: string;
+  /** Display name of the entry. */
+  name: string;
+  /** Last-modified time in ms since the Unix epoch (OS-reported). 0 if unknown. */
+  mtime: number;
+}
+
 /**
  * Launch document picker to select an existing file.
  * Returns the URI and bookmark (iOS only) of the selected file.
@@ -90,4 +99,46 @@ export async function getMetadata(
   bookmark?: string
 ): Promise<FileMetadata> {
   return await VaultPeerFileSystem.getMetadata(uri, bookmark || "");
+}
+
+// ─────────────────────────────────────────────────────────────
+// Directory operations (Android-only; back the backup-retention feature)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Let the user pick a directory. The returned URI is a persisted-permission
+ * tree URI (Android SAF) usable with the directory operations below.
+ */
+export async function pickDirectory(): Promise<PickResult> {
+  return await VaultPeerFileSystem.pickDirectory();
+}
+
+/**
+ * Create (or overwrite) a file with the given display name inside a previously
+ * picked directory, writing Base64 content. Returns the new document's URI.
+ */
+export async function createFileInDirectory(
+  dirUri: string,
+  displayName: string,
+  contentBase64: string
+): Promise<{ uri: string }> {
+  return await VaultPeerFileSystem.createFileInDirectory(
+    dirUri,
+    displayName,
+    contentBase64
+  );
+}
+
+/**
+ * List the immediate children of a previously picked directory.
+ */
+export async function listDirectory(dirUri: string): Promise<DirectoryEntry[]> {
+  return await VaultPeerFileSystem.listDirectory(dirUri);
+}
+
+/**
+ * Delete a single document by its URI.
+ */
+export async function deleteDocument(uri: string): Promise<boolean> {
+  return await VaultPeerFileSystem.deleteDocument(uri);
 }

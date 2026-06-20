@@ -55,6 +55,12 @@ import { useSignalingStore } from "@/src/stores/useSignalingStore";
 import { useClipboard } from "@/src/hooks/useClipboard";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { syncEngine } from "@/src/services/sync/syncEngine";
+import { pickDirectory } from "vaultpeer-file-system";
+import {
+  useBackupStore,
+  MIN_BACKUP_RETENTION,
+  MAX_BACKUP_RETENTION,
+} from "@/src/stores/useBackupStore";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -372,6 +378,17 @@ export default function VaultSettingsScreen() {
     setIceServers,
   } = useSignalingStore();
 
+  const {
+    enabled: backupEnabled,
+    retention: backupRetention,
+    dirUri: backupDirUri,
+    dirName: backupDirName,
+    setEnabled: setBackupEnabled,
+    setRetention: setBackupRetention,
+    setBackupDir,
+    clearBackupDir,
+  } = useBackupStore();
+
   const { copyToClipboard } = useClipboard();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
@@ -524,6 +541,73 @@ export default function VaultSettingsScreen() {
       }
     }, 2500);
   }, [isTestingConnection, connect, showNotificationModal, showErrorModal]);
+
+  // ── Backup retention handlers ──
+
+  const handlePickBackupDir = useCallback(async () => {
+    try {
+      const result = await pickDirectory();
+      if (!result || !result.uri) return;
+      await setBackupDir(result.uri, result.name || null);
+      return result.uri;
+    } catch (e: any) {
+      // ERR_CANCELLED is expected when the user dismisses the picker.
+      if (e?.code !== "ERR_CANCELLED" && !`${e?.message}`.includes("cancel")) {
+        showErrorModal(
+          "Folder Selection Failed",
+          e?.message || "Could not select a backup folder."
+        );
+      }
+      return undefined;
+    }
+  }, [setBackupDir, showErrorModal]);
+
+  const handleToggleBackup = useCallback(async () => {
+    if (backupEnabled) {
+      await setBackupEnabled(false);
+      return;
+    }
+    // Enabling requires a destination folder. Prompt for one if needed.
+    let dir = backupDirUri;
+    if (!dir) {
+      dir = (await handlePickBackupDir()) ?? null;
+      if (!dir) return; // user cancelled or it failed — leave disabled
+    }
+    await setBackupEnabled(true);
+  }, [backupEnabled, backupDirUri, handlePickBackupDir, setBackupEnabled]);
+
+  const handleChangeRetention = useCallback(
+    (delta: number) => {
+      void setBackupRetention(backupRetention + delta);
+    },
+    [backupRetention, setBackupRetention]
+  );
+
+  const handleClearBackupDir = useCallback(() => {
+    setModalConfig({
+      visible: true,
+      title: "Remove Backup Folder",
+      description:
+        "Backups will be turned off until you choose a new folder. Existing backup files will not be deleted.",
+      icon: "folder-open-outline",
+      buttons: [
+        {
+          text: "Cancel",
+          onPress: () =>
+            setModalConfig((prev) => ({ ...prev, visible: false })),
+          variant: "secondary",
+        },
+        {
+          text: "Remove",
+          onPress: async () => {
+            setModalConfig((prev) => ({ ...prev, visible: false }));
+            await clearBackupDir();
+          },
+          variant: "destructive",
+        },
+      ],
+    });
+  }, [clearBackupDir]);
 
   const handleStartScan = useCallback(async () => {
     if (!cameraPermission) {
@@ -2107,6 +2191,124 @@ export default function VaultSettingsScreen() {
               </CyberCard>
             </Animated.View>
 
+            {/* Vault Backups */}
+            <Animated.View entering={FadeInDown.duration(200).delay(140)}>
+              <CyberCard style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name="albums-outline"
+                    size={18}
+                    color={colors.accentMint}
+                  />
+                  <Text style={styles.cardTitle}>Vault Backups</Text>
+                </View>
+
+                {/* Enable / Disable backup retention */}
+                <View style={styles.biometricRow}>
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Backup on Sync</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Keep previous versions when a newer vault is pulled from a
+                      peer
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={handleToggleBackup}
+                    style={styles.switchButton}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={backupEnabled ? "toggle" : "toggle-outline"}
+                      size={38}
+                      color={
+                        backupEnabled ? colors.accentMint : colors.textMuted
+                      }
+                    />
+                  </Pressable>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Backup folder */}
+                <SettingsRow
+                  icon="folder-outline"
+                  title="Backup Folder"
+                  subtitle={
+                    backupDirUri
+                      ? "Where retained versions are stored"
+                      : "Choose a folder to store backups"
+                  }
+                  value={
+                    backupDirName || (backupDirUri ? "Selected" : "Not set")
+                  }
+                  onPress={handlePickBackupDir}
+                />
+                {backupDirUri ? (
+                  <Pressable
+                    onPress={handleClearBackupDir}
+                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                    hitSlop={6}
+                  >
+                    <Text style={styles.backupClearLink}>Remove folder</Text>
+                  </Pressable>
+                ) : null}
+
+                <View style={styles.divider} />
+
+                {/* Retention count stepper */}
+                <View style={rowStyles.row}>
+                  <Ionicons
+                    name="layers-outline"
+                    size={20}
+                    color={colors.textPrimary}
+                  />
+                  <View style={rowStyles.textCol}>
+                    <Text style={rowStyles.title}>Backups to Keep</Text>
+                    <Text style={rowStyles.subtitle}>
+                      Oldest versions beyond this are removed
+                    </Text>
+                  </View>
+                  <View style={styles.stepper}>
+                    <Pressable
+                      onPress={() => handleChangeRetention(-1)}
+                      disabled={backupRetention <= MIN_BACKUP_RETENTION}
+                      style={[
+                        styles.stepperBtn,
+                        backupRetention <= MIN_BACKUP_RETENTION && {
+                          opacity: 0.4,
+                        },
+                      ]}
+                      hitSlop={6}
+                    >
+                      <Ionicons
+                        name="remove"
+                        size={18}
+                        color={colors.textPrimary}
+                      />
+                    </Pressable>
+                    <Text style={styles.stepperValue}>{backupRetention}</Text>
+                    <Pressable
+                      onPress={() => handleChangeRetention(1)}
+                      disabled={backupRetention >= MAX_BACKUP_RETENTION}
+                      style={[
+                        styles.stepperBtn,
+                        backupRetention >= MAX_BACKUP_RETENTION && {
+                          opacity: 0.4,
+                        },
+                      ]}
+                      hitSlop={6}
+                    >
+                      <Ionicons
+                        name="add"
+                        size={18}
+                        color={colors.textPrimary}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              </CyberCard>
+            </Animated.View>
+
             {/* About */}
             <Animated.View entering={FadeInDown.duration(200).delay(150)}>
               <CyberCard style={styles.card}>
@@ -3148,6 +3350,35 @@ function createStyles(colors: any) {
       paddingHorizontal: Spacing.xs,
       minHeight: TouchTarget.min,
       minWidth: TouchTarget.min,
+    },
+    stepper: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.sm,
+    },
+    stepperBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: Radii.sm,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.borderSage,
+    },
+    stepperValue: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.body,
+      color: colors.accentMint,
+      minWidth: 24,
+      textAlign: "center",
+    },
+    backupClearLink: {
+      fontFamily: Fonts.heading.medium,
+      fontSize: FontSizes.caption,
+      color: colors.statusError,
+      paddingVertical: Spacing.xs,
+      marginLeft: 32,
     },
     confirmPasswordContainer: {
       marginTop: Spacing.sm,

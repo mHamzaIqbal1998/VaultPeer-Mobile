@@ -19,6 +19,8 @@
 
 import { useSyncStore } from "../../stores/useSyncStore";
 import { webRTCManager } from "../webrtc/webRTCManager";
+import { useBackupStore } from "../../stores/useBackupStore";
+import { backupPulledRevision } from "./backupService";
 import { getEffectiveMtime, recordRemoteApply } from "./syncMetaStore";
 import {
   LWW_THRESHOLD_MS,
@@ -458,6 +460,14 @@ class SyncEngine {
     }
 
     try {
+      // Preserve the revision currently on disk before the remote copy
+      // overwrites it (mirrors the closed-vault pull path and the server node).
+      const oldMtime = await getEffectiveMtime(
+        af.uri,
+        af.bookmark ?? undefined
+      );
+      await this.backupCurrentRevision(pending.filename, oldMtime);
+
       const ok = await this.host.writeActiveFileBase64(pending.fileData);
       if (!ok) {
         this.setStatus("error");
@@ -986,6 +996,8 @@ class SyncEngine {
 
       if (!open) {
         // Safe path: no in-memory state to disturb — write straight to disk.
+        // Preserve the revision currently on disk before overwriting it.
+        await this.backupCurrentRevision(msg.filename, localMtime);
         const ok = await this.host.writeActiveFileBase64(msg.fileData);
         if (ok) {
           await recordRemoteApply(
@@ -1051,6 +1063,27 @@ class SyncEngine {
     // Now that our pull is done, serve any deferred pull_request from this peer.
     // This serializes bidirectional transfers: receive first, then send.
     this.serveDeferredPullRequest(peerId);
+  }
+
+  /**
+   * Copy the revision currently on disk into the user's backup directory before
+   * it is overwritten by a pulled/remote file (mirrors the server node's
+   * retention-on-pull). Best-effort: never throws and never blocks the pull.
+   *
+   * @param filename Basename of the active vault file.
+   * @param oldMtime Logical clock of the revision being preserved (pre-apply).
+   */
+  private async backupCurrentRevision(filename: string, oldMtime: number) {
+    try {
+      // Cheap gate so we don't read the whole file when backups are off.
+      const { enabled, dirUri } = useBackupStore.getState();
+      if (!enabled || !dirUri || !this.host) return;
+
+      const oldB64 = await this.host.readActiveFileBase64();
+      await backupPulledRevision(filename, oldB64, oldMtime);
+    } catch (e) {
+      console.warn(TAG, "backupCurrentRevision failed:", e);
+    }
   }
 }
 
