@@ -1,7 +1,17 @@
 {
-  "name": "vaultpeermobile",
+  "name": "vaultpeer-mobile",
   "main": "expo-router/entry",
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "description": "VaultPeer Mobile — open-source KeePass-compatible password manager with WebRTC sync (Expo + React Native)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mHamzaIqbal1998/VaultPeer-Mobile.git"
+  },
+  "homepage": "https://github.com/mHamzaIqbal1998/VaultPeer-Mobile#readme",
+  "bugs": {
+    "url": "https://github.com/mHamzaIqbal1998/VaultPeer-Mobile/issues"
+  },
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -94,5 +104,5 @@
       "prettier --write"
     ]
   },
-  "private": true
+  "private": false
 }
