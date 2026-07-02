@@ -1,66 +1,67 @@
-import React, { useCallback, useMemo, useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  TextInput,
-  ActivityIndicator,
-  Modal,
-  Image,
-  Keyboard,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Animated, {
-  FadeInDown,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  FadeIn,
-  FadeOut,
-} from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import {
-  useThemeColors,
-  Fonts,
-  FontSizes,
-  Spacing,
-  Radii,
-  TouchTarget,
-  Shadows,
-} from "@/src/constants/theme";
-import { useVaultStore } from "@/src/stores/useVaultStore";
-import { useFilePicker } from "@/src/context/FilePickerContext";
-import { parseMeta, applyKdfParams } from "@/src/services/crypto";
-import {
-  getCurrentKdfParams,
-  formatKdfParams,
-} from "@/src/services/crypto/kdfBenchmark";
-import type { KdfTuningParams } from "@/src/services/crypto/kdfBenchmark";
+import * as AutofillBridge from "@/modules/vaultpeer-autofill";
+import { ActionModal } from "@/src/components/ActionModal";
 import { CyberCard } from "@/src/components/CyberCard";
 import { KdfTuningModal } from "@/src/components/KdfTuningModal";
-import { ActionModal } from "@/src/components/ActionModal";
 import {
-  isBiometricsSupported,
-  isBiometricEnabled,
-  enableBiometric,
-  disableBiometric,
-} from "@/src/services/biometricService";
-import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
-import * as kdbxweb from "kdbxweb";
-import * as AutofillBridge from "@/modules/vaultpeer-autofill";
-import { useSignalingStore } from "@/src/stores/useSignalingStore";
+  FontSizes,
+  Fonts,
+  Radii,
+  Shadows,
+  Spacing,
+  TouchTarget,
+  useThemeColors,
+} from "@/src/constants/theme";
+import { useFilePicker } from "@/src/context/FilePickerContext";
 import { useClipboard } from "@/src/hooks/useClipboard";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import { syncEngine } from "@/src/services/sync/syncEngine";
-import { pickDirectory } from "vaultpeer-file-system";
 import {
-  useBackupStore,
-  MIN_BACKUP_RETENTION,
+  disableBiometric,
+  enableBiometric,
+  isBiometricEnabled,
+  isBiometricsSupported,
+} from "@/src/services/biometricService";
+import { applyKdfParams, parseMeta } from "@/src/services/crypto";
+import type { KdfTuningParams } from "@/src/services/crypto/kdfBenchmark";
+import {
+  formatKdfParams,
+  getCurrentKdfParams,
+} from "@/src/services/crypto/kdfBenchmark";
+import { estimatePasswordStrength } from "@/src/services/passwordGenerator";
+import { syncEngine } from "@/src/services/sync/syncEngine";
+import {
   MAX_BACKUP_RETENTION,
+  MIN_BACKUP_RETENTION,
+  useBackupStore,
 } from "@/src/stores/useBackupStore";
+import { useSignalingStore } from "@/src/stores/useSignalingStore";
+import { useVaultStore } from "@/src/stores/useVaultStore";
+import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import Constants from "expo-constants";
+import { useRouter } from "expo-router";
+import * as kdbxweb from "kdbxweb";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Keyboard,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { pickDirectory } from "vaultpeer-file-system";
 
 // ────────────────────────────────────────────
 // Helpers
@@ -2323,7 +2324,7 @@ export default function VaultSettingsScreen() {
                 <SettingsRow
                   icon="code-slash-outline"
                   title="Version"
-                  value="0.0.1"
+                  value={Constants.expoConfig?.version ?? "unknown"}
                 />
                 <View style={styles.divider} />
                 <SettingsRow

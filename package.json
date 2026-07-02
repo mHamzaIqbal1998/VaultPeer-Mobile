@@ -1,7 +1,7 @@
 {
   "name": "vaultpeer-mobile",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "Apache-2.0",
   "description": "VaultPeer Mobile — open-source KeePass-compatible password manager with WebRTC sync (Expo + React Native)",
   "repository": {

@@ -12,22 +12,22 @@
  * AND update the parsed React-readable state in one atomic action.
  */
 
-import { create } from "zustand";
+import * as SecureStore from "expo-secure-store";
 import * as kdbxweb from "kdbxweb";
+import { create } from "zustand";
+import { arrayBufferToBase64, base64ToArrayBuffer } from "../services/base64";
+import {
+  enableBiometric,
+  isBiometricEnabled,
+} from "../services/biometricService";
+import { createCredentials } from "../services/crypto";
 import { parseDatabase } from "../services/crypto/databaseParser";
 import type {
   VaultEntry,
   VaultGroup,
-  VaultMeta,
   VaultHistorySnapshot,
+  VaultMeta,
 } from "../types/kdbx";
-import { base64ToArrayBuffer, arrayBufferToBase64 } from "../services/base64";
-import { createCredentials } from "../services/crypto";
-import {
-  isBiometricEnabled,
-  enableBiometric,
-} from "../services/biometricService";
-import * as SecureStore from "expo-secure-store";
 
 // ────────────────────────────────────────────
 // History Entry
@@ -98,6 +98,8 @@ interface VaultStoreState {
   ) => Promise<VaultEntry | null>;
   deleteEntry: (uuid: string) => boolean;
   restoreEntry: (uuid: string) => boolean;
+  /** Move an entry to a different parent group. Returns true on success. */
+  moveEntry: (entryUuid: string, targetGroupUuid: string) => boolean;
   getAttachmentData: (
     entryUuid: string,
     attachmentName: string
@@ -965,6 +967,36 @@ export const useVaultStore = create<VaultStoreState>((rawSet, get) => {
 
       // Remove the custom field helper
       found.entry.fields.delete("PreviousParentGroupUuid");
+
+      // Re-parse
+      const { meta, rootGroup } = parseDatabase(db);
+      set({
+        meta,
+        rootGroup,
+        entryIndex: buildEntryIndex(rootGroup),
+        groupIndex: buildGroupIndex(rootGroup),
+        isDirty: true,
+      });
+
+      return true;
+    },
+
+    moveEntry: (entryUuid, targetGroupUuid) => {
+      const state = get();
+      const db = state._db;
+      if (!db) return false;
+
+      const root = db.getDefaultGroup();
+      const found = findKdbxEntry(root, entryUuid);
+      if (!found) return false;
+
+      const targetGroup = findKdbxGroup(root, targetGroupUuid);
+      if (!targetGroup) return false;
+
+      // No-op if the entry is already in the target group
+      if (found.parent.uuid?.id === targetGroupUuid) return true;
+
+      db.move(found.entry, targetGroup);
 
       // Re-parse
       const { meta, rootGroup } = parseDatabase(db);
