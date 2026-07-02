@@ -1,45 +1,47 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import { cancelRequest } from "@/modules/vaultpeer-autofill";
+import { ActionModal } from "@/src/components/ActionModal";
+import { CyberCard } from "@/src/components/CyberCard";
+import { GroupPickerModal } from "@/src/components/GroupPickerModal";
+import { IconPickerModal } from "@/src/components/IconPickerModal";
+import { getKdbxIconName } from "@/src/constants/kdbxIcons";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  TextInput,
-  ScrollView,
+  FontSizes,
+  Fonts,
+  Radii,
+  Shadows,
+  Spacing,
+  TouchTarget,
+  useThemeColors,
+} from "@/src/constants/theme";
+import { useFilePicker } from "@/src/context/FilePickerContext";
+import { buildGroupPath } from "@/src/services/groupPath";
+import {
+  estimatePasswordStrength,
+  generatePassword,
+} from "@/src/services/passwordGenerator";
+import { useVaultStore } from "@/src/stores/useVaultStore";
+import type { VaultAttachment } from "@/src/types/kdbx";
+import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as DocumentPicker from "expo-document-picker";
+import * as Haptics from "expo-haptics";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  useThemeColors,
-  Fonts,
-  FontSizes,
-  Spacing,
-  Radii,
-  TouchTarget,
-  Shadows,
-} from "@/src/constants/theme";
-import { useVaultStore } from "@/src/stores/useVaultStore";
-import { useFilePicker } from "@/src/context/FilePickerContext";
-import { CyberCard } from "@/src/components/CyberCard";
-import { IconPickerModal } from "@/src/components/IconPickerModal";
-import { getKdbxIconName } from "@/src/constants/kdbxIcons";
-import { ActionModal } from "@/src/components/ActionModal";
-import * as DocumentPicker from "expo-document-picker";
 import { readFile } from "vaultpeer-file-system";
-import type { VaultAttachment } from "@/src/types/kdbx";
-import * as Haptics from "expo-haptics";
-import {
-  generatePassword,
-  estimatePasswordStrength,
-} from "@/src/services/passwordGenerator";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import { cancelRequest } from "@/modules/vaultpeer-autofill";
-import * as SecureStore from "expo-secure-store";
 
 interface CustomFieldState {
   id: string;
@@ -244,6 +246,12 @@ export default function EntryEditScreen() {
   const { saveVault } = useFilePicker();
   const { getEntry, createEntry, updateEntry, logAccess, markClean } =
     useVaultStore();
+  const moveEntry = useVaultStore((state) => state.moveEntry);
+  const rootGroup = useVaultStore((state) => state.rootGroup);
+  const groupIndex = useVaultStore((state) => state.groupIndex);
+  const recycleBinUuid = useVaultStore(
+    (state) => state._db?.meta.recycleBinUuid?.id
+  );
 
   const isNew = !entryId;
   const existing = entryId ? getEntry(entryId) : null;
@@ -340,6 +348,19 @@ export default function EntryEditScreen() {
   );
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+
+  // Folder/group where the entry lives (existing) or will be created (new).
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() => {
+    if (existing) return existing.parentGroupUuid;
+    if (groupId) return groupId;
+    return rootGroup?.uuid ?? null;
+  });
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+
+  const selectedGroupPath = useMemo(
+    () => buildGroupPath(selectedGroupId, groupIndex),
+    [selectedGroupId, groupIndex]
+  );
 
   const [showGenerator, setShowGenerator] = useState(false);
   const [genLength, setGenLength] = useState(16);
@@ -555,7 +576,7 @@ export default function EntryEditScreen() {
     setTimeout(async () => {
       try {
         if (isNew) {
-          const parentUuid = groupId;
+          const parentUuid = selectedGroupId || groupId;
           if (!parentUuid) {
             showErrorModal("Error", "No parent group specified.");
             setSaving(false);
@@ -601,6 +622,13 @@ export default function EntryEditScreen() {
         } else if (entryId) {
           const entry = await updateEntry(entryId, payload);
           if (entry) {
+            // Move the entry if the user picked a different folder/group
+            if (
+              selectedGroupId &&
+              selectedGroupId !== existing?.parentGroupUuid
+            ) {
+              moveEntry(entryId, selectedGroupId);
+            }
             logAccess(entry.uuid, entry.title, "updated");
             if (autofillUsername || autofillPassword || autofillPackageName) {
               const db = useVaultStore.getState()._db;
@@ -669,6 +697,9 @@ export default function EntryEditScreen() {
     logAccess,
     router,
     iconId,
+    selectedGroupId,
+    moveEntry,
+    existing,
     showErrorModal,
     autofillUsername,
     autofillPassword,
@@ -714,7 +745,8 @@ export default function EntryEditScreen() {
         JSON.stringify(attachments.map((a) => a.name)) !==
           JSON.stringify((existing?.attachments || []).map((a) => a.name)) ||
         expires !== existing?.expires ||
-        JSON.stringify(tags) !== JSON.stringify(existing?.tags || []);
+        JSON.stringify(tags) !== JSON.stringify(existing?.tags || []) ||
+        selectedGroupId !== existing?.parentGroupUuid;
 
     if (hasChanges) {
       setModalConfig({
@@ -797,6 +829,7 @@ export default function EntryEditScreen() {
     router,
     colors.statusWarning,
     hideModal,
+    selectedGroupId,
     autofillUsername,
     autofillPassword,
     autofillPackageName,
@@ -862,6 +895,32 @@ export default function EntryEditScreen() {
                 <View style={styles.iconPickerInfo}>
                   <Text style={styles.iconPickerLabel}>Entry Icon</Text>
                   <Text style={styles.iconPickerHint}>Tap to change</Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={colors.textMuted}
+                />
+              </Pressable>
+
+              {/* ── Folder / Group Picker Button ── */}
+              <Pressable
+                onPress={() => setShowGroupPicker(true)}
+                style={styles.iconPickerBtn}
+                accessibilityLabel="Change entry folder"
+              >
+                <View style={styles.iconPickerCircle}>
+                  <Ionicons
+                    name="folder-outline"
+                    size={24}
+                    color={colors.accentMint}
+                  />
+                </View>
+                <View style={styles.iconPickerInfo}>
+                  <Text style={styles.iconPickerLabel}>Folder</Text>
+                  <Text style={styles.folderPickerPath} numberOfLines={1}>
+                    {selectedGroupPath}
+                  </Text>
                 </View>
                 <Ionicons
                   name="chevron-forward"
@@ -1459,6 +1518,17 @@ export default function EntryEditScreen() {
         onClose={() => setShowIconPicker(false)}
       />
 
+      {/* ── Folder / Group Picker Modal ── */}
+      <GroupPickerModal
+        visible={showGroupPicker}
+        rootGroup={rootGroup}
+        groupIndex={groupIndex}
+        selectedGroupId={selectedGroupId}
+        recycleBinUuid={recycleBinUuid}
+        onSelect={(uuid) => setSelectedGroupId(uuid)}
+        onClose={() => setShowGroupPicker(false)}
+      />
+
       {showScanner && (
         <View style={StyleSheet.absoluteFillObject}>
           <QrScannerView
@@ -1534,6 +1604,12 @@ const createStyles = (colors: any) =>
       fontFamily: Fonts.body.regular,
       fontSize: FontSizes.caption,
       color: colors.textMuted,
+      marginTop: 2,
+    },
+    folderPickerPath: {
+      fontFamily: Fonts.mono.regular,
+      fontSize: FontSizes.bodySmall,
+      color: colors.accentMint,
       marginTop: 2,
     },
     header: {
